@@ -13,5 +13,5 @@ shortuuid==0.5.0
 user_agents
 upyun==2.5.3
 pycrypto==2.6.1
-bleach==3.3.0
+bleach==6.4.0
 aliyun-python-sdk-dysmsapi==1.0.0
