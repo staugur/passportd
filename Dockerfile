@@ -1,13 +1,47 @@
-FROM python:2.7-slim
-ARG PIPMIRROR=https://pypi.org/simple
-COPY requirements.txt .
-RUN sed -i 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
-    sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
-    apt update && apt install -y --no-install-recommends default-libmysqlclient-dev python-dev build-essential &&\
-    sed '/st_mysql_options options;/a unsigned int reconnect;' /usr/include/mysql/mysql.h -i.bkp &&\
-    pip install --timeout 30 --index $PIPMIRROR --no-cache-dir -r requirements.txt &&\
-    rm -rf /var/lib/apt/lists/* requirements.txt
-COPY src /passport
-WORKDIR /passport
+# ---- builder stage ----
+FROM python:3.12-alpine AS builder
+
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    openssl-dev \
+    cargo
+
+WORKDIR /app
+
+COPY requirements/ requirements/
+COPY setup.py setup.cfg MANIFEST.in ./
+
+RUN pip install --no-cache-dir --user \
+    -r requirements/prod.txt
+
+# ---- runtime stage ----
+FROM python:3.12-alpine
+
+RUN apk add --no-cache \
+    libffi \
+    openssl \
+    && addgroup -S passportd \
+    && adduser -S passportd -G passportd
+
+COPY --from=builder /root/.local /home/passportd/.local
+
+ENV PATH="/home/passportd/.local/bin:${PATH}"
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY passportd/ passportd/
+COPY setup.py setup.cfg MANIFEST.in ./
+
+RUN pip install --no-cache-dir -e . \
+    && mkdir -p /app/data /app/logs /app/uploads \
+    && chown -R passportd:passportd /app
+
+USER passportd
+
 EXPOSE 10030
-ENTRYPOINT ["bash", "online_gunicorn.sh", "entrypoint"]
+
+ENTRYPOINT ["passportd"]
+CMD ["start"]

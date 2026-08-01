@@ -1,0 +1,504 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright 2025 Hiroshi.tao
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+from typing import Union, List
+from binascii import Error as BinasciiError
+
+from werkzeug.security import generate_password_hash, check_password_hash
+from playhouse.shortcuts import model_to_dict
+
+from .model import User, Auth, LoginRecord, db
+from ..basis.mixin import GetItemMixIn
+from ..basis.errors import AuthError, JWTError, ParamError
+from ..basis.vars import COMMON_DICT_TYPE
+from ..basis.common import now
+from ..basis.conf import config
+from ..utils.common import (
+    is_local_account,
+    parse_account_classify,
+    gen_uid,
+    jwt_encode,
+    jwt_decode,
+    jwt_decode_payload_without_verify,
+    is_valid_user_role,
+    is_valid_http_url,
+    logger,
+)
+
+
+def check_credential_rule(pwd: str) -> bool:
+    """检查密码凭证长度是否符合规范（6~128 个字符）。
+
+    :param pwd: 密码凭证字符串
+    :returns: 符合返回 True，否则 False
+    """
+    return 6 <= len(pwd) <= 128 if isinstance(pwd, str) else False
+
+
+def has_uid(uid: str) -> bool:
+    """检查指定 uid 是否在 User 表中存在。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: 存在返回 True，否则 False
+    """
+    if len(uid) != 22:
+        return False
+    return User.select().where(User.uid == uid).exists()
+
+
+def list_users() -> List[COMMON_DICT_TYPE]:
+    """列出所有用户。
+
+    :returns: 用户信息字典列表（已剔除 password_hash）
+    """
+    return [model_to_dict(u, exclude=[User.password_hash]) for u in User.select()]
+
+
+def get_user_email(uid: str) -> Union[None, str]:
+    """根据 uid 获取用户绑定的邮箱地址。
+
+    从 Auth 表中查找 ``classify == "email"`` 的账号并返回。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: 邮箱字符串，不存在时返回 None
+    """
+    try:
+        a = Auth.get((Auth.uid == uid) & (Auth.classify == "email"))
+        return a.account
+    except Auth.DoesNotExist:
+        return None
+
+
+def get_user_by_uid(uid: str) -> Union[None, COMMON_DICT_TYPE]:
+    """根据 uid 获取用户基本信息。
+
+    返回字段: uid, nickname, bio, gender, avatar, location, status, role
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: 用户信息字典，不存在时返回 None
+    """
+    try:
+        u = User.get(User.uid == uid)
+        return dict(
+            uid=u.uid,
+            nickname=u.nickname,
+            bio=u.bio,
+            gender=u.gender,
+            avatar=u.avatar,
+            location=u.location,
+            status=u.status,
+            role=u.role,
+            ctime=u.ctime,
+            mtime=u.mtime,
+        )
+    except User.DoesNotExist:
+        return None
+
+
+def has_account(account: str) -> bool:
+    """检查指定账号是否在 Auth 表中存在。
+
+    :param account: 账号字符串
+    :returns: 存在返回 True，否则 False
+    """
+    return Auth.select().where(Auth.account == account).exists()
+
+
+def get_account(account: str) -> Union[None, COMMON_DICT_TYPE]:
+    """根据账号获取对应的 Auth 记录。
+
+    :param account: 账号字符串
+    :returns: Auth 记录字典，不存在时返回 None
+    """
+    try:
+        ret = Auth.get(Auth.account == account)
+        return model_to_dict(ret)
+    except Auth.DoesNotExist:
+        return None
+
+
+def list_accounts(uid: str) -> List[COMMON_DICT_TYPE]:
+    """列出指定用户的所有关联账号。
+
+    :param uid: 用户唯一标识符
+    :returns: 账号信息字典列表
+    """
+    return [model_to_dict(u) for u in Auth.select().where(Auth.uid == uid)]
+
+
+def add_profile(
+    account: str,
+    credential: str,
+    *,
+    nickname: str = "",
+    bio: str = "",
+    gender: int = 2,
+    avatar: str = "",
+    location: str = "",
+    role: str = "User",
+) -> bool:
+    """注册新用户资料（可源于本地和第三方），既无User又无Auth记录。
+
+    如果是本地化账号，account应该是username格式，密码哈希存入 User.password_hash；
+    如果是第三方账号，account应该是OAuthName.tpid格式，access_token 不入库。
+    """
+    if not account or not check_credential_rule(credential):
+        raise ParamError("Invalid account or credential")
+    if len(account) < 4:
+        raise ParamError("account length too short")
+    if not is_valid_user_role(role):
+        raise ParamError("Invalid user role")
+    classify = parse_account_classify(account)
+    if not classify:
+        raise ParamError("Invalid account type")
+    # Deny email and mobile
+    if classify in ("email", "mobile"):
+        raise ParamError("Registration of email and mobile is not currently supported.")
+    try:
+        gender = int(gender)
+        if gender not in (0, 1, 2):
+            raise ParamError("Invalid gender value")
+    except ValueError:
+        raise ParamError("Invalid gender type")
+    if avatar:
+        if not is_valid_http_url(avatar):
+            raise ParamError("Invalid avatar url")
+    if has_account(account):
+        raise AuthError("The account already exists")
+    password_hash = None
+    if is_local_account(account):
+        password_hash = generate_password_hash(credential)
+    uid = gen_uid()
+    ctime = now()
+    try:
+        with db.atomic():
+            User.create(
+                uid=uid,
+                nickname=nickname,
+                bio=bio,
+                gender=gender,
+                avatar=avatar,
+                location=location,
+                password_hash=password_hash,
+                ctime=ctime,
+                role=role,
+            )
+            Auth.create(
+                uid=uid,
+                account=account,
+                classify=classify,
+                ctime=ctime,
+            )
+    except Exception as e:
+        raise AuthError(e)
+    else:
+        return True
+
+
+def add_account(
+    uid: str,
+    account: str,
+    *,
+    tpid: str = "",
+) -> bool:
+    """为已存在用户添加新的认证方式（Auth 记录）。
+
+    支持本地账号（username / email / mobile）和第三方账号绑定。
+    第三方账号必须提供 ``tpid``。
+    密码由 User.password_hash 统一管理，此处不处理 credential。
+
+    :param uid: 用户唯一标识符
+    :param account: 新账号
+    :param tpid: 第三方平台用户唯一标识（第三方账号必须提供）
+    :returns: 添加成功返回 True
+    :raises ParamError: 参数校验失败
+    :raises AuthError: 账号已存在或 uid 不存在
+    """
+    if not account:
+        raise ParamError("Invalid account")
+    if len(account) < 4:
+        raise ParamError("account length too short")
+    classify = parse_account_classify(account)
+    if not classify:
+        raise ParamError("Invalid account type")
+    if not is_local_account(account) and not tpid:
+        raise ParamError("tpid is required for third-party account")
+    if has_account(account):
+        raise AuthError("The account already exists")
+    if not has_uid(uid):
+        raise AuthError("Not found uid")
+    try:
+        Auth.create(
+            uid=uid,
+            account=account,
+            tpid=tpid,
+            classify=classify,
+            ctime=now(),
+        )
+    except Exception as e:
+        raise AuthError(e)
+    else:
+        return True
+
+
+def update_profile(
+    uid: str,
+    *,
+    nickname: str = "",
+    bio: str = "",
+    gender: int = -1,
+    avatar: str = "",
+    location: str = "",
+    status: int = -1,
+    role: str = "",
+) -> bool:
+    """更新用户资料。
+
+    role 支持三种操作：
+    - 替换：直接传角色名，如 ``"Admin"``
+    - 追加：以 ``+`` 开头，如 ``"+Admin"``
+    - 移除：以 ``-`` 开头，如 ``"-Admin"``
+
+    :param uid: 用户唯一标识符
+    :param nickname: 新昵称（空字符串表示不修改）
+    :param bio: 新简介
+    :param gender: 性别（-1 表示不修改）
+    :param avatar: 新头像 URL
+    :param location: 新地区
+    :param status: 状态（-1 表示不修改，0=禁用, 1=启用）
+    :param role: 角色操作
+    :returns: 更新成功返回 True
+    :raises AuthError: uid 不存在或数据库操作失败
+    :raises ParamError: 参数校验失败
+    """
+    if not has_uid(uid):
+        raise AuthError("Not found user id")
+    if gender not in (-1, 0, 1, 2):
+        raise ParamError("Invalid gender value")
+    if status not in (-1, 0, 1):
+        raise ParamError("Invalid status value")
+    if role and not is_valid_user_role(role):
+        raise ParamError("Invalid role value")
+    try:
+        u = User.get(User.uid == uid)
+        if nickname:
+            u.nickname = nickname
+        if bio:
+            u.bio = bio
+        if gender != -1:
+            u.gender = gender
+        if avatar:
+            u.avatar = avatar
+        if location:
+            u.location = location
+        if status != -1:
+            u.status = status
+        if role:
+            if role.startswith("+"):
+                # 添加角色
+                roles = role.lstrip("+").split(" ")
+                current_roles = u.role.split(" ") if u.role else []
+                roles = current_roles + roles
+            elif role.startswith("-"):
+                # 删除角色
+                current_roles = u.role.split(" ") if u.role else []
+                for r in role.lstrip("-").split(" "):
+                    if r in current_roles:
+                        current_roles.remove(r)
+                roles = current_roles
+            else:
+                # 替换角色
+                roles = role.split(" ")
+            u.role = " ".join(roles)
+        u.mtime = now()
+        u.save()
+    except Exception as e:
+        raise AuthError(e)
+    else:
+        return True
+
+
+def change_password(uid: str, account: str, old_pwd: str, new_pwd: str) -> bool:
+    """修改本地账号密码。
+
+    密码统一存储在 User.password_hash，所有本地登录方式共享同一密码。
+
+    :param uid: 用户 UID
+    :param account: 本地账号
+    :param old_pwd: 旧密码（明文）
+    :param new_pwd: 新密码（明文）
+    :returns: 成功返回 True
+    :raises ParamError: 参数校验失败
+    :raises AuthError: 密码验证失败或账号不存在
+    """
+    if not is_local_account(account):
+        raise ParamError("Only local accounts can change password")
+    if not check_credential_rule(new_pwd):
+        raise ParamError("New password must be 6-128 characters")
+    if old_pwd == new_pwd:
+        raise ParamError("New password must be different from old password")
+    if not login(account, old_pwd):
+        raise AuthError("Old password is incorrect")
+    try:
+        u = User.get(User.uid == uid)
+    except User.DoesNotExist:
+        raise AuthError("User not found")
+    u.password_hash = generate_password_hash(new_pwd)
+    u.mtime = now()
+    u.save()
+    return True
+
+
+def login(account: str, credential: str) -> bool:
+    """验证本地账号密码。
+
+    密码统一从 User.password_hash 读取，所有本地登录方式共享同一密码。
+    第三方账号不支持此方法，请走 OAuth 授权流程。
+
+    :param account: 本地账号
+    :param credential: 密码凭证
+    :returns: 验证通过返回 True，否则 False
+    :raises ParamError: 参数无效
+    :raises AuthError: 账号不存在或非本地账号
+    """
+    if not account or not credential or not check_credential_rule(credential):
+        raise ParamError("Invalid account or credential")
+    if not has_account(account):
+        raise AuthError("Not found account")
+    a = Auth.get(Auth.account == account)
+    if not is_local_account(account):
+        raise AuthError("Only local accounts can login via this method")
+    try:
+        u = User.get(User.uid == a.uid)
+    except User.DoesNotExist:
+        raise AuthError("User not found")
+    if not u.password_hash:
+        raise AuthError("Account has no password set")
+    return check_password_hash(u.password_hash, credential)
+
+
+def generate_jwt(account: str, expire: int = 7200) -> Union[None, str]:
+    """根据账号和凭证生成 JWT token。
+
+    :param account: 用户账号
+    :param expire: 过期时间（秒），默认 7200（2 小时）
+    :returns: JWT 字符串，账号不存在时返回 None
+    """
+    if not has_account(account):
+        return
+    a = Auth.get(Auth.account == account)
+    if a:
+        return jwt_encode(
+            config["SECRET_KEY"],
+            dict(sub=account, uid=a.uid),
+            expire,
+        )
+
+
+def verify_jwt(token: str, dump: bool = False) -> Union[bool, GetItemMixIn]:
+    """验证 JWT 并可选返回 payload。
+
+    :param token: JWT token 字符串
+    :param dump: 为 True 时验证成功后返回 payload（GetItemMixIn 格式），否则返回 True/False
+    :returns: 验证结果（bool 或 GetItemMixIn）
+    """
+    try:
+        unsafe_payload = jwt_decode_payload_without_verify(token)
+        if "uid" not in unsafe_payload or "sub" not in unsafe_payload:
+            raise ParamError("Invalid payload")
+    except (BinasciiError, ParamError, TypeError):
+        return False
+    else:
+        pd = GetItemMixIn(unsafe_payload)
+        try:
+            a = Auth.get((Auth.uid == pd.uid) & (Auth.account == pd.sub))
+        except Auth.DoesNotExist:
+            return False
+        if a:
+            try:
+                payload = jwt_decode(token, config["SECRET_KEY"], pd.sub)
+            except JWTError:
+                return False
+            else:
+                return GetItemMixIn(payload) if dump is True else True
+    return False
+
+
+def record_login(
+    uid: str,
+    account: str,
+    method: str,
+    *,
+    ip: str = "",
+    location: str = "",
+    user_agent: str = "",
+    browser: str = "",
+    os: str = "",
+    device: str = "",
+    fingerprint: str = "",
+) -> None:
+    """写入一条登录历史记录到 LoginRecord 表。
+
+    此函数仅执行数据库写入，不进行任何解析或网络请求。
+    调用方应在后台线程中预先计算好 browser/os/device/location/fingerprint。
+
+    :param uid: 用户 uid
+    :param account: 登录使用的账号
+    :param method: 登录方式（local / oauth2_github / oauth2_gitee / oauth2_qq / oauth2_weibo）
+    :param ip: 客户端 IP
+    :param location: 地理位置
+    :param user_agent: 原始 User-Agent 字符串
+    :param browser: 浏览器名称
+    :param os: 操作系统
+    :param device: 设备类型
+    :param fingerprint: 浏览器指纹哈希
+    """
+    try:
+        LoginRecord.create(
+            uid=uid,
+            account=account,
+            method=method,
+            ip=ip,
+            location=location,
+            user_agent=user_agent,
+            browser=browser,
+            os=os,
+            device=device,
+            fingerprint=fingerprint,
+        )
+        logger.info(
+            f"Login recorded: uid={uid} method={method} "
+            f"browser={browser} os={os} ip={ip} location={location}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to record login: {e}")
+
+
+def list_login_records(uid: str, limit: int = 10) -> List[dict]:
+    """查询用户最近 N 条登录记录。
+
+    :param uid: 用户 uid
+    :param limit: 返回条数，默认 10
+    :returns: 登录记录列表（dict 格式），按时间倒序
+    """
+    rows = (
+        LoginRecord.select()
+        .where(LoginRecord.uid == uid)
+        .order_by(LoginRecord.ctime.desc())
+        .limit(limit)
+    )
+    return [model_to_dict(r) for r in rows]

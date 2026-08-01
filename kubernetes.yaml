@@ -1,0 +1,87 @@
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: passportd
+  labels:
+    app: passportd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: passportd
+  template:
+    metadata:
+      labels:
+        app: passportd
+    spec:
+      containers:
+        - name: passportd
+          image: staugur/passportd:latest
+          imagePullPolicy: IfNotPresent
+          command: ["passportd", "start"]
+          ports:
+            - containerPort: 10030
+          env:
+            # PASSPORT_ENV 决定 is_prod() → 触发 ProdConfig
+            - name: PASSPORT_ENV
+              value: "production"
+            # 以下全部通过 from_prefixed_env(prefix="PASSPORT") 注入
+            - name: PASSPORT_SECRET_KEY
+              value: "change-me-to-a-random-string"
+            - name: PASSPORT_DB_URI
+              value: "psycopg3+pool://user:pass@postgres-svc:5432/passportd?max_connections=20"
+            - name: PASSPORT_REDIS_URI
+              value: "redis://redis-svc:6379/0"
+            - name: PASSPORT_TRUST_PROXY
+              value: "true"
+            - name: PASSPORT_LOG_LEVEL
+              value: "INFO"
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 10030
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 10030
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: passportd
+spec:
+  selector:
+    app: passportd
+  ports:
+    - port: 10030
+      targetPort: 10030
+
+---
+# Traefik IngressRoute
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: passportd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`passport.example.com`)
+      kind: Rule
+      services:
+        - name: passportd
+          port: 10030

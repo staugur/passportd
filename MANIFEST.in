@@ -1,0 +1,2 @@
+recursive-include passportd/templates *
+recursive-include passportd/static *

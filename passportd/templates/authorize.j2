@@ -1,0 +1,82 @@
+{% extends "layout.j2" %}
+{% block title %}授权确认 - Passport{% endblock %}
+
+{% block content %}
+<div class="page-center">
+  <div class="auth-card">
+    <div class="card">
+      <header class="card-header">
+        <p class="card-header-title">
+          <span class="icon-text">
+            <span class="icon has-text-warning"><i class="fa-solid fa-shield-halved"></i></span>
+            <span>授权确认</span>
+          </span>
+        </p>
+      </header>
+      <div class="card-content">
+
+        <div class="notification is-info is-light mb-4">
+          <p class="mb-2">
+            <strong>{{ grant.client.client_name or grant.client.client_id }}</strong> 正在请求访问你的账号权限。
+          </p>
+          <p class="is-size-7 has-text-grey">
+            客户端 ID：<span class="is-family-monospace">{{ grant.client.client_id }}</span>
+          </p>
+        </div>
+
+        <div class="box has-background-success-light">
+          <article class="media">
+            <figure class="media-left">
+              <span class="icon is-large has-text-success">
+                <i class="fa-solid fa-circle-user" style="font-size: 2.5rem;"></i>
+              </span>
+            </figure>
+            <div class="media-content">
+              <div class="content">
+                <p class="is-size-7 has-text-grey">当前登录用户</p>
+                <p class="title is-6 mb-1">{{ g.user.account }}</p>
+                <p class="is-size-7 is-family-monospace has-text-grey">{{ g.user.uid }}</p>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        {% if scope %}
+        <div class="mb-5">
+          <p class="heading has-text-grey mb-2">请求的权限范围</p>
+          <div class="tags">
+            {% for s in scope.split(' ') %}
+              <span class="tag is-success is-light is-medium">
+                <span class="icon"><i class="fa-solid fa-check-circle"></i></span>
+                <span>{{ s }}</span>
+              </span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <form method="post">
+          <div class="field is-grouped is-justify-content-center">
+            <div class="control">
+              <button class="button is-danger is-light" type="submit" name="action" value="deny">
+                <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+                <span>拒绝</span>
+              </button>
+            </div>
+            <div class="control">
+              <button class="button is-primary" type="submit" name="action" value="approve">
+                <span class="icon"><i class="fa-solid fa-check"></i></span>
+                <span>授权</span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <p class="has-text-centered mt-4 is-size-7 has-text-grey">
+          授权后，该应用将能够访问你选择的权限范围内的信息。
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

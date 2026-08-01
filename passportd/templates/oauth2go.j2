@@ -1,0 +1,174 @@
+{% extends "layout.j2" %}
+{% block title %}账号关联 - Passport{% endblock %}
+
+{% block content %}
+<div class="page-center">
+    <div class="auth-card">
+        <div class="card">
+            <header class="card-header">
+                <p class="card-header-title">账号关联</p>
+            </header>
+            <div class="card-content">
+                <p class="has-text-centered has-text-grey is-size-7 mb-4">
+                    你的 {{ provider }} 账号需要关联本地账号
+                </p>
+
+                <div class="box has-background-success-light">
+                    <article class="media">
+                        {% if picture %}
+                        <figure class="media-left">
+                            <p class="image is-48x48">
+                                <img class="is-rounded" src="{{ picture }}" alt="avatar"
+                                    onerror="this.style.display='none'">
+                            </p>
+                        </figure>
+                        {% endif %}
+                        <div class="media-content">
+                            <div class="content">
+                                <p>
+                                    <strong>{{ name or tpid or '未知用户' }}</strong>
+                                    {% if email %}<br><small class="has-text-grey">{{ email }}</small>{% endif %}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="media-right">
+                            <span class="tag is-success is-light">{{ provider }}</span>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="tabs is-toggle is-fullwidth mb-4">
+                    <ul>
+                        <li class="is-active" data-tab="bind">
+                            <a onclick="switchTab('bind')">
+                                <span class="icon is-small"><i class="fa-solid fa-link"></i></span>
+                                <span>绑定已有账号</span>
+                            </a>
+                        </li>
+                        <li data-tab="create">
+                            <a onclick="switchTab('create')">
+                                <span class="icon is-small"><i class="fa-solid fa-user-plus"></i></span>
+                                <span>直接创建账号</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div id="tab-bind" class="tab-content">
+                    <form id="bind-form" onsubmit="return handleSubmit(event, 'bind')">
+                        <input type="hidden" name="key" value="{{ key }}">
+                        <div class="field">
+                            <label class="label">本地账号</label>
+                            <div class="control has-icons-left">
+                                <input class="input" type="text" name="local_account" placeholder="输入你的本地账号" required
+                                    autocomplete="username">
+                                <span class="icon is-small is-left">
+                                    <i class="fa-solid fa-user"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label class="label">密码</label>
+                            <div class="control has-icons-left">
+                                <input class="input" type="password" name="local_password" placeholder="输入密码" required
+                                    autocomplete="current-password">
+                                <span class="icon is-small is-left">
+                                    <i class="fa-solid fa-lock"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <button class="button is-primary is-fullwidth" type="submit">
+                                <strong>绑定并登录</strong>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="tab-create" class="tab-content is-hidden">
+                    <div class="has-text-centered has-text-grey is-size-7 mb-4">
+                        将使用 <strong>{{ provider }}</strong> 的信息自动创建一个新账号并登录
+                    </div>
+                    <form id="create-form" onsubmit="return handleSubmit(event, 'create')">
+                        <input type="hidden" name="key" value="{{ key }}">
+                        <div class="field">
+                            <label class="label">昵称（可选）</label>
+                            <div class="control">
+                                <input class="input" type="text" name="nickname" value="{{ name or '' }}"
+                                    placeholder="输入昵称">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <button class="button is-success is-fullwidth" type="submit">
+                                <strong>创建账号并登录</strong>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="msg" class="has-text-centered mt-3 is-size-7" style="min-height: 1.5rem;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function switchTab(tab) {
+        $('.tabs ul li').removeClass('is-active');
+        $('.tabs ul li[data-tab="' + tab + '"]').addClass('is-active');
+
+        $('#tab-bind').toggleClass('is-hidden', tab !== 'bind');
+        $('#tab-create').toggleClass('is-hidden', tab !== 'create');
+        $('#msg').text('').attr('class', 'has-text-centered mt-3 is-size-7');
+    }
+
+    function showMsg(text, type) {
+        let $msg = $('#msg').text(text).attr('class', 'has-text-centered mt-3 is-size-7');
+        if (type === 'success') {
+            $msg.addClass('has-text-success');
+        } else if (type === 'error') {
+            $msg.addClass('has-text-danger');
+        }
+    }
+
+    function handleSubmit(e, action) {
+        e.preventDefault();
+        let $form = $('#' + action + '-form');
+        let $btn = $form.find('button');
+        let originalHtml = $btn.html();
+        $btn.prop('disabled', true).addClass('is-loading').text('处理中...');
+        showMsg('', '');
+
+        let data = new FormData($form[0]);
+        data.append('action', action);
+
+        $.ajax({
+            url: '{{ url_for("root.front.oauth2go") }}',
+            method: 'POST',
+            data: data,
+            processData: false,
+            contentType: false,
+            success: function (result) {
+                if (result.success) {
+                    showMsg('操作成功，正在跳转...', 'success');
+                    setTimeout(function () {
+                        window.location.href = (result.data && result.data.next) || '/';
+                    }, 800);
+                } else {
+                    showMsg(result.message || '操作失败', 'error');
+                }
+            },
+            error: function () {
+                showMsg('网络错误，请重试', 'error');
+            },
+            complete: function () {
+                $btn.prop('disabled', false).removeClass('is-loading').html(originalHtml);
+            }
+        });
+
+        return false;
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "layout.j2" %}
+{% block title %}注册 - Passport{% endblock %}
+
+{% block content %}
+<div class="page-center">
+    <div class="auth-card">
+        <div class="card">
+            <header class="card-header">
+                <p class="card-header-title">创建账号</p>
+            </header>
+            <div class="card-content">
+                {% if error %}
+                <div class="notification is-danger is-light mb-4">
+                    <button class="delete"></button>
+                    {{ error }}
+                </div>
+                {% endif %}
+
+                <form method="post" action="{{ url_for('root.front.signup') }}">
+                    <div class="field">
+                        <label class="label">账号</label>
+                        <div class="control has-icons-left">
+                            <input class="input" type="text" name="account" placeholder="用户名 / 邮箱 / 手机号"
+                                value="{{ account or '' }}" required autocomplete="username">
+                            <span class="icon is-small is-left">
+                                <i class="fa-solid fa-user"></i>
+                            </span>
+                        </div>
+                        <p class="help">支持用户名、邮箱或手机号格式</p>
+                    </div>
+
+                    <div class="field">
+                        <label class="label">密码</label>
+                        <div class="control has-icons-left">
+                            <input class="input" type="password" name="password" placeholder="至少 6 位密码" required
+                                autocomplete="new-password">
+                            <span class="icon is-small is-left">
+                                <i class="fa-solid fa-lock"></i>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label class="label">确认密码</label>
+                        <div class="control has-icons-left">
+                            <input class="input" type="password" name="repassword" placeholder="再次输入密码" required
+                                autocomplete="new-password">
+                            <span class="icon is-small is-left">
+                                <i class="fa-solid fa-lock"></i>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="field mt-4">
+                        <button class="button is-primary is-fullwidth" type="submit">
+                            <strong>注 册</strong>
+                        </button>
+                    </div>
+                </form>
+
+                <div class="has-text-centered mt-5">
+                    <p class="is-size-7 has-text-grey">
+                        已有账号？
+                        <a href="{{ url_for('root.front.signin') }}" class="has-text-primary">立即登录</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

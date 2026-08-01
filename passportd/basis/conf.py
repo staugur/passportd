@@ -1,0 +1,222 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright 2021 Hiroshi.tao
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+from os.path import join
+from typing import Optional, Dict
+
+from flask import Config as FlaskConfig
+
+from .vars import (
+    PROC_NAME,
+    APP_DIR,
+    LOG_LEVEL_TYPE,
+    ENV_PREFIX,
+    ENV_NAME,
+)
+from .common import is_prod
+
+__all__ = ["config"]
+
+_gen_data_path = lambda f: join(APP_DIR, "data", f)  # type: ignore
+
+
+class BaseConfig:
+    """应用全局基础配置。
+
+    所有配置项均支持通过环境变量 ``PASSPORT_<KEY>`` 覆盖。
+    """
+
+    # 全局配置
+    ENV = "production"
+    DEBUG = False
+    #: 签名、认证密钥，至少14位，建议32位以上。
+    SECRET_KEY: str = "change-me-to-a-random-secret-at-least-32-bytes"
+    #: 监听地址
+    HOST: str = "0.0.0.0"
+    #: 监听端口
+    PORT: int = 10030
+    #: 数据库连接配置，格式 scheme://user:password@host:port/dbname?option=value
+    #: https://docs.peewee-orm.com/en/latest/peewee/db_tools.html
+    #: SQLite 使用 sqlite:///path, 注意是三个斜杠，path如果是绝对路径则是四个斜杠。
+    #: MySQL/MariaDB 使用 mysql+pool://, PostgreSQL 使用 psycopg3+pool://。
+    DB_URI: str = "sqlite:///{}.db".format(_gen_data_path(PROC_NAME))
+    #: Redis 缓存配置
+    #: 格式为 redis://[:password]@host[:port/db]
+    REDIS_URI = "redis://localhost:6379/0"
+    #: 日志配置
+    LOG_LEVEL: LOG_LEVEL_TYPE = "DEBUG"
+    LOG_FILE: Optional[str] = None
+    LOG_DIR: Optional[str] = None
+    #: 全局URL前缀
+    URI_PREFIX: str = "/"
+    #: 是否信任代理
+    #: 如果启用，则会从 X-Forwarded-For 和 X-Real-IP 中获取客户端 IP，否则使用 REMOTE_ADDR 或 REMOTE_HOST 获取。
+    TRUST_PROXY: bool = True
+
+    # OpenID Connect 配置
+    OIDC_RSA_PUBLIC_KEY: str = _gen_data_path("public.pem")
+    OIDC_RSA_PRIVATE_KEY: str = _gen_data_path("private.key")
+    OIDC_RSA_KEY_SIZE: int = 2048
+    OAUTH2_TOKEN_EXPIRES_IN: Dict[str, int] = {"authorization_code": 86400}
+
+    # 上传
+    #: 上传方式，支持 sapic、local，前者是作者的开源图床项目，后者是本地上传
+    UPLOAD_METHOD = "local"
+    #: 本地上传目录，默认是程序所在目录下的 uploads
+    LOCAL_UPLOAD_FOLDER = join(APP_DIR, "uploads")
+    #: Sapic 上传接口和LinkToken，文档是 https://sapic.rtfd.vip
+    SAPIC_APIURL = "https://sapicd.com"
+    SAPIC_LINKTOKEN = ""
+
+    # 邮件
+    #: 邮件发送方式，支持 smtp、sendcloud
+    EMAIL_PROVIDER = ""
+    #: SMTP邮箱服务器
+    ## 发送邮件的邮箱地址
+    SMTP_USER_MAIL: str = ""
+    ## 邮箱用户的密码
+    SMTP_USER_PASSWD: str = ""
+    ## 发送邮件服务器地址
+    SMTP_SERVER: str = ""
+    ## 发送邮件服务器端口，仅支持 SSL 连接
+    SMTP_PORT: int = 587
+    #: SendCloud MAIL
+    SENDCLOUD_API_USER = ""
+    SENDCLOUD_API_KEY = ""
+    SENDCLOUD_MAIL_FROM = ""
+
+    # OAuth2 配置
+    #: GitHub OAuth2 配置
+    GITHUB_CLIENT_ID = ""
+    GITHUB_CLIENT_SECRET = ""
+    GITHUB_CALLBACK_PROXY = None
+
+    #: Gitee OAuth2 配置
+    GITEE_CLIENT_ID = ""
+    GITEE_CLIENT_SECRET = ""
+
+    #: Weibo OAuth2 配置
+    WEIBO_CLIENT_ID = ""
+    WEIBO_CLIENT_SECRET = ""
+
+    #: QQ OAuth2 配置
+    QQ_CLIENT_ID = ""
+    QQ_CLIENT_SECRET = ""
+
+
+class DevConfig(BaseConfig):
+    """开发环境配置。
+
+    开启 DEBUG 模式，使用 Flask 内置 WSGI 服务器，关闭插件认证限制。
+    """
+
+    ENV = "development"
+    DEBUG = True
+    # Flask-PluginKit 配置
+    PLUGINKIT_AUTH_METHOD = "FUNC"
+    PLUGINKIT_AUTH_FUNC = lambda: True
+
+
+class ProdConfig(BaseConfig):
+    """生产环境配置。
+
+    关掉 DEBUG，写入日志文件，增大 RSA 密钥长度，配置 gunicorn 信任代理。
+    """
+
+    ENV = "production"
+    DEBUG = False
+    DB_URI = "psycopg3+pool://user:pwd@postgresql:5432/db?max_connections=20&stale_timeout=300"
+    REDIS_URI = "redis://:pwd@localhost:6379/0"
+    LOG_LEVEL = "INFO"
+    LOG_FILE = "sys.log"
+    LOG_DIR = join(APP_DIR, "logs")
+    OIDC_RSA_KEY_SIZE = 4096
+    #: 生产gunicorn运行配置
+    NO_DAEMON: bool = False
+
+
+def _check_config_value(cfg):
+    """对配置进行完整性校验，不满足条件则抛出 AssertionError。
+
+    校验项包括：
+    - PORT 为整数
+    - DB_URI 格式校验（SQLite 使用 sqlite://，MySQL 使用 mysql+pool:// 连接池，PostgreSQL 使用 psycopg3+pool://）
+    - REDIS_URI 以 ``redis://`` 开头
+    - URI_PREFIX 以 ``/`` 开头
+    - RSA 密钥大小为整数
+    - OAUTH2_TOKEN_EXPIRES_IN 包含 ``authorization_code``
+    - 上传方式和邮件提供商的参数完整性
+
+    :param cfg: Flask Config 实例
+    :type cfg: flask.Config
+    :raises AssertionError: 配置不符合要求时抛出
+    """
+    assert isinstance(cfg, FlaskConfig), "Config must be an instance of flask.Config"
+    assert isinstance(cfg["PORT"], int), "Port must be a integer"
+    assert (
+        len(cfg["SECRET_KEY"]) >= 14
+    ), "SECRET_KEY must be at least 14 bytes (112 bits)"
+    assert cfg["DB_URI"].split("://")[0] in [
+        "sqlite",
+        "mysql+pool",
+        "psycopg3+pool",
+    ], "DB_URI must start with sqlite, mysql+pool, or psycopg3+pool"
+    assert cfg["REDIS_URI"].startswith("redis://"), "REDIS_URI must start with redis://"
+    assert cfg["URI_PREFIX"].startswith("/"), "URI_PREFIX must start with /"
+
+    assert isinstance(
+        cfg["OIDC_RSA_KEY_SIZE"], int
+    ), "OIDC_RSA_KEY_SIZE must be an integer"
+    assert (
+        isinstance(cfg["OAUTH2_TOKEN_EXPIRES_IN"], dict)
+        and "authorization_code" in cfg["OAUTH2_TOKEN_EXPIRES_IN"]
+    ), "OAUTH2_TOKEN_EXPIRES_IN must be a dict and contain 'authorization_code' key"
+
+    assert cfg["UPLOAD_METHOD"] in [
+        "sapic",
+        "local",
+    ], "UPLOAD_METHOD must be 'sapic' or 'local'"
+    if cfg["UPLOAD_METHOD"] == "sapic":
+        assert (
+            cfg["SAPIC_APIURL"] != None
+        ), "SAPIC_APIURL must be set when UPLOAD_METHOD is 'sapic'"
+
+    assert cfg["EMAIL_PROVIDER"] in [
+        "",
+        "smtp",
+        "sendcloud",
+    ], "EMAIL_PROVIDER must be 'smtp' or 'sendcloud'"
+    if cfg["EMAIL_PROVIDER"] == "smtp":
+        assert (
+            cfg["SMTP_USER_MAIL"]
+            and cfg["SMTP_USER_PASSWD"]
+            and cfg["SMTP_SERVER"]
+            and isinstance(cfg["SMTP_PORT"], int)
+        ), "SMTP_USER_MAIL, SMTP_USER_PASSWD, SMTP_SERVER and SMTP_PORT must be set when EMAIL_PROVIDER is 'smtp'"
+    elif cfg["EMAIL_PROVIDER"] == "sendcloud":
+        assert (
+            cfg["SENDCLOUD_API_USER"]
+            and cfg["SENDCLOUD_API_KEY"]
+            and cfg["SENDCLOUD_MAIL_FROM"]
+        ), "SENDCLOUD_API_USER, SENDCLOUD_API_KEY and SENDCLOUD_MAIL_FROM must be set when EMAIL_PROVIDER is 'sendcloud'"
+
+
+config = FlaskConfig(APP_DIR)
+config.from_object(ProdConfig if is_prod() else DevConfig)
+config.from_envvar(ENV_NAME, silent=True)
+config.from_prefixed_env(prefix=ENV_PREFIX)
+_check_config_value(config)

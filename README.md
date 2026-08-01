@@ -1,71 +1,99 @@
-# Passport
-Unified authentication and authorization management SSO system for SaintIC Org.
+# passportd
 
+认证、授权、统一登录 — 基于 Flask 的 SSO 单点登录服务。
 
-# Docuement
-[Passport Docs](https://docs.saintic.com/passport/)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-passportd.readthedocs.io-brightgreen)](https://passportd.readthedocs.io/)
 
+## 核心功能
 
-## Environment
-> 1. Python Version: 2.7
-> 2. Web Framework: Flask
-> 3. Required Modules for Python
-> 4. MySQL, Redis
+- **本地账号系统**：支持用户名、手机号、邮箱注册与登录
+- **OAuth2 第三方登录**：内置 GitHub 和 Gitee OAuth2 登录插件
+- **OpenID Connect Provider**：支持 OIDC Server 模式，可作为独立 SSO 服务
+- **插件扩展**：基于 Flask-PluginKit 的插件架构，方便扩展更多登录方式
+- **多数据库支持**：SQLite（开发） / MySQL / PostgreSQL（生产）
+- **JWT 认证**：支持 HMAC-SHA256 和 RS256 双算法 JWT 签名
+- **RESTful API**：提供完整的注册、登录、用户信息、OIDC 客户端管理接口
 
+## 快速开始
 
-## Usage
+### pip 安装
 
-```
-1. 依赖:
-    1.0 yum install -y gcc gcc-c++ python-devel libffi-devel openssl-devel mysql-devel
-    1.1 git clone https://github.com/staugur/passport && cd passport
-    1.2 pip install -r requirements.txt
-    1.3 MySQL需要导入 `misc/passport.sql` 数据库文件
+```shell
+# 安装
+pip install passportd
 
-2. 修改 `src/config.py` 中配置项, getenv函数后是环境变量及其默认值(优先环境变量，其次默认值)。
-    2.1 修改GLOBAL全局配置项(主要是端口、日志级别)
-    2.2 修改MODULES核心配置项账号认证模块的MYSQL信息
-    2.3 修改PLUGINS插件配置项(主要是第三方登录)
+# 确保 Redis 已启动
 
-3. 运行:
-    3.1 python main.py        #开发模式
-    3.2 sh online_gunicorn.sh #生产模式
-
-4. 创建管理员:
-    4.1 python cli.py --createSuperuser #根据提示输入管理员邮箱密码完成创建
+# 启动
+passportd run
 ```
 
+访问 http://localhost:10030/ 即可看到登录页面。
 
-## Cli
+### Docker 运行
 
+```shell
+# 拉取镜像
+docker pull staugur/passportd:latest
+
+# 启动容器（需要先启动 Redis）
+docker run -d \
+  --name passportd \
+  -p 10030:10030 \
+  -e PASSPORT_REDIS_URI="redis://:pwd@redis:6379/0" \
+  -e PASSPORT_DB_URI="sqlite:///app/data/passportd.db" \
+  -e PASSPORT_ENV="production" \
+  -v passportd-data:/app/data \
+  staugur/passportd:latest
 ```
-cd src
-python cli.py #下面是帮助信息
-usage: cli.py [-h] [--refresh_loginlog] [--refresh_clicklog]
-              [--createSuperuser]
 
-optional arguments:
-  -h, --help          show this help message and exit
-  --refresh_loginlog  刷入登录日志
-  --refresh_clicklog  刷入访问日志
-  --createSuperuser   创建管理员用户
+也可以通过 `docker-compose.yml` 一键启动（包含 Redis）：
+
+```yaml
+version: "3.8"
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  passportd:
+    image: staugur/passportd:latest
+    restart: unless-stopped
+    ports:
+      - "10030:10030"
+    environment:
+      - PASSPORT_ENV=production
+      - PASSPORT_REDIS_URI=redis://redis:6379/0
+      - PASSPORT_DB_URI=sqlite:///app/data/passportd.db
+    volumes:
+      - passportd-data:/app/data
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:
+  passportd-data:
 ```
 
+## 文档
 
-## TODO
+完整文档请访问 [passportd.readthedocs.io](https://passportd.readthedocs.io/)
 
-- redis sid存登录时设备信息
+本地构建文档：
 
-- ~~绑定邮箱手机、手机登录~~
+```shell
+pip install -r requirements/docs.txt
+cd docs && make html
+```
 
-- 用户行为记录
+## 许可证
 
-- 系统管理
+Apache License 2.0
 
-- 安全
+## 备注
 
-
-## Design
-![Design][1]
-
-[1]: ./misc/sso.png
+沿用 1.x 设计思路，使用 OIDC 标准协议重构实现，除核心代码外大部分使用 AI 生成。

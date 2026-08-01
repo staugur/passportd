@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="SaintIC">
+    <title>{% block title %}Passport{% endblock %}</title>
+    <link href="{{ url_for('static', filename='img/favicon.png') }}" rel="icon" type="image/x-icon" />
+    <link href="{{ url_for('static', filename='img/favicon.png') }}" rel="shortcut icon" type="image/x-icon" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bulma-v1.0.4.min.css') }}">
+    <style>
+        :root {
+            --green-50: #f0fdf4;
+            --green-100: #dcfce7;
+            --green-500: #22c55e;
+            --green-600: #16a34a;
+            --green-700: #15803d;
+        }
+
+        .navbar {
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        .navbar.is-green {
+            background-color: #fff;
+            border-bottom: 2px solid var(--green-100);
+        }
+
+        .navbar.is-green .navbar-brand .navbar-item {
+            color: var(--green-700);
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        .navbar.is-green .navbar-item {
+            color: #4a5568;
+        }
+
+        .navbar.is-green .navbar-item:hover {
+            color: var(--green-600);
+        }
+
+        .navbar.is-green .button.is-primary {
+            background-color: var(--green-600);
+        }
+
+        .navbar.is-green .button.is-primary:hover {
+            background-color: var(--green-700);
+        }
+
+        .hero.is-green {
+            background: linear-gradient(135deg, var(--green-600) 0%, var(--green-700) 100%);
+        }
+
+        .button.is-primary {
+            background-color: var(--green-600);
+        }
+
+        .button.is-primary:hover {
+            background-color: var(--green-700);
+        }
+
+        .button.is-primary.is-outlined {
+            border-color: var(--green-600);
+            color: var(--green-600);
+        }
+
+        .button.is-primary.is-outlined:hover {
+            background-color: var(--green-50);
+            color: var(--green-700);
+        }
+
+        .notification.is-primary {
+            background-color: var(--green-50);
+            color: var(--green-700);
+            border: 1px solid var(--green-100);
+        }
+
+        .has-text-primary,
+        a.has-text-primary {
+            color: var(--green-600) !important;
+        }
+
+        a.has-text-primary:hover {
+            color: var(--green-700) !important;
+        }
+
+        .tabs.is-toggle li.is-active a {
+            background-color: var(--green-600) !important;
+            border-color: var(--green-600) !important;
+        }
+
+        .input:focus,
+        .textarea:focus,
+        .select select:focus {
+            border-color: var(--green-500) !important;
+            box-shadow: 0 0 0 0.125em rgba(34, 197, 94, 0.25) !important;
+        }
+
+        .oauth-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            color: #9ca3af;
+            margin: 1.5rem 0;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .divider span {
+            padding: 0 1rem;
+            font-size: 0.85rem;
+        }
+
+        .page-center {
+            min-height: calc(100vh - 3.5rem);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f9fafb;
+        }
+
+        .auth-card {
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .auth-card .card {
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+        }
+
+        .auth-card .card-header {
+            box-shadow: none;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        .auth-card .card-header-title {
+            font-size: 1.15rem;
+            color: #1f2937;
+        }
+
+        .profile-avatar {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--green-100);
+        }
+
+        .footer.is-light {
+            background-color: #f9fafb;
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+    <nav class="navbar is-green" role="navigation" aria-label="main navigation">
+        <div class="container">
+            <div class="navbar-brand">
+                <a class="navbar-item" href="{{ url_for('root.front.index') }}">
+                    <strong>Passport</strong>
+                </a>
+            </div>
+            <div class="navbar-menu is-active">
+                <div class="navbar-end">
+                    {% if g.signin %}
+                    <a class="navbar-item" href="{{ url_for('root.front.profile') }}">
+                        <span class="icon"><i class="fa-solid fa-user"></i></span>
+                        <span>{{ g.user.account }}</span>
+                    </a>
+                    <a class="navbar-item" href="{{ url_for('root.front.oidc_client') }}">
+                        <span class="icon"><i class="fa-solid fa-server"></i></span>
+                        <span>OIDC Client</span>
+                    </a>
+                    <div class="navbar-item">
+                        <a class="button is-light" href="{{ url_for('root.front.signout') }}">登出</a>
+                    </div>
+                    {% else %}
+                    <a class="navbar-item" href="{{ url_for('root.front.signin') }}">登录</a>
+                    <div class="navbar-item">
+                        <a class="button is-primary" href="{{ url_for('root.front.signup') }}">
+                            <strong>注册</strong>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer is-light mt-6">
+        <div class="content has-text-centered">
+            <p class="has-text-grey is-size-7">&copy; <span id="footer-year"></span> Passport. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/fontawesome.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/solid.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/brands.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jquery-v3.7.1.min.js') }}"></script>
+    <script>
+        // 时间戳格式化工具：Unix 秒 → 本地时间 "YYYY-MM-DD HH:mm:ss"，0/null 显示 —
+        function formatTimestamp(ts) {
+            if (!ts || ts <= 0) return '—';
+            let d = new Date(ts * 1000);
+            let yyyy = d.getFullYear();
+            let mm = String(d.getMonth() + 1).padStart(2, '0');
+            let dd = String(d.getDate()).padStart(2, '0');
+            let hh = String(d.getHours()).padStart(2, '0');
+            let mi = String(d.getMinutes()).padStart(2, '0');
+            let ss = String(d.getSeconds()).padStart(2, '0');
+            return yyyy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi + ':' + ss;
+        }
+
+        $(function () {
+            // 设置 footer 年份
+            $('#footer-year').text(new Date().getFullYear());
+
+            // 批量格式化时间戳占位元素
+            $('.js-timestamp').each(function () {
+                let $el = $(this);
+                let ts = parseInt($el.data('ts'), 10);
+                $el.text(formatTimestamp(ts));
+            });
+
+            // 关闭通知
+            $(document).on('click', '.notification .delete', function () {
+                $(this).parent().remove();
+            });
+        });
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+
+</html>

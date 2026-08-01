@@ -1,0 +1,504 @@
+{% extends "layout.j2" %}
+{% block title %}个人主页 - Passport{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="container" style="max-width: 800px;">
+        {# 绑定/操作结果消息 #}
+        {% if msg %}
+        <div class="notification is-{{ msg_type }} is-light">
+            <button class="delete"></button>
+            {{ msg }}
+        </div>
+        {% endif %}
+
+        {# 用户信息卡片 #}
+        <div class="box">
+            <div class="media">
+                <figure class="media-left">
+                    <p class="image is-96x96">
+                        {% if profile.avatar %}
+                        <img class="profile-avatar" src="{{ profile.avatar }}" alt="avatar">
+                        {% else %}
+                        <span class="icon is-large has-text-grey-light" style="width: 96px; height: 96px;">
+                            <i class="fa-solid fa-circle-user" style="font-size: 96px;"></i>
+                        </span>
+                        {% endif %}
+                    </p>
+                </figure>
+                <div class="media-content">
+                    <div class="content">
+                        <div class="is-flex is-align-items-center mb-1" style="gap: 0.75rem;">
+                            <p class="title is-4 mb-0">
+                                {{ profile.nickname or profile.uid[:8] }}
+                            </p>
+                            <button class="button is-small is-primary is-light js-open-edit">
+                                <span class="icon is-small"><i class="fa-solid fa-pen-to-square"></i></span>
+                                <span>编辑资料</span>
+                            </button>
+                            <button class="button is-small is-primary is-light js-open-change-pwd">
+                                <span class="icon is-small"><i class="fa-solid fa-key"></i></span>
+                                <span>修改密码</span>
+                            </button>
+                        </div>
+                        <p class="subtitle is-6 has-text-grey mb-2">
+                            @{{ profile.uid }}
+                        </p>
+                        {% if profile.bio %}
+                        <p class="mb-2">{{ profile.bio }}</p>
+                        {% endif %}
+                        <div class="tags">
+                            {% if profile.gender == 1 %}
+                            <span class="tag is-link is-light"><i class="fa-solid fa-mars mr-1"></i>男</span>
+                            {% elif profile.gender == 0 %}
+                            <span class="tag is-danger is-light"><i class="fa-solid fa-venus mr-1"></i>女</span>
+                            {% endif %}
+                            {% if profile.location %}
+                            <span class="tag is-info is-light"><i class="fa-solid fa-location-dot mr-1"></i>{{
+                                profile.location }}</span>
+                            {% endif %}
+                            {% if profile.role %}
+                            {% for r in profile.role.split(' ') %}
+                            <span class="tag is-success is-light">{{ r }}</span>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# 基本信息 #}
+        <div class="box">
+            <h2 class="title is-5 mb-4">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-circle-info"></i></span>
+                    <span>基本信息</span>
+                </span>
+            </h2>
+            <div class="columns is-multiline is-mobile">
+                <div class="column is-half-mobile is-one-third-tablet">
+                    <p class="heading has-text-grey">用户 ID</p>
+                    <p class="is-size-7 is-family-monospace">{{ profile.uid }}</p>
+                </div>
+                <div class="column is-half-mobile is-one-third-tablet">
+                    <p class="heading has-text-grey">状态</p>
+                    <p>
+                        {% if profile.status == 1 %}
+                        <span class="tag is-success is-light">正常</span>
+                        {% else %}
+                        <span class="tag is-danger is-light">禁用</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="column is-half-mobile is-one-third-tablet">
+                    <p class="heading has-text-grey">注册时间</p>
+                    {% if profile.ctime %}
+                    <p class="is-size-7 js-timestamp" data-ts="{{ profile.ctime }}"></p>
+                    {% else %}
+                    <p class="has-text-grey-light is-size-7">—</p>
+                    {% endif %}
+                </div>
+                <div class="column is-half-mobile is-one-third-tablet">
+                    <p class="heading has-text-grey">最后更新</p>
+                    {% if profile.mtime %}
+                    <p class="is-size-7 js-timestamp" data-ts="{{ profile.mtime }}"></p>
+                    {% else %}
+                    <p class="has-text-grey-light is-size-7">—</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# 绑定账号列表 #}
+        <div class="box">
+            <h2 class="title is-5 mb-4">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-link"></i></span>
+                    <span>绑定账号</span>
+                </span>
+            </h2>
+            {% if accounts %}
+            <div class="table-container">
+                <table class="table is-fullwidth is-hoverable">
+                    <thead>
+                        <tr>
+                            <th>账号</th>
+                            <th>类型</th>
+                            <th>绑定时间</th>
+                            <th>第三方 ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for acct in accounts %}
+                        <tr>
+                            <td>
+                                <span class="is-size-7 is-family-monospace">{{ acct.account }}</span>
+                            </td>
+                            <td>
+                                {% if acct.classify == 'username' %}
+                                <span class="tag is-info is-light">用户名</span>
+                                {% elif acct.classify == 'email' %}
+                                <span class="tag is-warning is-light">邮箱</span>
+                                {% elif acct.classify == 'mobile' %}
+                                <span class="tag is-link is-light">手机号</span>
+                                {% elif acct.classify == '3rd' %}
+                                <span class="tag is-success is-light">第三方</span>
+                                {% else %}
+                                <span class="tag is-light">{{ acct.classify }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="is-size-7 js-timestamp" data-ts="{{ acct.ctime }}"></td>
+                            <td class="is-size-7">
+                                {% if acct.tpid %}
+                                <span class="is-family-monospace">{{ acct.tpid }}</span>
+                                {% else %}
+                                <span class="has-text-grey-light">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="has-text-centered has-text-grey py-4">
+                <span class="icon is-large"><i class="fa-solid fa-circle-exclamation"></i></span>
+                <p>暂无绑定的账号信息</p>
+            </div>
+            {% endif %}
+        </div>
+
+        {# 登录历史 #}
+        <div class="box">
+            <h2 class="title is-5 mb-4">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                    <span>最近登录</span>
+                </span>
+            </h2>
+            {% if login_records %}
+            <div class="table-container">
+                <table class="table is-fullwidth is-hoverable">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>方式</th>
+                            <th>IP</th>
+                            <th>地点</th>
+                            <th>设备</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rec in login_records %}
+                        <tr>
+                            <td class="is-size-7 js-timestamp" data-ts="{{ rec.ctime }}"></td>
+                            <td>
+                                {% if rec.method == 'local' %}
+                                <span class="tag is-info is-light">账号密码</span>
+                                {% else %}
+                                <span class="tag is-light">{{ rec.method }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="is-size-7 is-family-monospace">{{ rec.ip or '—' }}</span>
+                            </td>
+                            <td>
+                                <span class="is-size-7">{{ rec.location or '—' }}</span>
+                            </td>
+                            <td>
+                                <span class="is-size-7" title="{{ rec.user_agent or '' }}">
+                                    {{ rec.browser or '' }} {{ rec.os or '' }}
+                                    {% if rec.device == 'Mobile' %}
+                                    <span class="tag is-warning is-light is-small ml-1">手机</span>
+                                    {% elif rec.device == 'Tablet' %}
+                                    <span class="tag is-link is-light is-small ml-1">平板</span>
+                                    {% endif %}
+                                </span>
+                                {% if not rec.browser and not rec.os %}
+                                <span class="has-text-grey-light is-size-7">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="has-text-centered has-text-grey py-4">
+                <span class="icon is-large"><i class="fa-solid fa-clock"></i></span>
+                <p>暂无登录记录</p>
+            </div>
+            {% endif %}
+        </div>
+
+        {# 绑定第三方登录 #}
+        <div class="box">
+            <h2 class="title is-5 mb-4">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-plug"></i></span>
+                    <span>绑定第三方登录</span>
+                </span>
+            </h2>
+            {% if oauth2_providers %}
+            <p class="mb-3 has-text-grey is-size-7">绑定第三方账号后，可使用该平台账号快捷登录</p>
+            <div class="buttons">
+                {% for prov in oauth2_providers %}
+                <a href="{{ prov.endpoint }}" class="button {{ prov.color or 'is-light' }}">
+                    <span class="icon">
+                        <i class="{{ prov.icon }}"></i>
+                    </span>
+                    <span>{{ prov.provider }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="has-text-grey is-size-7">暂无可用的第三方登录提供商</p>
+            {% endif %}
+        </div>
+
+
+    </div>
+</section>
+
+{# 编辑资料模态框 #}
+<div class="modal" id="edit-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-pen-to-square"></i></span>
+                    <span>编辑个人资料</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <form method="POST" action="{{ url_for('root.front.profile') }}">
+            <section class="modal-card-body">
+                {# 昵称 #}
+                <div class="field">
+                    <label class="label">昵称</label>
+                    <div class="control">
+                        <input class="input" type="text" name="nickname" value="{{ profile.nickname or '' }}"
+                            placeholder="输入昵称" maxlength="64">
+                    </div>
+                </div>
+
+                {# 简介 #}
+                <div class="field">
+                    <label class="label">简介</label>
+                    <div class="control">
+                        <textarea class="textarea" name="bio" rows="3" placeholder="简单介绍自己"
+                            maxlength="500">{{ profile.bio or '' }}</textarea>
+                    </div>
+                </div>
+
+                {# 性别 #}
+                <div class="field">
+                    <label class="label">性别</label>
+                    <div class="control">
+                        <div class="select is-fullwidth">
+                            <select name="gender">
+                                <option value="2" {% if profile.gender==2 %}selected{% endif %}>保密</option>
+                                <option value="1" {% if profile.gender==1 %}selected{% endif %}>男</option>
+                                <option value="0" {% if profile.gender==0 %}selected{% endif %}>女</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {# 地区 #}
+                <div class="field">
+                    <label class="label">地区</label>
+                    <div class="control">
+                        <input class="input" type="text" name="location" value="{{ profile.location or '' }}"
+                            placeholder="例如：北京" maxlength="64">
+                    </div>
+                </div>
+
+                {# 头像 URL #}
+                <div class="field">
+                    <label class="label">头像 URL</label>
+                    <div class="control">
+                        <input class="input" type="url" name="avatar" value="{{ profile.avatar or '' }}"
+                            placeholder="https://example.com/avatar.png" maxlength="512">
+                    </div>
+                    <p class="help">输入头像图片的完整 URL 地址</p>
+                </div>
+            </section>
+            <footer class="modal-card-foot">
+                <div class="buttons">
+                    <button type="submit" class="button is-primary">
+                        <span class="icon"><i class="fa-solid fa-check"></i></span>
+                        <span>保存修改</span>
+                    </button>
+                    <button type="button" class="button js-close-edit">取消</button>
+                </div>
+            </footer>
+        </form>
+    </div>
+</div>
+
+{# 修改密码模态框 #}
+<div class="modal" id="change-pwd-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-key"></i></span>
+                    <span>修改密码</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body">
+            <div id="change-pwd-msg" class="mb-3" style="display:none;"></div>
+            <div class="field">
+                <label class="label">当前密码</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="password" id="old-password" placeholder="输入当前密码">
+                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">新密码</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="password" id="new-password" placeholder="输入新密码（6-128位）">
+                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">确认新密码</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="password" id="repassword" placeholder="再次输入新密码">
+                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
+                </div>
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div class="buttons">
+                <button type="button" class="button is-primary" id="change-pwd-submit">
+                    <span class="icon"><i class="fa-solid fa-check"></i></span>
+                    <span>确认修改</span>
+                </button>
+                <button type="button" class="button js-close-change-pwd">取消</button>
+            </div>
+        </footer>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    $(function () {
+        let $modal = $('#edit-modal');
+
+        // 打开编辑模态框
+        $('.js-open-edit').on('click', function () {
+            $modal.addClass('is-active');
+        });
+
+        // 关闭模态框
+        $('.js-close-edit, #edit-modal .delete, #edit-modal .modal-background').on('click', function () {
+            $modal.removeClass('is-active');
+        });
+
+        // ESC 关闭
+        $(document).on('keydown', function (e) {
+            if (e.key === 'Escape' && $modal.hasClass('is-active')) {
+                $modal.removeClass('is-active');
+            }
+        });
+    });
+
+    // =========================================================
+    // 修改密码
+    // =========================================================
+    let $pwdModal = $('#change-pwd-modal');
+    let $pwdMsg = $('#change-pwd-msg');
+    let $pwdSubmit = $('#change-pwd-submit');
+
+    function showPwdMsg(msg, type) {
+        let cls = type === 'success' ? 'is-success' : 'is-danger';
+        $pwdMsg.removeClass('is-success is-danger').addClass(cls).text(msg).show();
+    }
+
+    // 打开修改密码
+    $('.js-open-change-pwd').on('click', function () {
+        $pwdModal.addClass('is-active');
+        $('#old-password').val('');
+        $('#new-password').val('');
+        $('#repassword').val('');
+        $pwdMsg.hide();
+        $pwdSubmit.prop('disabled', false);
+    });
+
+    // 关闭修改密码
+    function closePwdModal() {
+        $pwdModal.removeClass('is-active');
+    }
+    $('.js-close-change-pwd, #change-pwd-modal .delete, #change-pwd-modal .modal-background').on('click', closePwdModal);
+
+    // 提交修改密码
+    $pwdSubmit.on('click', function () {
+        let oldPwd = $('#old-password').val().trim();
+        let newPwd = $('#new-password').val().trim();
+        let rePwd = $('#repassword').val().trim();
+
+        if (!oldPwd || !newPwd || !rePwd) {
+            showPwdMsg('请填写所有密码字段', 'error');
+            return;
+        }
+        if (newPwd.length < 6) {
+            showPwdMsg('新密码至少需要6个字符', 'error');
+            return;
+        }
+        if (newPwd !== rePwd) {
+            showPwdMsg('两次输入的新密码不一致', 'error');
+            return;
+        }
+        if (oldPwd === newPwd) {
+            showPwdMsg('新密码不能与当前密码相同', 'error');
+            return;
+        }
+
+        $pwdSubmit.prop('disabled', true).addClass('is-loading').text('修改中...');
+
+        $.ajax({
+            url: '{{ url_for("root.api.change_pwd") }}',
+            method: 'POST',
+            data: {
+                old_password: oldPwd,
+                new_password: newPwd,
+                repassword: rePwd
+            },
+            success: function (res) {
+                if (!res.success) {
+                    showPwdMsg(res.message || '修改失败', 'error');
+                    $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
+                    return;
+                }
+                showPwdMsg('密码修改成功，即将跳转到登录页...', 'success');
+                // 跳转到登出页面（服务端清除 sid cookie）然后重新登录
+                setTimeout(function () {
+                    window.location.href = '{{ url_for("root.front.signout") }}';
+                }, 1500);
+            },
+            error: function () {
+                showPwdMsg('网络异常，请重试', 'error');
+                $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
+            }
+        });
+    });
+
+    // ESC 关闭密码弹窗
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $pwdModal.hasClass('is-active')) {
+            closePwdModal();
+        }
+    });
+</script>
+{% endblock %}

@@ -1,7 +1,0 @@
-{%- if request.args.sso %}
-    {% set url = url_for('oauth2_coding.login', sso=request.args.sso) %}
-{%- else %}
-    {% set url = url_for('oauth2_coding.login') %}
-{%- endif -%}
-<!--<a href="{{ url }}" title="使用Coding账号登录"><img src="/static/images/coding.png" class="socialImg" /></a>&nbsp;-->
-<a href="{{ url }}" title="使用Coding账号登录"><i class="saintic-icon saintic-icon-coding"></i></a>&nbsp;

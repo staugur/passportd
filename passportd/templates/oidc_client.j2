@@ -1,0 +1,427 @@
+{% extends "layout.j2" %}
+{% block title %}OIDC Client - Passport{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container" style="max-width: 900px;">
+
+    {# 页头 #}
+    <div class="is-flex is-align-items-center is-justify-content-space-between mb-5">
+      <div>
+        <h1 class="title is-4 mb-1">
+          <span class="icon-text">
+            <span class="icon"><i class="fa-solid fa-server"></i></span>
+            <span>OIDC Client</span>
+          </span>
+        </h1>
+        <p class="subtitle is-6 has-text-grey mb-0">管理你的 OpenID Connect 客户端应用</p>
+      </div>
+      <button class="button is-primary js-open-create">
+        <span class="icon"><i class="fa-solid fa-plus"></i></span>
+        <span>创建客户端</span>
+      </button>
+    </div>
+
+    {# 加载/错误提示 #}
+    <div id="loading-notice" class="has-text-centered py-6 is-hidden">
+      <span class="icon is-large has-text-grey-light"><i class="fa-solid fa-spinner fa-pulse fa-2x"></i></span>
+      <p class="has-text-grey mt-2">加载中...</p>
+    </div>
+
+    <div id="error-notice" class="notification is-danger is-light is-hidden">
+      <button class="delete"></button>
+      <span id="error-msg"></span>
+    </div>
+
+    {# 客户端列表 #}
+    <div id="client-list"></div>
+
+  </div>
+</section>
+
+{# 创建/编辑模态框 #}
+<div class="modal" id="form-modal">
+  <div class="modal-background"></div>
+  <div class="modal-card">
+    <header class="modal-card-head">
+      <p class="modal-card-title" id="form-modal-title">
+        <span class="icon-text">
+          <span class="icon"><i class="fa-solid fa-plus"></i></span>
+          <span>创建 OIDC 客户端</span>
+        </span>
+      </p>
+      <button class="delete" aria-label="close"></button>
+    </header>
+    <form id="client-form">
+      <section class="modal-card-body">
+        {# client_id 隐藏域（编辑模式时填充） #}
+        <input type="hidden" id="form-client-id" name="client_id" value="">
+
+        <div class="field">
+          <label class="label">应用名称 <span class="has-text-danger">*</span></label>
+          <div class="control">
+            <input class="input" type="text" id="form-name" name="name" placeholder="例如：My Awesome App" maxlength="50" required>
+          </div>
+          <p class="help">仅支持小写字母、数字和短横线</p>
+        </div>
+
+        <div class="field">
+          <label class="label">回调地址 <span class="has-text-danger">*</span></label>
+          <div class="control">
+            <input class="input" type="url" id="form-redirect-uri" name="redirect_uri" placeholder="https://example.com/callback" required>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">主页</label>
+          <div class="control">
+            <input class="input" type="url" id="form-homepage" name="homepage" placeholder="https://example.com">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">授权范围</label>
+          <div class="control">
+            <label class="checkbox mr-4">
+              <input type="checkbox" name="scope" value="openid" checked disabled> openid（必选）
+            </label>
+            <label class="checkbox mr-4">
+              <input type="checkbox" name="scope" value="profile"> profile
+            </label>
+            <label class="checkbox mr-4">
+              <input type="checkbox" name="scope" value="email"> email
+            </label>
+            <label class="checkbox mr-4">
+              <input type="checkbox" name="scope" value="role"> role
+            </label>
+          </div>
+          <p class="help">选择允许客户端访问的权限范围</p>
+        </div>
+
+        <div class="field">
+          <label class="label">简介</label>
+          <div class="control">
+            <textarea class="textarea" id="form-bio" name="bio" rows="2" placeholder="简单描述应用功能" maxlength="500"></textarea>
+          </div>
+        </div>
+      </section>
+      <footer class="modal-card-foot">
+        <div class="buttons">
+          <button type="submit" class="button is-primary" id="form-submit-btn">
+            <span class="icon"><i class="fa-solid fa-check"></i></span>
+            <span>确认创建</span>
+          </button>
+          <button type="button" class="button js-close-form">取消</button>
+        </div>
+      </footer>
+    </form>
+  </div>
+</div>
+
+{# 删除确认模态框 #}
+<div class="modal" id="delete-modal">
+  <div class="modal-background"></div>
+  <div class="modal-card">
+    <header class="modal-card-head">
+      <p class="modal-card-title">
+        <span class="icon-text">
+          <span class="icon has-text-danger"><i class="fa-solid fa-triangle-exclamation"></i></span>
+          <span>确认删除</span>
+        </span>
+      </p>
+      <button class="delete" aria-label="close"></button>
+    </header>
+    <section class="modal-card-body">
+      <p>确定要删除客户端 <strong id="delete-client-name"></strong> 吗？</p>
+      <p class="has-text-grey is-size-7 mt-2">此操作不可撤销，该客户端的所有已签发 Token 将同时失效。</p>
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button is-danger" id="confirm-delete-btn">确认删除</button>
+      <button class="button js-close-delete">取消</button>
+    </footer>
+  </div>
+</div>
+
+{# 详情模态框 #}
+<div class="modal" id="detail-modal">
+  <div class="modal-background"></div>
+  <div class="modal-card">
+    <header class="modal-card-head">
+      <p class="modal-card-title">
+        <span class="icon-text">
+          <span class="icon"><i class="fa-solid fa-circle-info"></i></span>
+          <span>客户端详情</span>
+        </span>
+      </p>
+      <button class="delete" aria-label="close"></button>
+    </header>
+    <section class="modal-card-body" id="detail-content"></section>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+$(function () {
+  let $listEl = $('#client-list');
+  let $loadingEl = $('#loading-notice');
+  let $errorEl = $('#error-notice');
+  let $errorMsgEl = $('#error-msg');
+  let $formModal = $('#form-modal');
+  let $deleteModal = $('#delete-modal');
+  let $detailModal = $('#detail-modal');
+  let deleteClientId = null;
+  let clientsCache = [];
+
+  // --- 通用：关闭 error 通知 ---
+  $errorEl.find('.delete').on('click', function () {
+    $errorEl.addClass('is-hidden');
+  });
+
+  // --- 通用：关闭任意模态框 ---
+  function closeAllModals() {
+    $formModal.add($deleteModal).add($detailModal).removeClass('is-active');
+  }
+
+  $(document).on('keydown', function (e) {
+    if (e.key === 'Escape') closeAllModals();
+  });
+
+  $(document).on('click', '.modal-background, .modal .delete, .js-close-form, .js-close-delete', function () {
+    closeAllModals();
+  });
+
+  // --- 表单相关 ---
+  function resetForm() {
+    $('#form-client-id').val('');
+    $('#form-name').val('');
+    $('#form-redirect-uri').val('');
+    $('#form-homepage').val('');
+    $('input[name="scope"]').prop('checked', false).filter('[value="openid"]').prop('checked', true);
+    $('#form-bio').val('');
+  }
+
+  function setFormMode(isEdit, client) {
+    resetForm();
+    if (isEdit && client) {
+      $('#form-modal-title').html('<span class="icon-text"><span class="icon"><i class="fa-solid fa-pen-to-square"></i></span><span>编辑 OIDC 客户端</span></span>');
+      $('#form-submit-btn').html('<span class="icon"><i class="fa-solid fa-check"></i></span><span>保存修改</span>');
+      $('#form-client-id').val(client.client_id || '');
+      $('#form-name').val(client.name || '');
+      $('#form-redirect-uri').val(client.redirect_uri || '');
+      $('#form-homepage').val(client.homepage || '');
+      // 根据客户端已保存的 scope 勾选对应复选框
+      let savedScopes = (client.scope || 'openid').split(' ');
+      $('input[name="scope"]').each(function () {
+        $(this).prop('checked', savedScopes.indexOf($(this).val()) !== -1);
+      });
+      $('#form-bio').val(client.bio || '');
+    } else {
+      $('#form-modal-title').html('<span class="icon-text"><span class="icon"><i class="fa-solid fa-plus"></i></span><span>创建 OIDC 客户端</span></span>');
+      $('#form-submit-btn').html('<span class="icon"><i class="fa-solid fa-check"></i></span><span>确认创建</span>');
+    }
+  }
+
+  $('.js-open-create').on('click', function () {
+    setFormMode(false);
+    $formModal.addClass('is-active');
+  });
+
+  $('#client-form').on('submit', function (e) {
+    e.preventDefault();
+    let clientId = $('#form-client-id').val();
+    let isEdit = !!clientId;
+    let formData = new FormData();
+    formData.append('name', $('#form-name').val().trim());
+    formData.append('redirect_uri', $('#form-redirect-uri').val().trim());
+    formData.append('homepage', $('#form-homepage').val().trim());
+    // 收集所有勾选的 scope 拼成空格分隔字符串
+    let scopes = $('input[name="scope"]:checked').map(function () { return $(this).val(); }).get();
+    formData.append('scope', scopes.join(' '));
+    formData.append('bio', $('#form-bio').val().trim());
+
+    if (isEdit) {
+      formData.append('client_id', clientId);
+    }
+
+    $.ajax({
+      url: '{{ url_for("root.api.oidc_client") }}',
+      method: isEdit ? 'PUT' : 'POST',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: function (data) {
+        if (data.success) {
+          $formModal.removeClass('is-active');
+          if (!isEdit) {
+            alert('客户端创建成功！\n\nClient ID: ' + data.data.client_id + '\nClient Secret: ' + data.data.client_secret + '\n\n请妥善保存 Client Secret，后续不可再次查看。');
+          }
+          loadClients();
+        } else {
+          alert('操作失败: ' + (data.message || '未知错误'));
+        }
+      },
+      error: function (xhr) {
+        alert('网络错误: ' + xhr.statusText);
+      }
+    });
+  });
+
+  // --- 删除 ---
+  $('#confirm-delete-btn').on('click', function () {
+    if (!deleteClientId) return;
+    let formData = new FormData();
+    formData.append('client_id', deleteClientId);
+
+    $.ajax({
+      url: '{{ url_for("root.api.oidc_client") }}',
+      method: 'DELETE',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: function (data) {
+        if (data.success) {
+          $deleteModal.removeClass('is-active');
+          deleteClientId = null;
+          loadClients();
+        } else {
+          alert('删除失败: ' + (data.message || '未知错误'));
+        }
+      },
+      error: function (xhr) {
+        alert('网络错误: ' + xhr.statusText);
+      }
+    });
+  });
+
+  // --- 查看详情 ---
+  function showDetail(client) {
+    let fields = [
+      ['应用名称', client.name],
+      ['Client ID', '<code class="is-size-7">' + escHtml(client.client_id) + '</code>'],
+      ['Client Secret', '<code class="is-size-7">' + escHtml(client.client_secret) + '</code>'],
+      ['回调地址', client.redirect_uri],
+      ['主页', client.homepage || '<span class="has-text-grey-light">—</span>'],
+      ['授权范围', client.scope],
+      ['授权类型', client.grant_type],
+      ['响应类型', client.response_type],
+      ['授权用户数', (client.auth_count || 0)],
+      ['简介', client.bio || '<span class="has-text-grey-light">—</span>'],
+      ['创建时间', formatTimestamp(client.ctime)],
+      ['更新时间', formatTimestamp(client.mtime)],
+    ];
+    let html = '<table class="table is-fullwidth"><tbody>';
+    $.each(fields, function (_, f) {
+      html += '<tr><td class="has-text-weight-semibold is-size-7" style="width: 120px;">' + f[0] + '</td><td class="is-size-7">' + f[1] + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    $('#detail-content').html(html);
+    $detailModal.addClass('is-active');
+  }
+
+  // --- 加载客户端列表 ---
+  function loadClients() {
+    $loadingEl.removeClass('is-hidden');
+    $errorEl.addClass('is-hidden');
+    $listEl.empty();
+
+    $.ajax({
+      url: '{{ url_for("root.api.oidc_client") }}',
+      method: 'GET',
+      success: function (data) {
+        $loadingEl.addClass('is-hidden');
+        if (!data.success) {
+          showError(data.message || '加载失败');
+          return;
+        }
+        clientsCache = data.data || [];
+        if (clientsCache.length === 0) {
+          $listEl.html('<div class="box has-text-centered has-text-grey py-6">'
+            + '<span class="icon is-large"><i class="fa-solid fa-folder-open fa-2x"></i></span>'
+            + '<p class="mt-3">暂无 OIDC 客户端，点击上方按钮创建第一个</p></div>');
+          return;
+        }
+        renderList(clientsCache);
+      },
+      error: function (xhr) {
+        $loadingEl.addClass('is-hidden');
+        showError('网络错误: ' + xhr.statusText);
+      }
+    });
+  }
+
+  function showError(msg) {
+    $errorMsgEl.text(msg);
+    $errorEl.removeClass('is-hidden');
+  }
+
+  function renderList(clients) {
+    let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable">'
+      + '<thead><tr>'
+      + '<th>应用名称</th>'
+      + '<th>Client ID</th>'
+      + '<th>回调地址</th>'
+      + '<th>授权用户</th>'
+      + '<th style="width: 180px;">操作</th>'
+      + '</tr></thead><tbody>';
+
+    $.each(clients, function (_, c) {
+      html += '<tr>'
+        + '<td>' + escHtml(c.name) + '</td>'
+        + '<td><code class="is-size-7">' + escHtml(c.client_id) + '</code></td>'
+        + '<td class="is-size-7" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escHtml(c.redirect_uri) + '</td>'
+        + '<td><span class="tag is-info is-light">' + (c.auth_count || 0) + '</span></td>'
+        + '<td>'
+        + '<div class="buttons are-small">'
+        + '<button class="button is-info is-light js-detail" data-id="' + c.client_id + '">'
+        + '<span class="icon is-small"><i class="fa-solid fa-eye"></i></span></button>'
+        + '<button class="button is-primary is-light js-edit" data-id="' + c.client_id + '">'
+        + '<span class="icon is-small"><i class="fa-solid fa-pen-to-square"></i></span></button>'
+        + '<button class="button is-danger is-light js-delete" data-id="' + c.client_id + '" data-name="' + escHtml(c.name) + '">'
+        + '<span class="icon is-small"><i class="fa-solid fa-trash-can"></i></span></button>'
+        + '</div></td></tr>';
+    });
+
+    html += '</tbody></table></div>';
+    $listEl.html(html);
+
+    // 使用事件委托绑定操作按钮
+    $listEl.on('click', '.js-detail', function () {
+      let cid = $(this).data('id');
+      let client = findClient(clientsCache, cid);
+      if (client) showDetail(client);
+    });
+
+    $listEl.on('click', '.js-edit', function () {
+      let cid = $(this).data('id');
+      let client = findClient(clientsCache, cid);
+      if (client) {
+        setFormMode(true, client);
+        $formModal.addClass('is-active');
+      }
+    });
+
+    $listEl.on('click', '.js-delete', function () {
+      deleteClientId = $(this).data('id');
+      $('#delete-client-name').text($(this).data('name'));
+      $deleteModal.addClass('is-active');
+    });
+  }
+
+  function findClient(clients, clientId) {
+    for (let i = 0; i < clients.length; i++) {
+      if (clients[i].client_id === clientId) return clients[i];
+    }
+    return null;
+  }
+
+  function escHtml(str) {
+    return $('<div>').text(str).html();
+  }
+
+  // 初始化加载
+  loadClients();
+});
+</script>
+{% endblock %}
