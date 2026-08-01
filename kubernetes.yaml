@@ -38,6 +38,8 @@ spec:
               value: "true"
             - name: PASSPORT_LOG_LEVEL
               value: "INFO"
+            - name: PASSPORT_NO_DAEMON
+              value: "true"
           livenessProbe:
             httpGet:
               path: /ping
