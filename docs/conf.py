@@ -55,10 +55,9 @@ html_context = {
         ProjectLink("PyPI releases", "https://pypi.org/project/passportd"),
         ProjectLink("Source Code", "https://github.com/staugur/passportd"),
         ProjectLink("Issue Tracker", "https://github.com/staugur/passportd/issues/"),
-        ProjectLink("Official Document", "https://passportd.rtfd.vip"),
+        ProjectLink("Official Document", "https://passportd.readthedocs.io/"),
     ]
 }
 html_static_path = ["_static"]
-html_logo = "_static/images/logo.png"
 html_favicon = "_static/images/favicon.png"
 html_show_sourcelink = False
