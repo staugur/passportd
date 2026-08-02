@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: pip install wheel twine
+        run: pip install wheel twine setuptools
 
       - name: Build package
         run: python setup.py sdist bdist_wheel
