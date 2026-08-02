@@ -158,3 +158,17 @@ Gitee OAuth2
 .. automodule:: passportd.modules.oauth2_gitee
     :members:
     :undoc-members:
+
+Weibo OAuth2
+~~~~~~~~~~~~
+
+.. automodule:: passportd.modules.oauth2_weibo
+    :members:
+    :undoc-members:
+
+QQ OAuth2
+~~~~~~~~~~~~
+
+.. automodule:: passportd.modules.oauth2_qq
+    :members:
+    :undoc-members:

@@ -1,4 +1,4 @@
-.PHONY: clean
+.PHONY: clean build publish
 
 HOST:=$(shell python -c 'from passportd.basis.conf import config;print(config.get("HOST"))')
 PORT:=$(shell python -c 'from passportd.basis.conf import config;print(config.get("PORT"))')
