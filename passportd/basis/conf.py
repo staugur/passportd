@@ -44,7 +44,7 @@ class BaseConfig:
     ENV = "production"
     DEBUG = False
     #: 签名、认证密钥，至少14位，建议32位以上。
-    SECRET_KEY: str = "change-me-to-a-random-secret-at-least-32-bytes"
+    SECRET_KEY: str = "change-secret-at-least-32-bytes"
     #: 监听地址
     HOST: str = "0.0.0.0"
     #: 监听端口

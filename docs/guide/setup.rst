@@ -38,8 +38,8 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - 运行环境：``development`` / ``production``
    * - ``SECRET_KEY``
      - str
-     - 自动生成
-     - Flask session / JWT HMAC 签名密钥
+     - secret...
+     - Flask session、cookie / JWT HMAC 签名密钥，至少14位，32位以上
    * - ``DB_URI``
      - str
      - ``sqlite://...``
@@ -91,10 +91,6 @@ passportd 支持三种数据库后端，通过 ``DB_URI`` 配置：
 .. code-block:: shell
 
     export PASSPORT_DB_URI="psycopg3+pool://postgres:pwd@localhost:5432/passport?max_connections=20"
-
-.. note::
-
-    MySQL 和 PostgreSQL 驱动需要额外安装：``pip install passportd[mysql]`` 或 ``pip install passportd[pgsql]``
 
 OpenID Connect 配置
 --------------------

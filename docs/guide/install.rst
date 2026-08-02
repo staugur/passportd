@@ -15,27 +15,14 @@ passportd 需要 Python 3.10 或更高版本，依赖 Redis 服务。
 
     pip install passportd
 
-如果你需要 MySQL 数据库支持：
-
-.. code-block:: shell
-
-    pip install passportd[mysql]
-
-如果你需要 PostgreSQL 数据库支持：
-
-.. code-block:: shell
-
-    pip install passportd[pgsql]
-
 生产环境部署
 ~~~~~~~~~~~~~
 
-安装生产环境依赖（包含 Gunicorn + gevent）：
+生产环境依赖（Gunicorn + gevent + setproctitle）已随 ``pip install passportd`` 自动安装：
 
 .. code-block:: shell
 
     pip install passportd
-    pip install gunicorn gevent setproctitle
 
 使用 Docker 安装
 -----------------
@@ -45,7 +32,7 @@ Docker Hub 拉取镜像
 
 .. code-block:: shell
 
-    docker pull <your-username>/passportd:latest
+    docker pull staugur/passportd:latest
 
 Docker 运行（需要外部 Redis）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -59,7 +46,7 @@ Docker 运行（需要外部 Redis）
       -e PASSPORT_DB_URI="sqlite:///app/data/passportd.db" \
       -e PASSPORT_ENV="production" \
       -v passportd-data:/app/data \
-      <your-username>/passportd:latest
+      staugur/passportd:latest
 
 Docker Compose 一键启动（含 Redis）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -77,7 +64,7 @@ Docker Compose 一键启动（含 Redis）
           - redis-data:/data
 
       passportd:
-        image: <your-username>/passportd:latest
+        image: staugur/passportd:latest
         restart: unless-stopped
         ports:
           - "10030:10030"
@@ -116,7 +103,7 @@ Docker 镜像默认启动 Gunicorn 生产服务器。如需开发模式，覆盖
 
 .. code-block:: shell
 
-    docker run -p 10030:10030 <your-username>/passportd:latest run
+    docker run -p 10030:10030 staugur/passportd:latest run
 
 .. note::
 
@@ -130,16 +117,7 @@ Docker 镜像默认启动 Gunicorn 生产服务器。如需开发模式，覆盖
 
     git clone https://github.com/staugur/passportd.git
     cd passportd
-    pip install -e .
-
-开发环境安装
--------------
-
-.. code-block:: shell
-
-    git clone https://github.com/staugur/passportd.git
-    cd passportd
-    pip install -e ".[dev]"
+    pip install .
 
 依赖说明
 --------

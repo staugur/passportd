@@ -110,6 +110,7 @@ def run():
     from passportd.app import create_app
 
     server = create_app()
+    server.config.update(ENV="development")
     server.run(
         host=passportd_config["HOST"],
         port=passportd_config["PORT"],

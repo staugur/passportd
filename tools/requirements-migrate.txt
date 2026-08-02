@@ -1,0 +1,3 @@
+# Passportd 1.0 → 2.0 迁移脚本依赖
+pymysql>=1.1.0
+psycopg[binary]>=3.2.0  # 仅 PostgreSQL 目标时需要

@@ -510,7 +510,8 @@ class IPQueryMixIn(RequestMixIn):
             return ""
 
         parts = [info.get(k, "") for k in ("country", "province", "city")]
-        return ", ".join(p for p in parts if p)
+        ret = ", ".join(p for p in parts if p)
+        return "Reserved" if ret.count("Reserved") > 1 else ret
 
     def ip_api_query(self, ip: str) -> str:
         """通过 ip-api.com 查询 IP 地理位置（降级后备）。
