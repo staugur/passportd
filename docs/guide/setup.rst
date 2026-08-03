@@ -64,10 +64,10 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - str
      - ``/``
      - 全局 URL 前缀
-   * - ``TRUST_PROXY``
-     - bool
-     - ``True``
-     - 是否信任代理头，从 ``X-Forwarded-For`` 和 ``X-Real-IP`` 获取客户端 IP
+   * - ``ICP``
+     - str
+     - ``""``
+     - ICP 备案号，显示在页脚，为空则不显示
 
 数据库配置
 ----------
@@ -159,35 +159,62 @@ OpenID Connect 配置
    * - ``EMAIL_PROVIDER``
      - str
      - ``""``
-     - 邮件服务：空（不发送） / ``smtp`` / ``sendcloud``
+     - 邮件服务：空（不发送） / ``smtp`` / ``spug``
    * - ``SMTP_USER_MAIL``
      - str
      - ``""``
-     - SMTP 发件邮箱
+     - SMTP 发件邮箱，EMAIL_PROVIDER 为 ``smtp`` 时必填
    * - ``SMTP_USER_PASSWD``
      - str
      - ``""``
-     - SMTP 邮箱密码
+     - SMTP 邮箱密码，EMAIL_PROVIDER 为 ``smtp`` 时必填
    * - ``SMTP_SERVER``
      - str
      - ``""``
-     - SMTP 服务器地址
+     - SMTP 服务器地址，EMAIL_PROVIDER 为 ``smtp`` 时必填
    * - ``SMTP_PORT``
      - int
      - ``587``
-     - SMTP 端口（SSL）
-   * - ``SENDCLOUD_API_USER``
+     - SMTP 端口，EMAIL_PROVIDER 为 ``smtp`` 时必填
+   * - ``SMTP_USE_SSL``
+     - bool
+     - ``false``
+     - 隐式 TLS（SMTP_SSL），false 时走 STARTTLS
+   * - ``SPUG_API_USER``
      - str
      - ``""``
-     - SendCloud API 用户
-   * - ``SENDCLOUD_API_KEY``
+     - Spug 推送助手 API 用户，EMAIL_PROVIDER 为 ``spug`` 时必填
+   * - ``SPUG_API_KEY``
      - str
      - ``""``
-     - SendCloud API Key
-   * - ``SENDCLOUD_MAIL_FROM``
+     - Spug 推送助手 API Key，EMAIL_PROVIDER 为 ``spug`` 时必填
+   * - ``SPUG_MAIL_FROM``
      - str
      - ``""``
-     - SendCloud 发件地址
+     - Spug 发件地址，EMAIL_PROVIDER 为 ``spug`` 时必填
+
+短信配置
+---------
+
+.. list-table::
+   :header-rows: 1
+
+   * - 配置项
+     - 类型
+     - 默认值
+     - 说明
+   * - ``SMS_PROVIDER``
+     - str
+     - ``""``
+     - 短信服务：空（不发送） / ``spug``
+   * - ``SPUG_SMS_TEMPLATE_ID``
+     - str
+     - ``""``
+     - Spug 推送助手短信模板 ID，SMS_PROVIDER 为 ``spug`` 时必填
+   * - ``SPUG_SMS_VCODE_KEY``
+     - str
+     - ``"code"``
+     - Spug 短信模板中验证码的变量名，SMS_PROVIDER 为 ``spug`` 时必填
 
 OAuth2 第三方登录配置
 ----------------------

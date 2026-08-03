@@ -63,9 +63,8 @@ class BaseConfig:
     LOG_DIR: Optional[str] = None
     #: 全局URL前缀
     URI_PREFIX: str = "/"
-    #: 是否信任代理
-    #: 如果启用，则会从 X-Forwarded-For 和 X-Real-IP 中获取客户端 IP，否则使用 REMOTE_ADDR 或 REMOTE_HOST 获取。
-    TRUST_PROXY: bool = True
+    #: ICP备案号
+    ICP = ""
 
     # OpenID Connect 配置
     OIDC_RSA_PUBLIC_KEY: str = _gen_data_path("public.pem")
@@ -83,7 +82,7 @@ class BaseConfig:
     SAPIC_LINKTOKEN = ""
 
     # 邮件
-    #: 邮件发送方式，支持 smtp、sendcloud
+    #: 邮件发送方式，支持 smtp、spug
     EMAIL_PROVIDER = ""
     #: SMTP邮箱服务器
     ## 发送邮件的邮箱地址
@@ -92,12 +91,22 @@ class BaseConfig:
     SMTP_USER_PASSWD: str = ""
     ## 发送邮件服务器地址
     SMTP_SERVER: str = ""
-    ## 发送邮件服务器端口，仅支持 SSL 连接
+    ## 发送邮件服务器端口
     SMTP_PORT: int = 587
-    #: SendCloud MAIL
-    SENDCLOUD_API_USER = ""
-    SENDCLOUD_API_KEY = ""
-    SENDCLOUD_MAIL_FROM = ""
+    ## True=隐式TLS直接加密（SMTP_SSL），False=明文连接后升级（STARTTLS）
+    SMTP_USE_SSL: bool = False
+    #: SPUG推送助手邮件配置
+    SPUG_API_USER = ""
+    SPUG_API_KEY = ""
+    SPUG_MAIL_FROM = ""
+
+    # 短信
+    #: 短信发送方式，支持空字符串（不发送）、spug
+    SMS_PROVIDER = ""
+    #: SPUG推送助手，短信模板ID
+    SPUG_SMS_TEMPLATE_ID = ""
+    #: SPUG推送助手，短信模板中验证码变量名（模板参数 key）
+    SPUG_SMS_VCODE_KEY = "code"
 
     # OAuth2 配置
     #: GitHub OAuth2 配置
@@ -159,7 +168,7 @@ def _check_config_value(cfg):
     - URI_PREFIX 以 ``/`` 开头
     - RSA 密钥大小为整数
     - OAUTH2_TOKEN_EXPIRES_IN 包含 ``authorization_code``
-    - 上传方式和邮件提供商的参数完整性
+    - 上传方式、邮件提供商和短信提供商的参数完整性
 
     :param cfg: Flask Config 实例
     :type cfg: flask.Config
@@ -198,8 +207,8 @@ def _check_config_value(cfg):
     assert cfg["EMAIL_PROVIDER"] in [
         "",
         "smtp",
-        "sendcloud",
-    ], "EMAIL_PROVIDER must be 'smtp' or 'sendcloud'"
+        "spug",
+    ], "EMAIL_PROVIDER must be empty or 'smtp' or 'spug'"
     if cfg["EMAIL_PROVIDER"] == "smtp":
         assert (
             cfg["SMTP_USER_MAIL"]
@@ -207,12 +216,22 @@ def _check_config_value(cfg):
             and cfg["SMTP_SERVER"]
             and isinstance(cfg["SMTP_PORT"], int)
         ), "SMTP_USER_MAIL, SMTP_USER_PASSWD, SMTP_SERVER and SMTP_PORT must be set when EMAIL_PROVIDER is 'smtp'"
-    elif cfg["EMAIL_PROVIDER"] == "sendcloud":
+    elif cfg["EMAIL_PROVIDER"] == "spug":
         assert (
-            cfg["SENDCLOUD_API_USER"]
-            and cfg["SENDCLOUD_API_KEY"]
-            and cfg["SENDCLOUD_MAIL_FROM"]
-        ), "SENDCLOUD_API_USER, SENDCLOUD_API_KEY and SENDCLOUD_MAIL_FROM must be set when EMAIL_PROVIDER is 'sendcloud'"
+            cfg["SPUG_API_USER"] and cfg["SPUG_API_KEY"] and cfg["SPUG_MAIL_FROM"]
+        ), "SPUG_API_USER, SPUG_API_KEY and SPUG_MAIL_FROM must be set when EMAIL_PROVIDER is 'spug'"
+
+    assert cfg["SMS_PROVIDER"] in [
+        "",
+        "spug",
+    ], "SMS_PROVIDER must be empty or 'spug'"
+    if cfg["SMS_PROVIDER"] == "spug":
+        assert cfg[
+            "SPUG_SMS_TEMPLATE_ID"
+        ], "SPUG_SMS_TEMPLATE_ID must be set when SMS_PROVIDER is 'spug'"
+        assert cfg[
+            "SPUG_SMS_VCODE_KEY"
+        ], "SPUG_SMS_VCODE_KEY must be set when SMS_PROVIDER is 'spug'"
 
 
 config = FlaskConfig(APP_DIR)

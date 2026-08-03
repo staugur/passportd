@@ -62,6 +62,7 @@
         }
 
         .button.is-primary.is-outlined {
+            background-color: transparent;
             border-color: var(--green-600);
             color: var(--green-600);
         }
@@ -210,7 +211,9 @@
 
     <footer class="footer is-light mt-6">
         <div class="content has-text-centered">
-            <p class="has-text-grey is-size-7">&copy; <span id="footer-year"></span> Passport. All rights reserved.</p>
+            <p class="has-text-grey is-size-7">&copy; <span id="footer-year"></span> Passport. All rights reserved.
+                {% if config.get("ICP") %}&nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank"
+                    rel="noopener noreferrer" class="has-text-grey">{{ config["ICP"] }}</a>{% endif %}</p>
         </div>
     </footer>
 

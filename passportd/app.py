@@ -46,7 +46,7 @@ def create_app():
     from .basis.vars import PROC_NAME
     from .basis.conf import config
     from .basis.errors import ApiError
-    from .basis.common import is_true, new_res
+    from .basis.common import new_res
     from .utils.common import logger
     from .utils.web import parse_user_state
     from .models.model import db
@@ -65,8 +65,7 @@ def create_app():
     app = Flask(__name__)
     app.response_class = JsonResponse
     app.config.update(config)
-    if is_true(config.get("TRUST_PROXY")):
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_for=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_for=1)
     app.register_blueprint(root, url_prefix=config.get("URI_PREFIX"))
     app.register_blueprint(blueprint, url_prefix="/pluginmanager")
 

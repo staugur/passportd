@@ -87,7 +87,7 @@ class Auth(Model):
     #: 第三方应用的唯一标识(id、openid、union_id)
     tpid = CharField(max_length=256, null=True)
     #: 注册类型
-    #: - 本地化: username mobile email
+    #: - 本地化: username mobile email(后两者验证通过后方可入库，可用于登录和找回密码)
     #: - 第三方: 3rd(如github qq weibo)
     classify = CharField(max_length=15)
     #: 生成时间戳与更新时间戳

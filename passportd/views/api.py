@@ -15,22 +15,39 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import random
+from threading import Thread
+
 from flask import Blueprint, request, abort, g
 
-from ..libs.interface import UploadInterface, RegisterInterface
-from ..models.user import change_password, list_login_records
+from ..libs.interface import UploadInterface, RegisterInterface, VCodeInterface
+from ..models.user import (
+    change_password,
+    generate_jwt,
+    get_account as get_auth,
+    has_account,
+    list_login_records,
+    record_login,
+    reset_password_by_account,
+)
 from ..models.oidc import (
+    count_oauth_authorizations,
     create_oauth_client,
+    delete_oauth_client,
     list_oauth_clients,
     update_oauth_client,
-    delete_oauth_client,
-    count_oauth_authorizations,
 )
 from ..basis.errors import ApiError, PassportError
-from ..basis.vars import JWE_HEADER
+from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..basis.common import new_res
-from ..utils.web import apilogin_required
-from ..utils.common import read_rsa_public_key, parse_encrypted_password
+from ..utils.web import apilogin_required, get_ip
+from ..utils.common import (
+    parse_account_classify,
+    parse_encrypted_password,
+    parse_user_agent,
+    rdb,
+    read_rsa_public_key,
+)
 
 bp = Blueprint("api", "api")
 
@@ -258,3 +275,102 @@ def oidc_client():
     else:
         res = new_res(success=True, data=ret)
         return res
+
+
+@bp.post("/send_login_vcode")
+def send_login_vcode():
+    """发送登录验证码（邮箱或短信）。
+
+    根据账号格式自动判断为邮箱或手机号，通过对应渠道发送 6 位数字验证码。
+    同一账号 60 秒内不可重复请求，验证码 5 分钟内有效。
+
+    :form account: 邮箱地址或手机号（必填）
+    :returns: 发送结果 JSON
+    """
+    account = request.form.get("account", "").strip()
+    if not account:
+        raise ApiError("账号不能为空")
+
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ApiError("请输入有效的邮箱或手机号")
+
+    if not has_account(account):
+        raise ApiError("该账号不存在，请先注册")
+
+    # 60s 内同一账号不可重复发送
+    rl_key = f"{PROC_NAME}:login_vcode_rl:{account}"
+    if rdb.exists(rl_key):
+        raise ApiError("操作过于频繁，请 60 秒后重试")
+
+    code = str(random.randint(100000, 999999))
+    vi = VCodeInterface()
+
+    if classify == "email":
+        ret = vi.send_email(account, code)
+    else:
+        ret = vi.send_sms(account, code)
+
+    if ret["success"] is True:
+        # 验证码写入 Redis，5 分钟有效
+        rdb.setex(f"{PROC_NAME}:login_vcode:{account}", 300, code)
+        rdb.setex(rl_key, 60, "1")
+
+    return ret
+
+
+@bp.post("/vcode_login")
+def vcode_login():
+    """验证码登录接口。
+
+    校验用户提交的验证码，验证通过后生成 JWT token 返回，
+    同时写入登录记录。
+
+    :form account: 邮箱地址或手机号（必填）
+    :form code: 验证码（必填）
+    :returns: 登录结果及 JWT token JSON
+    """
+    account = request.form.get("account", "").strip()
+    code = request.form.get("code", "").strip()
+
+    if not account or not code:
+        raise ApiError("账号和验证码不能为空")
+
+    stored = rdb.get(f"{PROC_NAME}:login_vcode:{account}")
+    if not stored:
+        raise ApiError("验证码已过期，请重新获取")
+    if stored != code:
+        raise ApiError("验证码错误")
+
+    # 验证通过，删除已用验证码
+    rdb.delete(f"{PROC_NAME}:login_vcode:{account}")
+
+    expire = 7200
+    auth = get_auth(account)
+    if not auth:
+        raise ApiError("登录失败，账号异常")
+
+    token = generate_jwt(account, expire)
+    if not token:
+        raise ApiError("登录失败，账号异常")
+
+    # 异步写入登录记录
+    uid = auth["uid"]
+
+    def _async_record():
+        ua_str = request.headers.get("User-Agent", "")
+        parsed = parse_user_agent(ua_str)
+        record_login(
+            uid=uid,
+            account=account,
+            method="local_vcode",
+            ip=get_ip(),
+            user_agent=ua_str,
+            browser=parsed.get("browser", ""),
+            os=parsed.get("os", ""),
+            device=parsed.get("device", ""),
+        )
+
+    Thread(target=_async_record, daemon=True).start()
+
+    return new_res(success=True, data=dict(token=token))

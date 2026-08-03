@@ -26,7 +26,13 @@ from flask import url_for, g, redirect, request
 from jinja2 import Environment, FileSystemLoader
 from authlib.integrations.flask_client import OAuth
 
-from ..basis.mixin import SapicUploadMixIn, LocalUploadMixIn, SMTPMixIn, IPQueryMixIn
+from ..basis.mixin import (
+    SapicUploadMixIn,
+    LocalUploadMixIn,
+    SMTPMixIn,
+    SpugMixIn,
+    IPQueryMixIn,
+)
 from ..basis.conf import config
 from ..basis.vars import (
     ApiRespType,
@@ -79,7 +85,7 @@ def RegisterInterface(
         if ret is True:
             res.update(success=True)
         else:
-            res.update(message="Unknown error, registration failed")
+            res.update(message="Registration failed")
     return res
 
 
@@ -99,7 +105,7 @@ def LoginInterface(account: str, password: str) -> ApiRespType:
         if ret is True:
             res.update(success=True)
         else:
-            res.update(message="verification failed")
+            res.update(message="Verification failed")
     return res
 
 
@@ -158,28 +164,71 @@ class UploadInterface(SapicUploadMixIn, LocalUploadMixIn):
         return res
 
 
-class VCodeInterface(SMTPMixIn):
-    """发送验证码接口"""
+class VCodeInterface(SMTPMixIn, SpugMixIn):
+    """发送邮件或短信验证码接口"""
 
     def send_email(self, to_addr: str, code: str) -> ApiRespType:
         """发送验证码邮件。
 
-        使用 SMTP 发送 HTML 格式邮件，模板为 ``vcode.j2``。
+        根据 ``EMAIL_PROVIDER`` 配置选择发送方式，模板为 ``vcode.j2``。
 
-        :param to_addr: 收件人邮箱地址
-        :param code: 验证码字符串
+        :param str to_addr: 收件人邮箱地址
+        :param str code: 验证码字符串
         :returns: 标准 API 响应
         """
         res = new_res()
         try:
             if not code:
                 raise PassportError("Verification code is empty")
+            if not to_addr:
+                raise PassportError("Email address is empty")
+
+            provider = config["EMAIL_PROVIDER"]
             je = Environment(loader=FileSystemLoader(join(APP_DIR, "templates")))
             body = je.get_template("vcode.j2").render(code=code)
-            ret = self.smtp_send_email(to_addr, f"验证码 - {PROC_NAME}", body)
+            subject = f"验证码 - {PROC_NAME}"
+
+            if provider == "smtp":
+                ret = self.smtp_send_email(to_addr, subject, body)
+            elif provider == "spug":
+                ret = self.spug_send_email(to_addr, subject, body)
+            else:
+                raise PassportError(f"Unsupported email provider: {provider}")
+
             res.update(success=ret)
         except Exception as e:
             res.update(message=str(e))
+        logger.info(f"send_email to {to_addr}, code: {code}, result: {res}")
+        return res
+
+    def send_sms(self, phone: str, code: str) -> ApiRespType:
+        """发送短信验证码。
+
+        根据 ``SMS_PROVIDER`` 配置选择发送方式。
+
+        :param str phone: 手机号码
+        :param str code: 验证码字符串
+        :returns: 标准 API 响应
+        """
+        res = new_res()
+        try:
+            if not code:
+                raise PassportError("Verification code is empty")
+            if not phone:
+                raise PassportError("Phone number is empty")
+
+            provider = config["SMS_PROVIDER"]
+
+            if provider == "spug":
+                params = {config["SPUG_SMS_VCODE_KEY"]: code}
+                ret = self.spug_send_sms(phone, params)
+            else:
+                raise PassportError(f"Unsupported sms provider: {provider}")
+
+            res.update(success=ret)
+        except Exception as e:
+            res.update(message=str(e))
+        logger.info(f"send_sms to {phone}, code: {code}, result: {res}")
         return res
 
 

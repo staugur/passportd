@@ -45,7 +45,8 @@ COPY passportd/ passportd/
 COPY setup.py setup.cfg MANIFEST.in README.md ./
 COPY requirements/ requirements/
 
-RUN pip install --no-cache-dir ${PIP_INDEX_URL:+-i $PIP_INDEX_URL} -e . \
+RUN pip install --no-cache-dir ${PIP_INDEX_URL:+-i $PIP_INDEX_URL} . \
+    && rm -rf passportd/ setup.py setup.cfg MANIFEST.in README.md requirements/ \
     && mkdir -p /app/data /app/logs /app/uploads \
     && chown -R passportd:passportd /app
 

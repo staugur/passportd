@@ -211,13 +211,8 @@ def apilogin_required(f):
 
 
 def get_ip() -> str:
-    """首先从HTTP标头的X-Forwarded-For获取代理IP，其次获取X-Real-IP，最后是客户端IP"""
-    if request.headers.get("X-Forwarded-For"):
-        return request.headers["X-Forwarded-For"].split(",")[0].strip()
-    elif request.headers.get("X-Real-IP"):
-        return request.headers.get("X-Real-IP")
-    else:
-        return request.remote_addr
+    """获取客户端真实IP（由 ProxyFix 中间件修正后的 REMOTE_ADDR）"""
+    return request.remote_addr
 
 
 #: OAuth2 提供商图标/颜色配置，key 为 plugin_name 中 oauth2_ 之后的部分
