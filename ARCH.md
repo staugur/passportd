@@ -74,6 +74,23 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
+│  LoginRecord  (passport_login_record)    登录历史                        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │ uid         │ 用户 uid                                           │ │
+│  │ account     │ 登录账号                                           │ │
+│  │ method      │ 登录方式: local / oauth2_xxx                        │ │
+│  │ ip          │ 客户端 IP                                          │ │
+│  │ location    │ 地理位置 (城市/省份/国家)                            │ │
+│  │ user_agent  │ 原始 User-Agent                                    │ │
+│  │ browser     │ 解析后的浏览器名                                    │ │
+│  │ os          │ 解析后的操作系统                                    │ │
+│  │ device      │ 设备类型: Desktop / Mobile / Tablet                 │ │
+│  │ fingerprint │ 浏览器指纹哈希                                      │ │
+│  │ ctime       │ 登录时间戳                                         │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
 │  OAuthAuthorization  (passport_oauth_authorization) 授权记录           │
 │  ┌──────────────────────────────────────────────────────────────────┐ │
 │  │ uid         │ 授权用户 (谁点了"同意")                              │ │
@@ -95,6 +112,16 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 ## 3. 本地账号注册与登录
 
 ### 3.1 注册流程
+
+passportd 支持三种注册方式，均自动创建用户并登录：
+
+| 方式 | 账号类型 | 是否需要验证码 |
+|------|----------|----------------|
+| 用户名 | username | 否 |
+| 邮箱 | email | 是（6 位数字验证码） |
+| 手机号 | mobile | 是（6 位数字验证码） |
+
+#### 3.1.1 用户名注册
 
 ```
 用户浏览器                          passportd
@@ -123,7 +150,44 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
     │                                    │
 ```
 
+#### 3.1.2 邮箱/手机号注册（验证码）
+
+```
+用户浏览器                          passportd                      邮箱/SMS
+    │                                    │                            │
+    │  GET /user/signup                   │                            │
+    │ ◄────────────────────────────────── │                            │
+    │                                    │                            │
+    │  点击 "发送验证码"                   │                            │
+    │  POST /api/send_signup_vcode        │                            │
+    │  { account: "a@x.com" }            │                            │
+    │ ──────────────────────────────────► │                            │
+    │                                    │  60s 内同账号防重复发送       │
+    │                                    │  generate_digital_verification_code()
+    │                                    │  → 6位数字                   │
+    │                                    │  Redis: signup_vcode:<account>
+    │                                    │  ├─ 存 code                  │
+    │                                    │  └─ expire = 300s (5分钟)    │
+    │                                    │ ────────────────────────────►│ 发送邮件/SMS
+    │ ◄──── { ok: true } ──────────────── │                            │
+    │                                    │                            │
+    │  POST /user/signup                  │                            │
+    │  { account, password, vcode }       │                            │
+    │ ──────────────────────────────────► │                            │
+    │                                    │  校验验证码:
+    │                                    │  ├─ Redis 取 signup_vcode:<account>
+    │                                    │  └─ 比对 → 一致则继续
+    │                                    │  add_profile(account, password)
+    │                                    │  Redis 删除验证码              │
+    │                                    │  auto_set_user_state(...)     │
+    │ ◄──── 302 → / ├───────────────────── │                            │
+```
+
 ### 3.2 登录流程
+
+登录页提供两个 Tab：**密码登录**和**验证码登录**。忘记密码已取消独立重置流程，引导用户使用验证码登录后直接修改密码。
+
+#### 3.2.1 密码登录
 
 ```
 用户浏览器                          passportd
@@ -133,7 +197,7 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
     │ ◄────────────────────────────────── │  含 OAuth2 第三方登录按钮
     │                                    │
     │  POST /user/signin                  │
-    │  { username, password, remember }   │
+    │  { account, password, remember }    │
     │ ──────────────────────────────────► │
     │                                    │  login(account, credential)
     │                                    │  ├─ has_account(account) → Auth 记录
@@ -146,6 +210,36 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
     │                                    │  auto_set_user_state(account, expire, redirect)
     │  ◄──── Set-Cookie: sid=<jwt> ────── │  302 → next_url 或首页
     │                                    │
+```
+
+#### 3.2.2 验证码登录
+
+```
+用户浏览器                          passportd                      邮箱/SMS
+    │                                    │                            │
+    │  切换到"验证码登录"Tab               │                            │
+    │  输入邮箱/手机号，点击"发送验证码"     │                            │
+    │  POST /api/vcode                    │                            │
+    │  { account: "a@x.com" }            │                            │
+    │ ──────────────────────────────────► │                            │
+    │                                    │  VCodeInterface().send(account)
+    │                                    │  ├─ generate_digital_verification_code()
+    │                                    │  ├─ Redis: vcode:<account> (300s 有效)
+    │                                    │  └─ 60s 防重复发送           │
+    │                                    │ ────────────────────────────►│ 发送邮件/SMS
+    │ ◄──── { ok: true } ──────────────── │                            │
+    │                                    │                            │
+    │  POST /api/vcode_login              │                            │
+    │  { account, vcode, remember }       │                            │
+    │ ──────────────────────────────────► │                            │
+    │                                    │  校验验证码:
+    │                                    │  ├─ Redis 取 vcode:<account>
+    │                                    │  └─ 比对 → has_account(account)
+    │                                    │  RecordLoginInterface() 记录登录日志
+    │                                    │  auto_set_user_state(...)
+    │ ◄──── Set-Cookie: sid=<jwt> ──────── │                            │
+    │                                    │                            │
+    │  忘记密码? 点击后自动切到此 Tab        │                            │
 ```
 
 ### 3.3 登录态验证 (`parse_user_state`)
@@ -172,15 +266,75 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 
 ### 3.4 修改密码
 
+修改密码仅在已登录状态下允许（`@apilogin_required`），因此不需要验证旧密码。
+仅需确认新旧密码不相同即可。
+
 ```
 POST /api/change_pwd
-  { old_password, new_password, repassword }
+  { new_password, repassword }
   │
-  change_password(uid, account, old_pwd, new_pwd)
+  change_password(uid, account, new_pwd)
   ├─ is_local_account → 只允许本地账号改密
-  ├─ login(account, old_pwd) → 验证旧密码
+  ├─ check_password_hash(hash, new_pwd) → 新旧密码相同则拒绝
   └─ User.password_hash = generate_password_hash(new_pwd)
      → 所有本地登录方式统一生效
+```
+
+> 忘记密码的用户可通过验证码登录后直接修改密码，无需独立的"重置密码"流程。
+
+### 3.5 验证码机制
+
+passportd 统一使用 `generate_digital_verification_code()` 生成 **6 位数字验证码**，适用于注册和登录场景。
+
+| 场景 | Redis Key | 有效期 | 防重复 | 发送接口 |
+|------|-----------|--------|--------|----------|
+| 登录验证码 | `vcode:<account>` | 300s (5分钟) | 60s | `VCodeInterface.send()` |
+| 注册验证码 | `signup_vcode:<account>` | 300s (5分钟) | 60s | `VCodeInterface.send()` |
+
+**验证码生成与校验流程：**
+
+```
+generate_digital_verification_code()
+  └─ 从 "0123456789" 随机选取 6 位数字
+     └─ 支持 1-10 位长度（默认 6）
+```
+
+**发送渠道**（通过 `VCodeInterface`）：
+
+| 账号类型 | 发送方式 | 配置 |
+|----------|----------|------|
+| email | SMTP 邮件（587+STARTTLS） | `SMTP_*` 配置项 |
+| mobile | 短信（Spug API） | `SPUG_*` 配置项 |
+
+```
+POST /api/vcode 或 POST /api/send_signup_vcode
+  { account: "a@x.com" 或 "13800138000" }
+  │
+  VCodeInterface().send(account)
+  ├─ parse_account_classify(account) → email / mobile
+  ├─ 60s 内同账号已发送 → 拒绝（防刷）
+  ├─ generate_digital_verification_code() → 6 位 code
+  ├─ Redis SETEX: vcode:<account> = code, TTL=300
+  └─ 发送邮件/SMS
+```
+
+### 3.6 登录历史
+
+每次登录（密码、验证码、OAuth2 第三方）都会通过 `RecordLoginInterface` 写入登录历史。
+
+```
+RecordLoginInterface(uid, account, method, request, fingerprint)
+  │
+  ├─ get_real_ip(request)        → 提取客户端 IP
+  ├─ IPQueryInterface(ip)        → 地理位置 (省份/城市/国家)
+  ├─ parse_user_agent(ua)        → { browser, os, device }
+  └─ LoginRecord.create(...)     → 写入 passport_login_record 表
+```
+
+查询接口：
+```
+GET /api/login_history
+  → { login_history: [...] }
 ```
 
 ---
@@ -205,7 +359,9 @@ POST /api/change_pwd
 │  回调结果由 libs/interface.py 处理:                               │
 │  ├─ OAuthInterface (基类)                                        │
 │  ├─ RegisterInterface  → 第三方首次登录 → 自动注册新用户            │
-│  └─ LoginInterface     → 第三方登录                                │
+│  ├─ LoginInterface     → 第三方登录                                │
+│  ├─ VCodeInterface     → 发送验证码 (邮件/SMS), 防重复             │
+│  └─ RecordLoginInterface → 记录登录历史到 LoginRecord 表          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -421,20 +577,28 @@ GET  /oauth/client/count/<client_id> → 查看授权用户数
 | 路由 | 方法 | 功能 | 权限 |
 |---|---|---|---|
 | `/` | GET | 首页 | public |
-| `/user/signup` | GET/POST | 注册页 | anonymous_required |
-| `/user/signin` | GET/POST | 登录页 | anonymous_required |
+| `/user/signup` | GET/POST | 注册页（用户名/邮箱/手机号） | anonymous_required |
+| `/user/signin` | GET/POST | 登录页（密码 & 验证码双 Tab） | anonymous_required |
 | `/user/signout` | GET | 登出 (清除 sid cookie) | public |
-| `/user/profile` | GET/POST | 个人资料编辑 | login_required |
+| `/user/profile` | GET/POST | 个人资料编辑 & 修改密码 | login_required |
 | `/user/account` | GET | 账号管理 & OAuth 绑定 | login_required |
+| `/ping` | GET | Kubernetes 健康检查探针 | public |
 
 ### 6.2 用户 API (`views/api.py`)
 
 | 路由 | 方法 | 功能 | 权限 |
 |---|---|---|---|
+| `/api/key` | POST | 获取 RSA 公钥（前端加密用） | public |
 | `/api/user/me` | GET | 获取当前用户信息 | apilogin_required |
 | `/api/user/<uid>` | GET | 获取指定用户资料 | apilogin_required |
+| `/api/signup` | POST | 注册新用户 | anonymous_required |
 | `/api/change_pwd` | POST | 修改密码 | apilogin_required |
 | `/api/update_profile` | POST | 更新资料 | apilogin_required |
+| `/api/vcode` | POST | 发送登录验证码（邮箱/SMS） | public (60s 防重复) |
+| `/api/vcode_login` | POST | 验证码登录 | public |
+| `/api/send_signup_vcode` | POST | 发送注册验证码（邮箱/SMS） | public (60s 防重复) |
+| `/api/login_history` | GET | 登录历史记录 | apilogin_required |
+| `/api/upload` | POST | 上传头像/文件 | apilogin_required |
 | `/api/client/create` | POST | 创建 OIDC Client | apilogin_required |
 | `/api/client/update` | POST | 更新 OIDC Client | apilogin_required |
 | `/api/client/delete` | POST | 删除 OIDC Client | apilogin_required |
@@ -525,37 +689,61 @@ teardown_request
 passportd/
 ├── app.py              ← Flask 应用工厂, create_app()
 ├── cli.py              ← CLI 命令 (run, start, stop, init, config)
+├── version.py          ← 版本号
 ├── basis/              ← 基础设施层
-│   ├── conf.py         ← 配置加载
+│   ├── conf.py         ← 配置加载 (Dev/Prod)
 │   ├── errors.py       ← 异常类 (PassportError, ApiError, AuthError...)
 │   ├── vars.py         ← 全局常量
-│   └── common.py       ← 公共工具 (now, makedirs, new_res...)
+│   ├── common.py       ← 公共工具 (new_res, is_true, now, raise_version...)
+│   └── mixin.py        ← Mixin 类 (SMTP, Upload, IPQuery, Spug...)
 ├── models/             ← 数据模型 & 业务逻辑 ★
-│   ├── model.py        ← Peewee ORM 表定义 (User, Auth, OAuthClient...)
-│   ├── user.py         ← 用户 CRUD (add_profile, login, change_password...)
-│   └── oidc.py         ← OIDC Client 管理 (create, update, delete...)
+│   ├── model.py        ← Peewee ORM 表定义 (User, Auth, OAuthClient, LoginRecord...)
+│   ├── user.py         ← 用户 CRUD (add_profile, login, change_password, record_login...)
+│   └── oidc.py         ← OIDC Client 管理 + Token/Authorization 操作
 ├── views/              ← 路由层 (Flask Blueprint)
 │   ├── root.py         ← 蓝图注册
 │   ├── front.py        ← 页面路由 (登录/注册/Profile/OAuth绑定)
-│   ├── api.py          ← REST API
+│   ├── api.py          ← REST API (用户、验证码、OIDC Client、上传、登录历史)
 │   └── oidc.py         ← OIDC Server 端点 (authorize/token/userinfo/jwks)
 ├── libs/               ← 核心库 ★
 │   ├── oidc.py         ← OIDC Server 实现 (authlib AuthorizationServer)
-│   └── interface.py    ← OAuth2 Client 接口 (第三方登录/绑定)
+│   └── interface.py    ← 业务接口层 (OAuth/Register/Login/VCode/Upload/RecordLogin)
 ├── utils/              ← 工具函数
-│   ├── web.py          ← JWT, cookie, 登录态解析, OAuth2 提供商列表
-│   └── common.py       ← 通用工具 (密码加密解析, 校验, 日志)
+│   ├── web.py          ← JWT签发验证, Cookie, 登录态解析, OAuth2提供商列表
+│   └── common.py       ← 通用工具 (校验、RSA密钥、JWE加解密、验证码生成、UA解析)
 ├── modules/            ← OAuth2 第三方插件
-│   ├── oauth2_github/  ← GitHub OAuth2
+│   ├── oauth2_github/  ← GitHub OAuth2 (__state__ 自动检测启用/禁用)
 │   ├── oauth2_gitee/   ← Gitee OAuth2
-│   ├── oauth2_weibo/   ← Weibo OAuth2
+│   ├── oauth2_weibo/   ← 微博 OAuth2
 │   └── oauth2_qq/      ← QQ OAuth2
-└── templates/          ← Jinja2 模板
-    ├── signin.j2       ← 登录页
-    ├── signup.j2       ← 注册页
-    ├── profile.j2      ← 个人资料
-    ├── authorize.j2    ← OIDC 授权确认页
-    └── error.j2        ← 错误页
+├── templates/          ← Jinja2 模板
+│   ├── signin.j2       ← 登录页（密码 & 验证码双 Tab）
+│   ├── signup.j2       ← 注册页（用户名 & 邮箱/手机号双 Tab）
+│   ├── profile.j2      ← 个人资料 & 修改密码
+│   ├── authorize.j2    ← OIDC 授权确认页
+│   └── error.j2        ← 错误页
+├── static/             ← 前端静态资源 (Bulma, FontAwesome, jQuery, favicon)
+└── data/               ← 运行时数据 (SQLite, RSA密钥)
+```
+```
+项目根目录/
+├── Makefile            ← 构建工具 (clean/lint/dev/test/docs)
+├── codecov.yml         ← Codecov 覆盖率配置
+├── Dockerfile          ← Docker 镜像
+├── kubernetes.yaml     ← K8s 部署配置
+├── requirements/       ← pip 依赖 (base/dev/prod/docs)
+├── tests/              ← 测试套件
+│   ├── test_api.py             ← API 接口测试 (key/signup/change_password/login_history/upload)
+│   ├── test_util_common.py     ← utils/common.py 工具函数测试
+│   ├── test_basis_common.py    ← basis/common.py 基础函数测试
+│   └── test_basis_errors.py    ← basis/errors.py 异常体系测试
+├── .github/workflows/  ← CI/CD
+│   ├── ci.yml          ← 自动化测试 + Codecov 上传 (Python 3.10/3.11/3.12)
+│   ├── docker.yml      ← Docker 镜像构建
+│   └── publish.yml     ← PyPI 发布
+├── docs/               ← Sphinx 文档
+├── tools/              ← 数据迁移脚本
+└── examples/           ← 客户端示例
 ```
 
 ---
@@ -566,9 +754,12 @@ passportd/
 |---|---|
 | 密码存储 | `werkzeug.security.generate_password_hash` (pbkdf2:sha256) |
 | 密码读取 | `check_password_hash`，从 `User.password_hash` 统一读取 |
+| 密码传输 | 前端 RSA-JWE 加密后传输，解密用 `decrypt_jwe_password()` |
 | JWT 签名 | HMAC-SHA256 (内部 sid) + RS256 (ID Token) |
 | API 错误 | `ApiError` 带正确 `status_code` (400/403)，AJAX error 回调处理 |
 | 登出 | `Set-Cookie: sid=; expires=0` 清除 cookie |
 | 密码泄露 | `list_users()` 和 `get_user_by_uid()` 排除 `password_hash` |
 | 第三方 token | access_token 不入库，每次重新授权 |
 | URL 安全 | `is_safe_url()` 防 open redirect |
+| 验证码防刷 | 同一账号 60s 内不可重复发送，有效期 5 分钟 |
+| 旧密码恢复 | 忘记密码 → 验证码登录 → 直接修改密码（无需旧密码验证） |

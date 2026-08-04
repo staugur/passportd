@@ -442,4 +442,4 @@ def profile():
 @login_required
 def oidc_client():
     """OIDC 客户端管理页面。"""
-    return render_template("oidc_client.j2")
+    return render_template("oidc.j2")
