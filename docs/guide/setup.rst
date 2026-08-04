@@ -40,6 +40,14 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - str
      - secret...
      - Flask session、cookie / JWT HMAC 签名密钥，至少14位，32位以上
+   * - ``BASE_DIR``
+     - str
+     - ``APP_DIR``
+     - 数据根目录，``DATA_DIR`` / ``LOG_DIR`` / ``LOCAL_UPLOAD_FOLDER`` 均从此派生；容器环境设为 ``/app``
+   * - ``DATA_DIR``
+     - str
+     - ``BASE_DIR/data``
+     - 数据存储目录（自动创建，RSA 密钥、SQLite 数据库默认存放于此）
    * - ``DB_URI``
      - str
      - ``sqlite://...``
@@ -58,7 +66,7 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - 日志文件名，不设置则输出到 stdout
    * - ``LOG_DIR``
      - str
-     - ``None``
+     - ``BASE_DIR/logs``
      - 日志文件目录
    * - ``URI_PREFIX``
      - str
@@ -68,6 +76,19 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - str
      - ``""``
      - ICP 备案号，显示在页脚，为空则不显示
+
+.. tip::
+
+    ``BASE_DIR`` 是数据管理的核心配置项。设置后，以下路径会自动从 ``BASE_DIR`` 派生：
+
+    - ``DATA_DIR`` → ``BASE_DIR/data``（RSA 密钥、SQLite 数据库默认存放于此）
+    - ``LOCAL_UPLOAD_FOLDER`` → ``BASE_DIR/uploads``（本地上传目录）
+    - ``LOG_DIR`` → ``BASE_DIR/logs``（生产环境日志目录）
+
+    此外，``OIDC_RSA_PUBLIC_KEY``、``OIDC_RSA_PRIVATE_KEY`` 和 ``DB_URI``（SQLite 模式）
+    中引用的 ``APP_DIR`` 也会自动替换为 ``BASE_DIR``。
+
+    若需单独覆盖某个路径，仍可通过独立环境变量设置（如 ``PASSPORT_DATA_DIR``）。
 
 数据库配置
 ----------
@@ -104,11 +125,11 @@ OpenID Connect 配置
      - 说明
    * - ``OIDC_RSA_PUBLIC_KEY``
      - str
-     - ``data/public.pem``
+     - ``BASE_DIR/data/public.pem``
      - RSA 公钥文件路径
    * - ``OIDC_RSA_PRIVATE_KEY``
      - str
-     - ``data/private.key``
+     - ``BASE_DIR/data/private.key``
      - RSA 私钥文件路径
    * - ``OIDC_RSA_KEY_SIZE``
      - int
@@ -143,7 +164,7 @@ OpenID Connect 配置
      - Sapic LinkToken
    * - ``LOCAL_UPLOAD_FOLDER``
      - str
-     - ``uploads/``
+     - ``BASE_DIR/uploads``
      - 本地上传目录
 
 邮件配置
@@ -269,8 +290,8 @@ OAuth2 第三方登录配置
      - 日志级别
    * - LOG_FILE / LOG_DIR
      - stdout
-     - 文件（按日期滚动）
-     - 日志存储方式
+     - 文件（``sys.log`` 写入 ``LOG_DIR``）
+     - 生产环境自动写入 ``BASE_DIR/logs/sys.log``
    * - ``OIDC_RSA_KEY_SIZE``
      - ``2048``
      - ``4096``
@@ -286,6 +307,7 @@ OAuth2 第三方登录配置
 .. code-block:: shell
 
     export PASSPORT_ENV=production
+    export PASSPORT_BASE_DIR="/app"
     export PASSPORT_DB_URI="mysql+pool://root:pwd@localhost:3306/passport?max_connections=30"
     export PASSPORT_REDIS_URI="redis://:pwd@localhost:6379/0"
     export PASSPORT_LOG_LEVEL="INFO"

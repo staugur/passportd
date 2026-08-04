@@ -241,3 +241,13 @@ if "LOCAL_UPLOAD_FOLDER" not in config:
     config["LOCAL_UPLOAD_FOLDER"] = join(_base_dir, "uploads")
 if "LOG_DIR" not in config:
     config["LOG_DIR"] = join(_base_dir, "logs")
+
+# 若 BASE_DIR 与 APP_DIR 不同，则将仍然引用 APP_DIR 的默认路径 rebase 到 BASE_DIR
+if _base_dir != APP_DIR:
+    for key in ("OIDC_RSA_PUBLIC_KEY", "OIDC_RSA_PRIVATE_KEY"):
+        val = config.get(key, "")
+        if isinstance(val, str) and val.startswith(APP_DIR):
+            config[key] = val.replace(APP_DIR, _base_dir, 1)
+    db_uri = config.get("DB_URI", "")
+    if isinstance(db_uri, str) and APP_DIR in db_uri:
+        config["DB_URI"] = db_uri.replace(APP_DIR, _base_dir)

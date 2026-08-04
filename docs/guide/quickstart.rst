@@ -20,7 +20,7 @@ passportd 启动时会自动检查配置，默认使用开发环境配置。你�
 
     passportd config
 
-首次运行时会自动生成 RSA 密钥对（用于 OIDC JWT 签名）到 ``data/`` 目录。
+首次运行时会自动生成 RSA 密钥对（用于 OIDC JWT 签名）到 ``BASE_DIR/data/`` 目录。
 
 2. 启动开发服务器
 -----------------
