@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-passportd.readthedocs.io-brightgreen)](https://passportd.readthedocs.io/)
-[![codecov](https://codecov.io/gh/staugur/passportd/branch/master/graph/badge.svg)](https://codecov.io/gh/staugur/passportd)
+[![codecov](https://codecov.io/gh/staugur/passportd/graph/badge.svg?token=Wgl1Ky9PY8)](https://codecov.io/gh/staugur/passportd)
 
 ## 核心功能
 
@@ -27,8 +27,11 @@ pip install passportd
 
 # 确保 Redis 已启动
 
-# 启动
+# 开发模式启动
 passportd run
+
+# 生产模式启动
+passportd start
 ```
 
 访问 http://localhost:10030/ 即可看到登录页面。
@@ -98,3 +101,5 @@ Apache License 2.0
 ## 备注
 
 沿用 1.x 设计思路，使用 OIDC 标准协议重构实现，除核心代码外大部分使用 AI 生成。
+
+如从 1.x 迁移，可使用 tools 脚本。

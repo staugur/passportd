@@ -157,7 +157,7 @@ class UploadInterface(SapicUploadMixIn, LocalUploadMixIn):
             except PassportError as e:
                 res["message"] = str(e)
             else:
-                url = url_for("front.uploaded", filename=name)
+                url = url_for("root.front.uploaded", filename=name)
                 res.update(success=True, data=dict(url=url))
         else:
             res.update(message="Unsupported upload method")

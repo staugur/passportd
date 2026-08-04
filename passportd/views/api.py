@@ -15,20 +15,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import random
-from threading import Thread
-
 from flask import Blueprint, request, abort, g
 
-from ..libs.interface import UploadInterface, RegisterInterface, VCodeInterface
+from ..libs.interface import (
+    RecordLoginInterface,
+    RegisterInterface,
+    UploadInterface,
+    VCodeInterface,
+)
 from ..models.user import (
     change_password,
     generate_jwt,
     get_account as get_auth,
     has_account,
     list_login_records,
-    record_login,
-    reset_password_by_account,
 )
 from ..models.oidc import (
     count_oauth_authorizations,
@@ -42,9 +42,9 @@ from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..basis.common import new_res
 from ..utils.web import apilogin_required, get_ip
 from ..utils.common import (
+    generate_digital_verification_code,
     parse_account_classify,
     parse_encrypted_password,
-    parse_user_agent,
     rdb,
     read_rsa_public_key,
 )
@@ -73,11 +73,15 @@ def public_key():
 def signup():
     """API 用户注册接口（仅返回 JSON）。
 
+    用户名注册：account + password 即可。
+    邮箱/手机号注册：account + password + vcode（需先通过 send_signup_vcode 获取验证码）。
+
     :form account: 用户账号（必填）
     :form password: 密码（必填，明文或 RSA 加密）
     :form repassword: 确认密码
     :form encrypted_password: 加密后的密码（JWE 格式，优先使用）
     :form encrypted_repassword: 加密后的确认密码
+    :form vcode: 验证码（邮箱/手机号注册时必填）
     :form nickname: 昵称
     :form bio: 个人简介
     :form gender: 性别
@@ -97,17 +101,31 @@ def signup():
     decrypted_repassword = (
         parse_encrypted_password(data.get("encrypted_repassword", "")) or repassword
     )
+    vcode = data.get("vcode", "").strip()
     nickname = data.get("nickname", "")
     bio = data.get("bio", "")
     gender = data.get("gender", 2)
     avatar = data.get("avatar", "")
     location = data.get("location", "Unknown")
-    # deny role from common api
 
     if not account or not decrypted_password:
         raise ApiError("account and password is required")
     if decrypted_password != decrypted_repassword:
         raise ApiError("password and repassword not match")
+
+    # 邮箱/手机号注册需要验证码
+    classify = parse_account_classify(account)
+    if classify in ("email", "mobile"):
+        if not vcode:
+            raise ApiError("验证码不能为空")
+        stored = rdb.get(f"{PROC_NAME}:signup_vcode:{account}")
+        if not stored:
+            raise ApiError("验证码已过期，请重新获取")
+        if stored != vcode:
+            raise ApiError("验证码错误")
+        # 验证通过，删除已用验证码
+        rdb.delete(f"{PROC_NAME}:signup_vcode:{account}")
+
     return RegisterInterface(
         account,
         decrypted_password,
@@ -126,10 +144,8 @@ def change_pwd():
 
     支持明文密码和 RSA 加密密码。
 
-    :form old_password: 旧密码（明文）
     :form new_password: 新密码（明文）
     :form repassword: 确认新密码（明文）
-    :form encrypted_old_password: 加密后的旧密码（JWE 格式，优先使用）
     :form encrypted_new_password: 加密后的新密码（JWE 格式，优先使用）
     :form encrypted_repassword: 加密后的确认新密码（JWE 格式，优先使用）
     :returns: 操作结果 JSON
@@ -139,9 +155,6 @@ def change_pwd():
     account = g.user["account"]
 
     # 解密密码（优先加密格式）
-    old_pwd = parse_encrypted_password(
-        data.get("encrypted_old_password", "")
-    ) or data.get("old_password", "")
     new_pwd = parse_encrypted_password(
         data.get("encrypted_new_password", "")
     ) or data.get("new_password", "")
@@ -149,15 +162,15 @@ def change_pwd():
         data.get("encrypted_repassword", "")
     ) or data.get("repassword", "")
 
-    if not old_pwd or not new_pwd:
-        raise ApiError("old_password and new_password are required")
+    if not new_pwd:
+        raise ApiError("new_password is required")
     if new_pwd != repassword:
         raise ApiError("new_password and repassword do not match")
     if len(new_pwd) < 6:
         raise ApiError("new_password must be at least 6 characters")
 
     try:
-        ret = change_password(uid, account, old_pwd, new_pwd)
+        ret = change_password(uid, account, new_pwd)
     except PassportError as e:
         raise ApiError(str(e))
     else:
@@ -277,6 +290,48 @@ def oidc_client():
         return res
 
 
+@bp.post("/send_signup_vcode")
+def send_signup_vcode():
+    """发送注册验证码（邮箱或短信）。
+
+    根据账号格式自动判断为邮箱或手机号，通过对应渠道发送 6 位数字验证码。
+    该账号必须未被注册，同一账号 60 秒内不可重复请求，验证码 5 分钟内有效。
+
+    :form account: 邮箱地址或手机号（必填）
+    :returns: 发送结果 JSON
+    """
+    account = request.form.get("account", "").strip()
+    if not account:
+        raise ApiError("账号不能为空")
+
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ApiError("请输入有效的邮箱或手机号")
+
+    if has_account(account):
+        raise ApiError("该账号已注册，请直接登录")
+
+    # 60s 内同一账号不可重复发送
+    rl_key = f"{PROC_NAME}:signup_vcode_rl:{account}"
+    if rdb.exists(rl_key):
+        raise ApiError("操作过于频繁，请 60 秒后重试")
+
+    code = generate_digital_verification_code()
+    vi = VCodeInterface()
+
+    if classify == "email":
+        ret = vi.send_email(account, code)
+    else:
+        ret = vi.send_sms(account, code)
+
+    if ret["success"] is True:
+        # 验证码写入 Redis，5 分钟有效
+        rdb.setex(f"{PROC_NAME}:signup_vcode:{account}", 300, code)
+        rdb.setex(rl_key, 60, "1")
+
+    return ret
+
+
 @bp.post("/send_login_vcode")
 def send_login_vcode():
     """发送登录验证码（邮箱或短信）。
@@ -303,7 +358,7 @@ def send_login_vcode():
     if rdb.exists(rl_key):
         raise ApiError("操作过于频繁，请 60 秒后重试")
 
-    code = str(random.randint(100000, 999999))
+    code = generate_digital_verification_code()
     vi = VCodeInterface()
 
     if classify == "email":
@@ -354,23 +409,15 @@ def vcode_login():
     if not token:
         raise ApiError("登录失败，账号异常")
 
-    # 异步写入登录记录
+    # 记录登录日志（异步，含 IP 地理位置、设备指纹）
     uid = auth["uid"]
-
-    def _async_record():
-        ua_str = request.headers.get("User-Agent", "")
-        parsed = parse_user_agent(ua_str)
-        record_login(
-            uid=uid,
-            account=account,
-            method="local_vcode",
-            ip=get_ip(),
-            user_agent=ua_str,
-            browser=parsed.get("browser", ""),
-            os=parsed.get("os", ""),
-            device=parsed.get("device", ""),
-        )
-
-    Thread(target=_async_record, daemon=True).start()
+    RecordLoginInterface(
+        uid=uid,
+        account=account,
+        method="local_vcode",
+        ip=get_ip(),
+        ua=request.headers.get("User-Agent", ""),
+        accept_lang=request.headers.get("Accept-Language", ""),
+    )
 
     return new_res(success=True, data=dict(token=token))

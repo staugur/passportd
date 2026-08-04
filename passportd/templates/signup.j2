@@ -16,17 +16,50 @@
                 </div>
                 {% endif %}
 
-                <form method="post" action="{{ url_for('root.front.signup') }}">
+                <!-- 注册方式 Tab -->
+                <div class="tabs is-toggle is-fullwidth mb-4" id="signup-tabs">
+                    <ul>
+                        <li class="is-active" id="tab-username" data-tab="username">
+                            <a><span class="icon"><i class="fa-solid fa-user"></i></span>
+                                <span>用户名注册</span></a>
+                        </li>
+                        <li id="tab-vcode" data-tab="vcode">
+                            <a><span class="icon"><i class="fa-solid fa-envelope"></i></span>
+                                <span>邮箱/手机号注册</span></a>
+                        </li>
+                    </ul>
+                </div>
+
+                <form method="post" action="{{ url_for('root.front.signup') }}" id="signup-form">
                     <div class="field">
                         <label class="label">账号</label>
                         <div class="control has-icons-left">
-                            <input class="input" type="text" name="account" placeholder="用户名 / 邮箱 / 手机号"
+                            <input class="input" type="text" name="account" id="signup-account"
+                                placeholder="用户名（6位以上）"
                                 value="{{ account or '' }}" required autocomplete="username">
                             <span class="icon is-small is-left">
                                 <i class="fa-solid fa-user"></i>
                             </span>
                         </div>
-                        <p class="help">支持用户名、邮箱或手机号格式</p>
+                        <p class="help" id="account-hint">支持字母、数字、下划线，6位以上</p>
+                    </div>
+
+                    <!-- 验证码区域（邮箱/手机号注册时显示） -->
+                    <div id="vcode-section" style="display:none;">
+                        <div class="field is-grouped">
+                            <div class="control is-expanded">
+                                <label class="label">验证码</label>
+                                <input class="input" type="text" name="vcode" id="signup-vcode"
+                                    placeholder="6 位数字验证码" maxlength="6" autocomplete="off">
+                            </div>
+                            <div class="control" style="padding-top: 2rem;">
+                                <button class="button is-primary is-outlined" id="btn-send-signup-vcode"
+                                    type="button">
+                                    <span>获取验证码</span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="help" id="vcode-hint"></p>
                     </div>
 
                     <div class="field">
@@ -52,7 +85,7 @@
                     </div>
 
                     <div class="field mt-4">
-                        <button class="button is-primary is-fullwidth" type="submit">
+                        <button class="button is-primary is-fullwidth" type="submit" id="btn-submit-signup">
                             <strong>注 册</strong>
                         </button>
                     </div>
@@ -68,4 +101,126 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+$(function () {
+    var $tabUsername = $('#tab-username');
+    var $tabVcode = $('#tab-vcode');
+    var $vcodeSection = $('#vcode-section');
+    var $accountInput = $('#signup-account');
+    var $accountHint = $('#account-hint');
+    var $vcodeHint = $('#vcode-hint');
+    var $vcodeInput = $('#signup-vcode');
+    var $btnSendVcode = $('#btn-send-signup-vcode');
+    var $btnSubmit = $('#btn-submit-signup');
+
+    var currentTab = 'username';
+    var sendTimer = null;
+    var sendCountdown = 0;
+
+    // Tab 切换
+    $('#signup-tabs li a').on('click', function (e) {
+        e.preventDefault();
+        var tab = $(this).parent().data('tab');
+
+        if (tab === 'username') {
+            $tabUsername.addClass('is-active');
+            $tabVcode.removeClass('is-active');
+            $vcodeSection.hide();
+            $vcodeInput.removeAttr('required');
+            $accountInput.attr('placeholder', '用户名（6位以上）');
+            $accountHint.text('支持字母、数字、下划线，6位以上');
+            currentTab = 'username';
+        } else {
+            $tabVcode.addClass('is-active');
+            $tabUsername.removeClass('is-active');
+            $vcodeSection.show();
+            $vcodeInput.attr('required', 'required');
+            $accountInput.attr('placeholder', '邮箱 / 手机号');
+            $accountHint.text('输入邮箱或手机号，获取验证码后完成注册');
+            currentTab = 'vcode';
+        }
+
+        $vcodeHint.text('').removeClass('has-text-danger has-text-success');
+        $accountInput.val('').focus();
+        $vcodeInput.val('');
+        clearSendCountdown();
+    });
+
+    // 发送注册验证码
+    $btnSendVcode.on('click', function () {
+        var account = $accountInput.val().trim();
+        if (!account) {
+            $vcodeHint.text('请先输入邮箱或手机号').addClass('has-text-danger').removeClass('has-text-success');
+            return;
+        }
+
+        $btnSendVcode.prop('disabled', true);
+        $vcodeHint.text('正在发送...').removeClass('has-text-danger has-text-success');
+
+        $.ajax({
+            url: '{{ url_for("root.api.send_signup_vcode") }}',
+            method: 'POST',
+            data: { account: account },
+            success: function (res) {
+                if (res.success) {
+                    $vcodeHint.text('验证码已发送，请查收').addClass('has-text-success').removeClass('has-text-danger');
+                    startCountdown();
+                } else {
+                    $vcodeHint.text(res.message || '发送失败').addClass('has-text-danger').removeClass('has-text-success');
+                    $btnSendVcode.prop('disabled', false);
+                }
+            },
+            error: function () {
+                $vcodeHint.text('网络错误，请稍后重试').addClass('has-text-danger').removeClass('has-text-success');
+                $btnSendVcode.prop('disabled', false);
+            }
+        });
+    });
+
+    // 发送倒计时
+    function startCountdown() {
+        sendCountdown = 60;
+        updateSendBtn();
+        sendTimer = setInterval(function () {
+            sendCountdown--;
+            if (sendCountdown <= 0) {
+                clearSendCountdown();
+            } else {
+                updateSendBtn();
+            }
+        }, 1000);
+    }
+
+    function clearSendCountdown() {
+        if (sendTimer) {
+            clearInterval(sendTimer);
+            sendTimer = null;
+        }
+        sendCountdown = 0;
+        $btnSendVcode.prop('disabled', false).find('span').text('获取验证码');
+    }
+
+    function updateSendBtn() {
+        $btnSendVcode.find('span').text(sendCountdown + '秒后重试');
+    }
+
+    // 表单提交前校验
+    $('#signup-form').on('submit', function () {
+        var account = $accountInput.val().trim();
+
+        if (currentTab === 'vcode') {
+            var vcode = $vcodeInput.val().trim();
+            if (!account || !vcode) {
+                return true; // 交给后端校验
+            }
+        }
+
+        $btnSubmit.prop('disabled', true).addClass('is-loading').find('strong').text('注册中...');
+        return true;
+    });
+});
+</script>
 {% endblock %}

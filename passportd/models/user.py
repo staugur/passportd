@@ -165,9 +165,6 @@ def add_profile(
     classify = parse_account_classify(account)
     if not classify:
         raise ParamError("Invalid account type")
-    # Deny email and mobile
-    if classify in ("email", "mobile"):
-        raise ParamError("Registration of email and mobile is not currently supported.")
     try:
         gender = int(gender)
         if gender not in (0, 1, 2):
@@ -332,14 +329,14 @@ def update_profile(
         return True
 
 
-def change_password(uid: str, account: str, old_pwd: str, new_pwd: str) -> bool:
+def change_password(uid: str, account: str, new_pwd: str) -> bool:
     """修改本地账号密码。
 
     密码统一存储在 User.password_hash，所有本地登录方式共享同一密码。
+    调用前需确保用户已通过 @apilogin_required 等登录态校验。
 
     :param uid: 用户 UID
     :param account: 本地账号
-    :param old_pwd: 旧密码（明文）
     :param new_pwd: 新密码（明文）
     :returns: 成功返回 True
     :raises ParamError: 参数校验失败
@@ -349,14 +346,13 @@ def change_password(uid: str, account: str, old_pwd: str, new_pwd: str) -> bool:
         raise ParamError("Only local accounts can change password")
     if not check_credential_rule(new_pwd):
         raise ParamError("New password must be 6-128 characters")
-    if old_pwd == new_pwd:
-        raise ParamError("New password must be different from old password")
-    if not login(account, old_pwd):
-        raise AuthError("Old password is incorrect")
     try:
         u = User.get(User.uid == uid)
     except User.DoesNotExist:
         raise AuthError("User not found")
+    # 校验新旧密码不能相同
+    if u.password_hash and check_password_hash(u.password_hash, new_pwd):
+        raise ParamError("New password must be different from current password")
     u.password_hash = generate_password_hash(new_pwd)
     u.mtime = now()
     u.save()

@@ -356,13 +356,6 @@
         <section class="modal-card-body">
             <div id="change-pwd-msg" class="mb-3" style="display:none;"></div>
             <div class="field">
-                <label class="label">当前密码</label>
-                <div class="control has-icons-left">
-                    <input class="input" type="password" id="old-password" placeholder="输入当前密码">
-                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
-                </div>
-            </div>
-            <div class="field">
                 <label class="label">新密码</label>
                 <div class="control has-icons-left">
                     <input class="input" type="password" id="new-password" placeholder="输入新密码（6-128位）">
@@ -429,7 +422,6 @@
     // 打开修改密码
     $('.js-open-change-pwd').on('click', function () {
         $pwdModal.addClass('is-active');
-        $('#old-password').val('');
         $('#new-password').val('');
         $('#repassword').val('');
         $pwdMsg.hide();
@@ -444,11 +436,10 @@
 
     // 提交修改密码
     $pwdSubmit.on('click', function () {
-        let oldPwd = $('#old-password').val().trim();
         let newPwd = $('#new-password').val().trim();
         let rePwd = $('#repassword').val().trim();
 
-        if (!oldPwd || !newPwd || !rePwd) {
+        if (!newPwd || !rePwd) {
             showPwdMsg('请填写所有密码字段', 'error');
             return;
         }
@@ -460,10 +451,6 @@
             showPwdMsg('两次输入的新密码不一致', 'error');
             return;
         }
-        if (oldPwd === newPwd) {
-            showPwdMsg('新密码不能与当前密码相同', 'error');
-            return;
-        }
 
         $pwdSubmit.prop('disabled', true).addClass('is-loading').text('修改中...');
 
@@ -471,7 +458,6 @@
             url: '{{ url_for("root.api.change_pwd") }}',
             method: 'POST',
             data: {
-                old_password: oldPwd,
                 new_password: newPwd,
                 repassword: rePwd
             },

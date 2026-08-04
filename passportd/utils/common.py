@@ -398,7 +398,7 @@ def generate_digital_verification_code(length: int = 6) -> str:
     :returns: 随机生成的纯数字验证码字符串
     """
     code = []
-    code = "".join(str(i) for i in sample(range(0, 9), length))
+    code = "".join(str(i) for i in sample(range(0, 10), length))
     return code
 
 

@@ -292,13 +292,35 @@ class UtilsTest(unittest.TestCase):
         self.assertGreater(len(codes), 1)
 
     def test_generate_digital_verification_code(self):
+        """测试纯数字验证码生成"""
+        # 默认长度 6
         code = generate_digital_verification_code()
         self.assertEqual(len(code), 6)
         self.assertTrue(code.isdigit())
-        # 自定义长度
-        code4 = generate_digital_verification_code(4)
-        self.assertEqual(len(code4), 4)
-        self.assertTrue(code4.isdigit())
+
+        # 自定义长度（上限 10）
+        for length in (1, 2, 4, 8, 10):
+            c = generate_digital_verification_code(length)
+            self.assertEqual(len(c), length, f"length={length} failed")
+            self.assertTrue(c.isdigit())
+
+        # 多次生成应产生不同值（10个数字中取6个=151200种组合）
+        codes = set(generate_digital_verification_code() for _ in range(20))
+        self.assertGreater(len(codes), 15, "随机性不足，生成的值过于集中")
+
+        # 每一位都是 0-9 之间的数字
+        for _ in range(50):
+            c = generate_digital_verification_code()
+            for ch in c:
+                self.assertIn(ch, "0123456789", f"出现非法字符: {ch}")
+
+        # 单次结果内不重复
+        c = generate_digital_verification_code(6)
+        self.assertEqual(len(c), len(set(c)), "同一验证码内存在重复数字")
+
+        # length > 10 时应抛出异常
+        with self.assertRaises(ValueError):
+            generate_digital_verification_code(11)
 
 
 if __name__ == "__main__":

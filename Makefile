@@ -1,7 +1,4 @@
-.PHONY: clean build publish
-
-HOST:=$(shell python -c 'from passportd.basis.conf import config;print(config.get("HOST"))')
-PORT:=$(shell python -c 'from passportd.basis.conf import config;print(config.get("PORT"))')
+.PHONY: clean
 
 help:
 	@echo "  clean    remove unwanted stuff"
@@ -23,7 +20,9 @@ link:
 	pip install -e .
 
 dev:
-	FLASK_APP=passportd.app:create_app FLASK_ENV=development FLASK_DEBUG=1 flask run --host $(HOST) --port $(PORT)
+	HOST=$$(python -c 'from passportd.basis.conf import config;print(config.get("HOST"))'); \
+	PORT=$$(python -c 'from passportd.basis.conf import config;print(config.get("PORT"))'); \
+	FLASK_APP=passportd.app:create_app FLASK_ENV=development FLASK_DEBUG=1 flask run --host $$HOST --port $$PORT
 
 test:
 	python -m unittest discover -p "test_*.py"

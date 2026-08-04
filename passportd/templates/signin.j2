@@ -87,6 +87,10 @@
                 忘记密码？
               </a>
             </div>
+            <p class="help has-text-right is-size-7 has-text-grey" id="forgot-password-hint" style="display:none;">
+              <i class="fa-solid fa-circle-info"></i>
+              请使用「验证码登录」登录，然后前往个人中心修改密码
+            </p>
           </form>
         </div>
 
@@ -129,65 +133,6 @@
           <p class="help has-text-grey mt-2 is-size-7" id="vcode-hint">
             验证码 5 分钟内有效，请勿泄露
           </p>
-        </div>
-
-        <!-- 忘记密码弹窗 -->
-        <div class="modal" id="reset-password-modal">
-          <div class="modal-background"></div>
-          <div class="modal-card">
-            <header class="modal-card-head">
-              <p class="modal-card-title">重置密码</p>
-              <button class="delete" id="btn-close-reset-modal" aria-label="close"></button>
-            </header>
-            <section class="modal-card-body">
-              <div id="reset-notification"></div>
-
-              <div class="field">
-                <label class="label">账号</label>
-                <div class="control has-icons-left">
-                  <input class="input" type="text" id="reset-account"
-                         placeholder="邮箱 / 手机号" required autocomplete="off">
-                  <span class="icon is-small is-left">
-                    <i class="fa-solid fa-user"></i>
-                  </span>
-                </div>
-                <p class="help">输入已注册的邮箱或手机号</p>
-              </div>
-
-              <div class="field is-grouped">
-                <div class="control is-expanded">
-                  <label class="label">验证码</label>
-                  <input class="input" type="text" id="reset-code"
-                         placeholder="6 位数字验证码" maxlength="6"
-                         required autocomplete="off">
-                </div>
-                <div class="control" style="padding-top: 2rem;">
-                  <button class="button is-primary is-outlined" id="btn-send-reset-vcode"
-                          type="button">
-                    <span>获取验证码</span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="field">
-                <label class="label">新密码</label>
-                <div class="control has-icons-left">
-                  <input class="input" type="password" id="reset-password"
-                         placeholder="至少 6 位字符" minlength="6"
-                         required autocomplete="new-password">
-                  <span class="icon is-small is-left">
-                    <i class="fa-solid fa-lock"></i>
-                  </span>
-                </div>
-              </div>
-            </section>
-            <footer class="modal-card-foot" style="justify-content: flex-end;">
-              <button class="button" id="btn-cancel-reset">取消</button>
-              <button class="button is-primary" id="btn-reset-password">
-                <strong>重置密码</strong>
-              </button>
-            </footer>
-          </div>
         </div>
 
         {% if oauth2_providers %}
@@ -241,12 +186,26 @@
         $tabVcode.removeClass('is-active');
         $formPassword.removeClass('is-hidden');
         $formVcode.addClass('is-hidden');
+        $('#forgot-password-hint').hide();
       } else {
         $tabVcode.addClass('is-active');
         $tabPassword.removeClass('is-active');
         $formVcode.removeClass('is-hidden');
         $formPassword.addClass('is-hidden');
       }
+    });
+
+    // 忘记密码 → 切换到验证码登录
+    $('#link-forgot-password').on('click', function () {
+      $tabVcode.addClass('is-active');
+      $tabPassword.removeClass('is-active');
+      $formVcode.removeClass('is-hidden');
+      $formPassword.addClass('is-hidden');
+      $('#vcode-account').focus();
+      $('#forgot-password-hint').fadeIn();
+      setTimeout(function () {
+        $('#forgot-password-hint').fadeOut();
+      }, 5000);
     });
 
     // 发送验证码

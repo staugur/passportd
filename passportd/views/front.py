@@ -45,7 +45,13 @@ from ..libs.interface import (
     RecordLoginInterface,
 )
 from ..basis.errors import ApiError, PassportError
-from ..utils.common import rdb, parse_encrypted_password, rsa_encrypt
+from ..basis.vars import PROC_NAME
+from ..utils.common import (
+    rdb,
+    parse_account_classify,
+    parse_encrypted_password,
+    rsa_encrypt,
+)
 from ..utils.web import (
     login_required,
     anonymous_required,
@@ -86,11 +92,16 @@ def uploaded(filename):
 @bp.route("/user/signup", methods=["GET", "POST"])
 @anonymous_required
 def signup():
-    """用户注册页面：GET 渲染注册表单，POST 处理注册。"""
+    """用户注册页面：GET 渲染注册表单，POST 处理注册。
+
+    用户名注册：account + password 即可。
+    邮箱/手机号注册：account + password + vcode（需先获取验证码）。
+    """
     if request.method == "POST":
         account = request.form.get("account", "").strip()
         password = request.form.get("password", "").strip()
         repassword = request.form.get("repassword", "").strip()
+        vcode = request.form.get("vcode", "").strip()
         nickname = request.form.get("nickname", "").strip()
 
         if not account or not password:
@@ -107,6 +118,34 @@ def signup():
                 account=account,
                 nickname=nickname,
             )
+
+        # 邮箱/手机号注册需要验证码
+        classify = parse_account_classify(account)
+        if classify in ("email", "mobile"):
+            if not vcode:
+                return render_template(
+                    "signup.j2",
+                    error="邮箱/手机号注册需要验证码",
+                    account=account,
+                    nickname=nickname,
+                )
+            stored = rdb.get(f"{PROC_NAME}:signup_vcode:{account}")
+            if not stored:
+                return render_template(
+                    "signup.j2",
+                    error="验证码已过期，请重新获取",
+                    account=account,
+                    nickname=nickname,
+                )
+            if stored != vcode:
+                return render_template(
+                    "signup.j2",
+                    error="验证码错误",
+                    account=account,
+                    nickname=nickname,
+                )
+            # 验证通过，删除已用验证码
+            rdb.delete(f"{PROC_NAME}:signup_vcode:{account}")
 
         res = RegisterInterface(account, password, nickname=nickname)
         if res["success"]:
