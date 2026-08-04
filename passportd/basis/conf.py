@@ -49,6 +49,8 @@ class BaseConfig:
     HOST: str = "0.0.0.0"
     #: 监听端口
     PORT: int = 10030
+    #: 数据根目录，data/logs/uploads 均在此目录下创建子目录，容器环境可设为 /app
+    BASE_DIR: str = APP_DIR
     #: 数据库连接配置，格式 scheme://user:password@host:port/dbname?option=value
     #: https://docs.peewee-orm.com/en/latest/peewee/db_tools.html
     #: SQLite 使用 sqlite:///path, 注意是三个斜杠，path如果是绝对路径则是四个斜杠。
@@ -75,8 +77,7 @@ class BaseConfig:
     # 上传
     #: 上传方式，支持 sapic、local，前者是作者的开源图床项目，后者是本地上传
     UPLOAD_METHOD = "local"
-    #: 本地上传目录，默认是程序所在目录下的 uploads
-    LOCAL_UPLOAD_FOLDER = join(APP_DIR, "uploads")
+    #: 本地上传目录，由 BASE_DIR/uploads 派生，也可通过 PASSPORT_LOCAL_UPLOAD_FOLDER 单独覆盖
     #: Sapic 上传接口和LinkToken，文档是 https://sapic.rtfd.vip
     SAPIC_APIURL = "https://sapicd.com"
     SAPIC_LINKTOKEN = ""
@@ -147,7 +148,6 @@ class ProdConfig(BaseConfig):
     REDIS_URI = "redis://:pwd@localhost:6379/0"
     LOG_LEVEL = "INFO"
     LOG_FILE = "sys.log"
-    LOG_DIR = join(APP_DIR, "logs")
     OIDC_RSA_KEY_SIZE = 4096
     #: 生产gunicorn运行配置
     NO_DAEMON: bool = False
@@ -232,3 +232,12 @@ config.from_object(ProdConfig if is_prod() else DevConfig)
 config.from_envvar(ENV_NAME, silent=True)
 config.from_prefixed_env(prefix=ENV_PREFIX)
 _check_config_value(config)
+
+# 从 BASE_DIR 派生 data、logs、uploads 子目录
+_base_dir = config.get("BASE_DIR", APP_DIR)
+if "DATA_DIR" not in config:
+    config["DATA_DIR"] = join(_base_dir, "data")
+if "LOCAL_UPLOAD_FOLDER" not in config:
+    config["LOCAL_UPLOAD_FOLDER"] = join(_base_dir, "uploads")
+if "LOG_DIR" not in config:
+    config["LOG_DIR"] = join(_base_dir, "logs")

@@ -5,7 +5,6 @@
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-passportd.readthedocs.io-brightgreen)](https://passportd.readthedocs.io/)
-[![codecov](https://codecov.io/gh/staugur/passportd/graph/badge.svg?token=Wgl1Ky9PY8)](https://codecov.io/gh/staugur/passportd)
 
 ## 核心功能
 

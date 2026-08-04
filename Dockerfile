@@ -38,6 +38,7 @@ COPY --from=builder /root/.local /home/passportd/.local
 ENV PATH="/home/passportd/.local/bin:${PATH}"
 ENV PYTHONUNBUFFERED=1
 ENV PASSPORT_NO_DAEMON=true
+ENV PASSPORT_BASE_DIR=/app
 
 WORKDIR /app
 

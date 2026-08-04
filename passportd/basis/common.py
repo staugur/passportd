@@ -17,12 +17,12 @@ limitations under the License.
 
 from sys import version_info
 from os import getenv, makedirs
-from os.path import join, exists
+from os.path import exists
 from typing import Any, Optional, Union, List
 from time import time, mktime
 from datetime import timedelta, datetime
 
-from .vars import ENV_PREFIX, ApiRespType, COMMON_DICT_TYPE, APP_DIR
+from .vars import ENV_PREFIX, ApiRespType, COMMON_DICT_TYPE
 
 
 def new_res(
@@ -116,7 +116,10 @@ def check_uid_rule(uid: str) -> bool:
     return len(uid) == 22 if isinstance(uid, str) else False
 
 
-def auto_create_data_dir():
-    """自动创建应用数据目录（APP_DIR/data），如果不存在则创建。"""
-    if not exists(join(APP_DIR, "data")):
-        makedirs(join(APP_DIR, "data"), exist_ok=True)
+def auto_create_data_dir(path: str):
+    """自动创建应用数据目录，如果不存在则创建。
+
+    :param path: 数据目录的绝对路径
+    """
+    if not exists(path):
+        makedirs(path, exist_ok=True)

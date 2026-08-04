@@ -34,12 +34,3 @@ jobs:
         run: |
           coverage run -m unittest discover -p "test_*.py"
           coverage report -m
-          coverage xml
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          files: coverage.xml
-          flags: python${{ matrix.python-version }}
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}

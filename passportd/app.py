@@ -16,13 +16,14 @@ limitations under the License.
 """
 
 from .basis.common import auto_create_data_dir, raise_version
+from .basis.conf import config
 from .utils.common import auto_init_rsa_key
 
 __author__ = "Hiroshi.tao <me@tcw.im>"
 __date__ = "2021-06-25"
 
 raise_version()
-auto_create_data_dir()
+auto_create_data_dir(config["DATA_DIR"])
 auto_init_rsa_key()
 
 
