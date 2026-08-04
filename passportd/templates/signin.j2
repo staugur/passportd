@@ -216,7 +216,7 @@
         return;
       }
 
-      $btnSend.prop('disabled', true);
+      $btnSend.prop('disabled', true).addClass('is-loading');
 
       $.ajax({
         url: '{{ url_for("root.api.send_login_vcode") }}',
@@ -226,15 +226,16 @@
         success: function (res) {
           if (res.success) {
             showNotification('验证码已发送，请注意查收', 'success');
+            $btnSend.removeClass('is-loading');
             startCountdown(60);
           } else {
             showNotification(res.message || '发送失败', 'danger');
-            $btnSend.prop('disabled', false);
+            $btnSend.prop('disabled', false).removeClass('is-loading');
           }
         },
         error: function () {
           showNotification('发送失败，请稍后重试', 'danger');
-          $btnSend.prop('disabled', false);
+          $btnSend.prop('disabled', false).removeClass('is-loading');
         }
       });
     });
@@ -314,10 +315,10 @@
       // 移除已有通知，插入新通知
       $formVcode.find('.notification').remove();
       $notification.insertBefore('#form-vcode .field:first');
-      // 3 秒后自动消失
+      // 6 秒后自动消失
       setTimeout(function () {
         $notification.fadeOut(300, function () { $(this).remove(); });
-      }, 4000);
+      }, 6000);
     }
   });
 </script>

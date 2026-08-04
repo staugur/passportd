@@ -157,7 +157,7 @@ $(function () {
             return;
         }
 
-        $btnSendVcode.prop('disabled', true);
+        $btnSendVcode.prop('disabled', true).addClass('is-loading');
         $vcodeHint.text('正在发送...').removeClass('has-text-danger has-text-success');
 
         $.ajax({
@@ -167,15 +167,16 @@ $(function () {
             success: function (res) {
                 if (res.success) {
                     $vcodeHint.text('验证码已发送，请查收').addClass('has-text-success').removeClass('has-text-danger');
+                    $btnSendVcode.removeClass('is-loading');
                     startCountdown();
                 } else {
                     $vcodeHint.text(res.message || '发送失败').addClass('has-text-danger').removeClass('has-text-success');
-                    $btnSendVcode.prop('disabled', false);
+                    $btnSendVcode.prop('disabled', false).removeClass('is-loading');
                 }
             },
             error: function () {
                 $vcodeHint.text('网络错误，请稍后重试').addClass('has-text-danger').removeClass('has-text-success');
-                $btnSendVcode.prop('disabled', false);
+                $btnSendVcode.prop('disabled', false).removeClass('is-loading');
             }
         });
     });

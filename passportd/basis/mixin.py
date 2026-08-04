@@ -16,9 +16,9 @@ limitations under the License.
 """
 
 import smtplib
-from email.utils import formatdate
+from email.header import Header
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate
 from json import dumps as json_dumps
 from uuid import uuid4
 from os.path import join
@@ -169,7 +169,6 @@ class SMTPMixIn:
     _smtp_user_passwd: str = config.get("SMTP_USER_PASSWD", "")
     _smtp_server: str = config.get("SMTP_SERVER", "")
     _smtp_port: int = config.get("SMTP_PORT", 587)
-    _smtp_use_ssl: bool = config.get("SMTP_USE_SSL", False)
 
     def smtp_send_email(
         self,
@@ -189,25 +188,22 @@ class SMTPMixIn:
         if not to_addr or not subject or not body:
             raise ParamError("Invalid params")
 
-        message = MIMEMultipart("alternative")
-        message.set_charset("utf-8")
+        message = MIMEText(body, "html", "utf-8")
         message["From"] = self._smtp_user_mail
         message["To"] = to_addr
-        message["Subject"] = subject
-        message["Date"] = formatdate(localtime=True)  # 添加时间戳
-        content = MIMEText(body, "html", "utf-8")
-        message.attach(content)
-        message.attach("系统邮件，请勿回复。")
+        message["Subject"] = Header(subject, "utf-8")  # type: ignore
+        message["Date"] = formatdate(localtime=True)
 
         try:
-            if self._smtp_use_ssl:
+            if self._smtp_port == 465:
+                # 端口 465：隐式 SSL（SMTP_SSL）
                 server = smtplib.SMTP_SSL(self._smtp_server, self._smtp_port)
+            elif self._smtp_port == 25:
+                raise RunError("SMTP port 25 is not allowed for security reasons")
             else:
+                # 端口 587 等：明文连接 + STARTTLS 升级
                 server = smtplib.SMTP(self._smtp_server, self._smtp_port)
-                server.ehlo()
                 server.starttls()
-                server.ehlo()
-
             if config.get("DEBUG") is True:
                 server.set_debuglevel(1)
             server.login(self._smtp_user_mail, self._smtp_user_passwd)
@@ -223,9 +219,7 @@ class SpugMixIn(RequestMixIn):
     """Spug 邮件/短信发送 Mixin，通过 Spug Push API 发送通知。"""
 
     #: EMAIL
-    _spug_api_user: str = config.get("SPUG_API_USER", "")
-    _spug_api_key: str = config.get("SPUG_API_KEY", "")
-    _spug_mail_from: str = config.get("SPUG_MAIL_FROM", "")
+    _spug_mail_template_id: str = config.get("SPUG_MAIL_TEMPLATE_ID", "")
 
     #: SMS
     _spug_sms_template_id: str = config.get("SPUG_SMS_TEMPLATE_ID", "")
@@ -233,44 +227,35 @@ class SpugMixIn(RequestMixIn):
     def spug_send_email(
         self,
         to_addr: str,
-        subject: str,
-        body: str,
+        code: str,
     ) -> bool:
-        """发送HTML邮件消息
+        """通过 Spug Push 发送邮件验证码。
 
-        :param str to_addr: 收件人地址，多个收件人用分号分隔（英文）
-        :param str subject: 主题
-        :param str body: 邮件正文
+        模板变量：${scene}、${code}、${minute}，scene 固定为"登录&注册"，minute 固定为 5。
+
+        :param str to_addr: 收件人地址
+        :param str code: 验证码
         :returns: 发送成功返回 True
         :raises ParamError: 参数错误
-        :raises RunError: 运行错误
+        :raises RunError: 发送失败
         """
-        if (
-            not self._spug_api_user
-            or not self._spug_api_key
-            or not self._spug_mail_from
-        ):
-            raise ParamError("Invalid email params")
-        if not to_addr or not subject or not body:
+        if not self._spug_mail_template_id:
+            raise ParamError("SPUG_MAIL_TEMPLATE_ID is not configured")
+        if not to_addr or not code:
             raise ParamError("Invalid params")
 
-        apiurl = "https://api.sendcloud.net/apiv2/mail/send"
+        apiurl = f"https://push.spug.cc/mail/{self._spug_mail_template_id}"
         data = {
-            "apiUser": self._spug_api_user,
-            "apiKey": self._spug_api_key,
-            "from": self._spug_mail_from,
-            "to": to_addr.replace(",", ";"),
-            "subject": subject,
-            "html": body,
+            "to": to_addr,
+            "code": code,
+            "scene": "Passportd 登录&注册",
+            "minute": "5",
         }
-
-        res = self.http(apiurl, data=data).json()
-        if is_true(res.get("result")):
-            return res.get("info")
+        res = self.http(apiurl, json_data=data, timeout=10).json()
+        if res.get("code") == 200:
+            return True
         else:
-            e = "{code}: {msg}".format(
-                code=res.get("statusCode"), msg=res.get("message")
-            )
+            e = "{code}: {msg}".format(code=res.get("code"), msg=res.get("msg"))
             raise RunError(e)
 
     def spug_send_sms(
@@ -278,22 +263,28 @@ class SpugMixIn(RequestMixIn):
         phone: str,
         code: str,
     ) -> bool:
-        """发送HTML邮件消息
+        """通过 Spug Push 发送短信验证码。
 
-        :param str phone: 收件人地址，多个收件人用分号分隔（英文）
+        模板变量：${code}、${minute}，minute 固定为 5。
+
+        :param str phone: 手机号码
         :param str code: 验证码
         :returns: 发送成功返回 True
         :raises ParamError: 参数错误
-        :raises RunError: 运行错误
+        :raises RunError: 发送失败
         """
         if not self._spug_sms_template_id:
-            raise ParamError("Invalid sms params")
+            raise ParamError("SPUG_SMS_TEMPLATE_ID is not configured")
         if not multi_phone_check(phone) or not code:
             raise ParamError("Invalid phone or code")
+
         apiurl = f"https://push.spug.cc/sms/{self._spug_sms_template_id}"
-        body = {"code": code, "to": phone}
-        res = self.http(apiurl, json_data=body, timeout=10).json()
-        logger.debug(f"spug_send_sms response: {res}")
+        data = {
+            "to": phone,
+            "code": code,
+            "minute": "5",
+        }
+        res = self.http(apiurl, json_data=data, timeout=10).json()
         if res.get("code") == 200:
             return True
         else:

@@ -92,21 +92,16 @@ class BaseConfig:
     ## 发送邮件服务器地址
     SMTP_SERVER: str = ""
     ## 发送邮件服务器端口
+    ## 由端口自动判断：465=SSL/TLS(SMTP_SSL), 其他=明文+STARTTLS, 25端口禁止使用
     SMTP_PORT: int = 587
-    ## True=隐式TLS直接加密（SMTP_SSL），False=明文连接后升级（STARTTLS）
-    SMTP_USE_SSL: bool = False
     #: SPUG推送助手邮件配置
-    SPUG_API_USER = ""
-    SPUG_API_KEY = ""
-    SPUG_MAIL_FROM = ""
+    SPUG_MAIL_TEMPLATE_ID = ""
 
     # 短信
     #: 短信发送方式，支持空字符串（不发送）、spug
     SMS_PROVIDER = ""
     #: SPUG推送助手，短信模板ID
     SPUG_SMS_TEMPLATE_ID = ""
-    #: SPUG推送助手，短信模板中验证码变量名（模板参数 key）
-    SPUG_SMS_VCODE_KEY = "code"
 
     # OAuth2 配置
     #: GitHub OAuth2 配置
@@ -215,11 +210,12 @@ def _check_config_value(cfg):
             and cfg["SMTP_USER_PASSWD"]
             and cfg["SMTP_SERVER"]
             and isinstance(cfg["SMTP_PORT"], int)
-        ), "SMTP_USER_MAIL, SMTP_USER_PASSWD, SMTP_SERVER and SMTP_PORT must be set when EMAIL_PROVIDER is 'smtp'"
+            and cfg["SMTP_PORT"] != 25
+        ), "SMTP_USER_MAIL, SMTP_USER_PASSWD, SMTP_SERVER and SMTP_PORT must be set when EMAIL_PROVIDER is 'smtp', and SMTP_PORT must not be 25"
     elif cfg["EMAIL_PROVIDER"] == "spug":
-        assert (
-            cfg["SPUG_API_USER"] and cfg["SPUG_API_KEY"] and cfg["SPUG_MAIL_FROM"]
-        ), "SPUG_API_USER, SPUG_API_KEY and SPUG_MAIL_FROM must be set when EMAIL_PROVIDER is 'spug'"
+        assert cfg[
+            "SPUG_MAIL_TEMPLATE_ID"
+        ], "SPUG_MAIL_TEMPLATE_ID must be set when EMAIL_PROVIDER is 'spug'"
 
     assert cfg["SMS_PROVIDER"] in [
         "",
@@ -229,9 +225,6 @@ def _check_config_value(cfg):
         assert cfg[
             "SPUG_SMS_TEMPLATE_ID"
         ], "SPUG_SMS_TEMPLATE_ID must be set when SMS_PROVIDER is 'spug'"
-        assert cfg[
-            "SPUG_SMS_VCODE_KEY"
-        ], "SPUG_SMS_VCODE_KEY must be set when SMS_PROVIDER is 'spug'"
 
 
 config = FlaskConfig(APP_DIR)

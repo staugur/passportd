@@ -175,23 +175,11 @@ OpenID Connect 配置
    * - ``SMTP_PORT``
      - int
      - ``587``
-     - SMTP 端口，EMAIL_PROVIDER 为 ``smtp`` 时必填
-   * - ``SMTP_USE_SSL``
-     - bool
-     - ``false``
-     - 隐式 TLS（SMTP_SSL），false 时走 STARTTLS
-   * - ``SPUG_API_USER``
+     - SMTP 端口，465=隐式SSL，其他=STARTTLS，25端口禁止使用
+   * - ``SPUG_MAIL_TEMPLATE_ID``
      - str
      - ``""``
-     - Spug 推送助手 API 用户，EMAIL_PROVIDER 为 ``spug`` 时必填
-   * - ``SPUG_API_KEY``
-     - str
-     - ``""``
-     - Spug 推送助手 API Key，EMAIL_PROVIDER 为 ``spug`` 时必填
-   * - ``SPUG_MAIL_FROM``
-     - str
-     - ``""``
-     - Spug 发件地址，EMAIL_PROVIDER 为 ``spug`` 时必填
+     - Spug 推送助手邮件模板编码，EMAIL_PROVIDER 为 ``spug`` 时必填
 
 短信配置
 ---------
@@ -211,10 +199,23 @@ OpenID Connect 配置
      - str
      - ``""``
      - Spug 推送助手短信模板 ID，SMS_PROVIDER 为 ``spug`` 时必填
-   * - ``SPUG_SMS_VCODE_KEY``
-     - str
-     - ``"code"``
-     - Spug 短信模板中验证码的变量名，SMS_PROVIDER 为 ``spug`` 时必填
+
+**SPUG_MAIL_TEMPLATE_ID 与 SPUG_SMS_TEMPLATE_ID 获取方法**：
+
+Spug 推送助手提供官方验证码模板，无需自主创建。获取步骤：
+
+1. 打开 `push.spug.cc <https://push.spug.cc>`_，微信扫码登录。
+2. 进入验证码模板页面：
+
+   - **短信验证码**：`push.spug.cc/console/verification/sms <https://push.spug.cc/console/verification/sms>`_
+   - **邮件验证码**：`push.spug.cc/console/verification/mail <https://push.spug.cc/console/verification/mail>`_
+
+3. 选择对应模板：
+
+   - **短信验证码**：选择支持 ``${code}`` + ``${minute}`` 双参数的模板（另一个仅支持 ``${code}`` 单参数）。
+   - **邮件验证码**：选择中文版模板（英/中两版参数相同，均含 ``${code}``、``${scene}``、``${minute}``）。
+
+4. 复制模板编码（形如 ``Vf7Jp2sD9xL``），即为对应的 ``SPUG_MAIL_TEMPLATE_ID`` 或 ``SPUG_SMS_TEMPLATE_ID``。
 
 OAuth2 第三方登录配置
 ----------------------
@@ -237,6 +238,18 @@ OAuth2 第三方登录配置
    * - ``GITEE_CLIENT_SECRET``
      - str
      - Gitee OAuth App Client Secret
+   * - ``WEIBO_CLIENT_ID``
+     - str
+     - 微博 OAuth2 Client ID
+   * - ``WEIBO_CLIENT_SECRET``
+     - str
+     - 微博 OAuth2 Client Secret
+   * - ``QQ_CLIENT_ID``
+     - str
+     - QQ OAuth2 Client ID
+   * - ``QQ_CLIENT_SECRET``
+     - str
+     - QQ OAuth2 Client Secret
 
 生产环境配置
 -------------
@@ -254,7 +267,7 @@ OAuth2 第三方登录配置
      - ``DEBUG``
      - ``INFO``
      - 日志级别
-   * - 日志输出
+   * - LOG_FILE / LOG_DIR
      - stdout
      - 文件（按日期滚动）
      - 日志存储方式
@@ -283,4 +296,4 @@ OAuth2 第三方登录配置
 .. warning::
 
     生产环境务必设置一个安全的 ``PASSPORT_SECRET_KEY``，该密钥用于 JWT
-    HMAC-SHA256 签名。
+    HMAC-SHA256 签名 和 Cookie 登录状态。

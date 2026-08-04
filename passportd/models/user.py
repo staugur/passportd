@@ -41,12 +41,12 @@ from ..utils.common import (
 
 
 def check_credential_rule(pwd: str) -> bool:
-    """检查密码凭证长度是否符合规范（6~128 个字符）。
+    """检查密码凭证长度是否符合规范（6~32 个字符）。
 
     :param pwd: 密码凭证字符串
     :returns: 符合返回 True，否则 False
     """
-    return 6 <= len(pwd) <= 128 if isinstance(pwd, str) else False
+    return 6 <= len(pwd) <= 32 if isinstance(pwd, str) else False
 
 
 def has_uid(uid: str) -> bool:
@@ -345,7 +345,7 @@ def change_password(uid: str, account: str, new_pwd: str) -> bool:
     if not is_local_account(account):
         raise ParamError("Only local accounts can change password")
     if not check_credential_rule(new_pwd):
-        raise ParamError("New password must be 6-128 characters")
+        raise ParamError("New password must be 6-32 characters")
     try:
         u = User.get(User.uid == uid)
     except User.DoesNotExist:

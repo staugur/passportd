@@ -184,21 +184,22 @@ class VCodeInterface(SMTPMixIn, SpugMixIn):
                 raise PassportError("Email address is empty")
 
             provider = config["EMAIL_PROVIDER"]
-            je = Environment(loader=FileSystemLoader(join(APP_DIR, "templates")))
-            body = je.get_template("vcode.j2").render(code=code)
-            subject = f"验证码 - {PROC_NAME}"
-
             if provider == "smtp":
+                je = Environment(loader=FileSystemLoader(join(APP_DIR, "templates")))
+                body = je.get_template("vcode.j2").render(code=code)
+                subject = f"验证码 - {PROC_NAME}"
                 ret = self.smtp_send_email(to_addr, subject, body)
             elif provider == "spug":
-                ret = self.spug_send_email(to_addr, subject, body)
+                ret = self.spug_send_email(to_addr, code)
             else:
                 raise PassportError(f"Unsupported email provider: {provider}")
 
             res.update(success=ret)
         except Exception as e:
             res.update(message=str(e))
-        logger.info(f"send_email to {to_addr}, code: {code}, result: {res}")
+        logger.info(
+            f"send_email to {to_addr}, provider: {config['EMAIL_PROVIDER']}, result: {res}"
+        )
         return res
 
     def send_sms(self, phone: str, code: str) -> ApiRespType:
@@ -218,17 +219,17 @@ class VCodeInterface(SMTPMixIn, SpugMixIn):
                 raise PassportError("Phone number is empty")
 
             provider = config["SMS_PROVIDER"]
-
             if provider == "spug":
-                params = {config["SPUG_SMS_VCODE_KEY"]: code}
-                ret = self.spug_send_sms(phone, params)
+                ret = self.spug_send_sms(phone, code)
             else:
                 raise PassportError(f"Unsupported sms provider: {provider}")
 
             res.update(success=ret)
         except Exception as e:
             res.update(message=str(e))
-        logger.info(f"send_sms to {phone}, code: {code}, result: {res}")
+        logger.info(
+            f"send_sms to {phone}, provider: {config['SMS_PROVIDER']}, result: {res}"
+        )
         return res
 
 

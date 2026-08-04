@@ -74,10 +74,10 @@ def discovery():
 def jwks():
     """JWKS (JSON Web Key Set) 端点，返回 RSA 公钥用于 ID Token 验证。
 
-    返回的公钥包含 ``kid``（RFC 7638 指纹），OIDC Client 可据此检测
+    返回的公钥包含 kid（RFC 7638 指纹），OIDC Client 可据此检测
     密钥变更并自动刷新缓存。
 
-    :returns: JWKS JSON，包含 ``kty``, ``n``, ``e``, ``kid``, ``use``, ``alg``
+    :returns: JWKS JSON，包含 kty, n, e, kid, use, alg
     """
     prikey = config["OIDC_RSA_PRIVATE_KEY"]
     with open(prikey, "r") as fp:
