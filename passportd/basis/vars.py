@@ -74,7 +74,9 @@ ENV_NAME: str = f"{ENV_PREFIX}_CONFIG"
 JWT_ALG: str = "HS256"
 JWT_ISS: str = "SaintIC"
 JWT_AUD: str = "Passport"
+JWE_HEADER = {"alg": "RSA-OAEP", "enc": "A256GCM"}
 
+#: OIDC
 OIDC_EXP: int = 3600
 OIDC_CODE_EXP: int = 300
 OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS: List[str] = [
@@ -83,6 +85,5 @@ OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS: List[str] = [
 ]
 OIDC_SUPPORTED_SCOPES: List[str] = ["openid", "profile", "email", "role"]
 
-JWE_HEADER = {"alg": "RSA-OAEP", "enc": "A256GCM"}
 #: 用户登录状态索引字段
 USR_STATE_KEY: str = "sid"

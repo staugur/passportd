@@ -691,7 +691,7 @@ passportd/
 ├── cli.py              ← CLI 命令 (run, start, stop, init, config)
 ├── version.py          ← 版本号
 ├── basis/              ← 基础设施层
-│   ├── conf.py         ← 配置加载 (Dev/Prod)
+│   ├── conf.py         ← 配置加载 (Dev/Prod + PinConfig 固定值)
 │   ├── errors.py       ← 异常类 (PassportError, ApiError, AuthError...)
 │   ├── vars.py         ← 全局常量
 │   ├── common.py       ← 公共工具 (new_res, is_true, now, raise_version...)

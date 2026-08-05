@@ -27,7 +27,7 @@ from typing import Dict, Any, Union, Optional, List, Tuple
 from urllib.parse import urlparse
 from random import sample
 from os import makedirs
-from os.path import join, isfile
+from os.path import dirname, join, isfile
 
 from shortuuid import uuid as shortuuid
 from joserfc import jwt, jwe
@@ -213,8 +213,9 @@ def is_valid_user_role(role: str) -> bool:
 def create_log() -> logging.Logger:
     """创建并配置应用日志实例。
 
-    根据 ``LOG_LEVEL``、``LOG_FILE``、``LOG_DIR`` 配置项创建：
-    - 有 LOG_FILE 时使用 TimedRotatingFileHandler（按日期轮转）
+    根据 ``LOG_LEVEL``、``LOG_FILE`` 配置项创建：
+    - 有 LOG_FILE 时使用 TimedRotatingFileHandler（按日期轮转），
+      日志文件写入 ``BASE_DIR/logs/`` 目录
     - 无 LOG_FILE 时输出到 stdout
 
     :returns: 配置好的 Logger 实例
@@ -232,15 +233,12 @@ def create_log() -> logging.Logger:
     logger = logging.getLogger(PROC_NAME)
     logger.setLevel(levels[config["LOG_LEVEL"]])
     if config.get("LOG_FILE"):
-        LOG_DIR = config["LOG_DIR"]
-        LOG_FILE = config["LOG_FILE"]
-        if LOG_DIR:
-            # 如果日志目录不存在，则创建，可能抛出异常（理应）
-            makedirs(LOG_DIR, exist_ok=True)
-            LOG_FILE = join(LOG_DIR, LOG_FILE)
+        log_dir = join(config["BASE_DIR"], "logs")
+        makedirs(log_dir, exist_ok=True)
+        log_file = join(log_dir, config["LOG_FILE"])
         # 创建文件处理器（按时间分隔），写入日志文件
         handler = TimedRotatingFileHandler(
-            filename=LOG_FILE,
+            filename=log_file,
             backupCount=10,
             when="midnight",
             encoding="utf-8",

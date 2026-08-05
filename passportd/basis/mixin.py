@@ -437,7 +437,7 @@ class SapicUploadMixIn(RequestMixIn):
 class LocalUploadMixIn:
     """本地上传 Mixin，将 base64 图片保存到本地文件系统。
 
-    上传目录由 ``LOCAL_UPLOAD_FOLDER`` 配置指定。
+    上传目录固定为 ``BASE_DIR/uploads``。
     """
 
     def local_base64_upload(self, content: str) -> str:

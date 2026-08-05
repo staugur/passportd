@@ -2,6 +2,7 @@
 
 认证、授权、统一登录 — 基于 Flask 的 SSO 单点登录服务。
 
+[![PyPI](https://img.shields.io/pypi/v/passportd)](https://pypi.org/project/passportd/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-passportd.readthedocs.io-brightgreen)](https://passportd.readthedocs.io/)

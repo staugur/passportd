@@ -70,7 +70,6 @@ passportd 支持通过 ``PASSPORT_`` 前缀的环境变量覆盖配置项。例�
 
     export PASSPORT_DB_URI="mysql+pool://root:pwd@localhost:3306/passport?max_connections=20"
     export PASSPORT_REDIS_URI="redis://:pwd@localhost:6379/0"
-    export PASSPORT_LOG_LEVEL="INFO"
     export PASSPORT_ENV="production"
 
 也可以通过配置文件设置：

@@ -45,7 +45,7 @@ Docker 运行（需要外部 Redis）
       -e PASSPORT_REDIS_URI="redis://:pwd@host.docker.internal:6379/0" \
       -e PASSPORT_DB_URI="sqlite:///app/data/passportd.db" \
       -e PASSPORT_ENV="production" \
-      -v passportd-data:/app/data \
+      -v passportd-data:/app \
       staugur/passportd:latest
 
 Docker Compose 一键启动（含 Redis）
@@ -73,7 +73,7 @@ Docker Compose 一键启动（含 Redis）
           - PASSPORT_ENV=production
           - PASSPORT_DB_URI=sqlite:///app/data/passportd.db
         volumes:
-          - passportd-data:/app/data
+          - passportd-data:/app
         depends_on:
           - redis
 
@@ -98,6 +98,13 @@ Docker 容器中通过 ``PASSPORT_`` 前缀环境变量进行配置，主要变�
 - ``PASSPORT_HOST``：监听地址，默认 ``0.0.0.0``
 - ``PASSPORT_PORT``：监听端口，默认 ``10030``
 - ``PASSPORT_LOG_LEVEL``：日志级别，默认 ``INFO``
+- ``PASSPORT_BASE_DIR``：数据根目录，默认 ``/app``
+
+容器内固定目录结构（由 ``PinConfig`` 从 ``BASE_DIR`` 派生，不可配置）：
+
+- ``/app/data/`` — 数据目录（RSA 密钥、SQLite 数据库）
+- ``/app/uploads/`` — 本地上传目录
+- ``/app/logs/`` — 日志目录
 
 Docker 镜像默认启动 Gunicorn 生产服务器。如需开发模式，覆盖启动命令：
 

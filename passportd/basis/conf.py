@@ -16,7 +16,7 @@ limitations under the License.
 """
 
 from os.path import join
-from typing import Optional, Dict
+from typing import Optional
 
 from flask import Config as FlaskConfig
 
@@ -62,28 +62,20 @@ class BaseConfig:
     #: 日志配置
     LOG_LEVEL: LOG_LEVEL_TYPE = "DEBUG"
     LOG_FILE: Optional[str] = None
-    LOG_DIR: Optional[str] = None
     #: 全局URL前缀
     URI_PREFIX: str = "/"
     #: ICP备案号
     ICP = ""
 
-    # OpenID Connect 配置
-    OIDC_RSA_PUBLIC_KEY: str = _gen_data_path("public.pem")
-    OIDC_RSA_PRIVATE_KEY: str = _gen_data_path("private.key")
-    OIDC_RSA_KEY_SIZE: int = 2048
-    OAUTH2_TOKEN_EXPIRES_IN: Dict[str, int] = {"authorization_code": 86400}
-
     # 上传
-    #: 上传方式，支持 sapic、local，前者是作者的开源图床项目，后者是本地上传
+    #: 上传方式，支持 sapic、local，本地上传固定保存到 BASE_DIR/uploads
     UPLOAD_METHOD = "local"
-    #: 本地上传目录，由 BASE_DIR/uploads 派生，也可通过 PASSPORT_LOCAL_UPLOAD_FOLDER 单独覆盖
     #: Sapic 上传接口和LinkToken，文档是 https://sapic.rtfd.vip
     SAPIC_APIURL = "https://sapicd.com"
     SAPIC_LINKTOKEN = ""
 
     # 邮件
-    #: 邮件发送方式，支持 smtp、spug
+    #: 邮件发送方式，支持 支持空字符串（不发送）、smtp、spug
     EMAIL_PROVIDER = ""
     #: SMTP邮箱服务器
     ## 发送邮件的邮箱地址
@@ -124,10 +116,7 @@ class BaseConfig:
 
 
 class DevConfig(BaseConfig):
-    """开发环境配置。
-
-    开启 DEBUG 模式，使用 Flask 内置 WSGI 服务器，关闭插件认证限制。
-    """
+    """默认开发环境配置。"""
 
     ENV = "development"
     DEBUG = True
@@ -137,10 +126,7 @@ class DevConfig(BaseConfig):
 
 
 class ProdConfig(BaseConfig):
-    """生产环境配置。
-
-    关掉 DEBUG，写入日志文件，增大 RSA 密钥长度，配置 gunicorn 信任代理。
-    """
+    """默认生产环境配置。"""
 
     ENV = "production"
     DEBUG = False
@@ -148,9 +134,36 @@ class ProdConfig(BaseConfig):
     REDIS_URI = "redis://:pwd@localhost:6379/0"
     LOG_LEVEL = "INFO"
     LOG_FILE = "sys.log"
-    OIDC_RSA_KEY_SIZE = 4096
     #: 生产gunicorn运行配置
     NO_DAEMON: bool = False
+
+
+class PinConfig:
+    """固定配置类，不可被环境变量覆盖，在 from_prefixed_env 之后加载。
+
+    以下值从 BASE_DIR 固定派生：
+    - OIDC_RSA_KEY_SIZE: 4096
+    - DATA_DIR: BASE_DIR/data
+    - OIDC_RSA_PUBLIC_KEY / OIDC_RSA_PRIVATE_KEY: BASE_DIR/data/ 下的 RSA 密钥
+    - LOCAL_UPLOAD_FOLDER: BASE_DIR/uploads
+    """
+    OIDC_RSA_KEY_SIZE = 4096
+
+    @classmethod
+    def apply(cls, cfg):
+        """从 BASE_DIR 派生固定路径并加载到 config。"""
+        _base_dir = cfg.get("BASE_DIR", APP_DIR)
+        cls.DATA_DIR = join(_base_dir, "data")
+        cls.OIDC_RSA_PUBLIC_KEY = join(_base_dir, "data", "public.pem")
+        cls.OIDC_RSA_PRIVATE_KEY = join(_base_dir, "data", "private.key")
+        cls.LOCAL_UPLOAD_FOLDER = join(_base_dir, "uploads")
+        cfg.from_object(cls)
+
+        # DB_URI 中 APP_DIR 替换为 BASE_DIR
+        if _base_dir != APP_DIR:
+            db_uri = cfg.get("DB_URI", "")
+            if isinstance(db_uri, str) and APP_DIR in db_uri:
+                cfg["DB_URI"] = db_uri.replace(APP_DIR, _base_dir)
 
 
 def _check_config_value(cfg):
@@ -162,7 +175,6 @@ def _check_config_value(cfg):
     - REDIS_URI 以 ``redis://`` 开头
     - URI_PREFIX 以 ``/`` 开头
     - RSA 密钥大小为整数
-    - OAUTH2_TOKEN_EXPIRES_IN 包含 ``authorization_code``
     - 上传方式、邮件提供商和短信提供商的参数完整性
 
     :param cfg: Flask Config 实例
@@ -185,10 +197,6 @@ def _check_config_value(cfg):
     assert isinstance(
         cfg["OIDC_RSA_KEY_SIZE"], int
     ), "OIDC_RSA_KEY_SIZE must be an integer"
-    assert (
-        isinstance(cfg["OAUTH2_TOKEN_EXPIRES_IN"], dict)
-        and "authorization_code" in cfg["OAUTH2_TOKEN_EXPIRES_IN"]
-    ), "OAUTH2_TOKEN_EXPIRES_IN must be a dict and contain 'authorization_code' key"
 
     assert cfg["UPLOAD_METHOD"] in [
         "sapic",
@@ -231,23 +239,5 @@ config = FlaskConfig(APP_DIR)
 config.from_object(ProdConfig if is_prod() else DevConfig)
 config.from_envvar(ENV_NAME, silent=True)
 config.from_prefixed_env(prefix=ENV_PREFIX)
+PinConfig.apply(config)
 _check_config_value(config)
-
-# 从 BASE_DIR 派生 data、logs、uploads 子目录
-_base_dir = config.get("BASE_DIR", APP_DIR)
-if "DATA_DIR" not in config:
-    config["DATA_DIR"] = join(_base_dir, "data")
-if "LOCAL_UPLOAD_FOLDER" not in config:
-    config["LOCAL_UPLOAD_FOLDER"] = join(_base_dir, "uploads")
-if "LOG_DIR" not in config:
-    config["LOG_DIR"] = join(_base_dir, "logs")
-
-# 若 BASE_DIR 与 APP_DIR 不同，则将仍然引用 APP_DIR 的默认路径 rebase 到 BASE_DIR
-if _base_dir != APP_DIR:
-    for key in ("OIDC_RSA_PUBLIC_KEY", "OIDC_RSA_PRIVATE_KEY"):
-        val = config.get(key, "")
-        if isinstance(val, str) and val.startswith(APP_DIR):
-            config[key] = val.replace(APP_DIR, _base_dir, 1)
-    db_uri = config.get("DB_URI", "")
-    if isinstance(db_uri, str) and APP_DIR in db_uri:
-        config["DB_URI"] = db_uri.replace(APP_DIR, _base_dir)

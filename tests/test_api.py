@@ -80,8 +80,8 @@ class ApiTest(unittest.TestCase):
                 )
             ).execute()
             # 清理上传目录
-            upload_dir = cls.app.config.get("LOCAL_UPLOAD_FOLDER", "")
-            if upload_dir and os.path.isdir(upload_dir):
+            upload_dir = cls.app.config["LOCAL_UPLOAD_FOLDER"]
+            if os.path.isdir(upload_dir):
                 shutil.rmtree(upload_dir, ignore_errors=True)
             db.close()
 

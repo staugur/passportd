@@ -34,15 +34,8 @@ spec:
               value: "psycopg3+pool://user:pass@postgres-svc:5432/passportd?max_connections=20"
             - name: PASSPORT_REDIS_URI
               value: "redis://redis-svc:6379/0"
-            - name: PASSPORT_LOG_LEVEL
-              value: "INFO"
             - name: PASSPORT_NO_DAEMON
               value: "true"
-            - name: PASSPORT_BASE_DIR
-              value: "/app"
-          volumeMounts:
-            - name: passportd-data
-              mountPath: /app
           livenessProbe:
             httpGet:
               path: /ping
@@ -62,22 +55,6 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-      volumes:
-        - name: passportd-data
-          persistentVolumeClaim:
-            claimName: passportd-data
----
-# PersistentVolumeClaim
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: passportd-data
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
 ---
 # Service
 apiVersion: v1

@@ -43,11 +43,13 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
    * - ``BASE_DIR``
      - str
      - ``APP_DIR``
-     - 数据根目录，``DATA_DIR`` / ``LOG_DIR`` / ``LOCAL_UPLOAD_FOLDER`` 均从此派生；容器环境设为 ``/app``
-   * - ``DATA_DIR``
-     - str
-     - ``BASE_DIR/data``
-     - 数据存储目录（自动创建，RSA 密钥、SQLite 数据库默认存放于此）
+     - 数据根目录；以下路径均固定从此派生（由 PinConfig 管理，不可覆盖）：
+       
+       * ``BASE_DIR/data`` — 数据目录（RSA 密钥、SQLite 数据库）
+       * ``BASE_DIR/uploads`` — 本地上传目录
+       * ``BASE_DIR/logs`` — 日志目录
+       
+       容器环境设为 ``/app``
    * - ``DB_URI``
      - str
      - ``sqlite://...``
@@ -63,11 +65,7 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
    * - ``LOG_FILE``
      - str
      - ``None``
-     - 日志文件名，不设置则输出到 stdout
-   * - ``LOG_DIR``
-     - str
-     - ``BASE_DIR/logs``
-     - 日志文件目录
+     - 日志文件名，设置后写入 ``BASE_DIR/logs/`` 子目录
    * - ``URI_PREFIX``
      - str
      - ``/``
@@ -79,16 +77,13 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
 
 .. tip::
 
-    ``BASE_DIR`` 是数据管理的核心配置项。设置后，以下路径会自动从 ``BASE_DIR`` 派生：
+   ``BASE_DIR`` 是数据管理的核心配置项。设置后，以下路径由 ``PinConfig`` 固定派生，**不可通过环境变量覆盖**：
 
-    - ``DATA_DIR`` → ``BASE_DIR/data``（RSA 密钥、SQLite 数据库默认存放于此）
-    - ``LOCAL_UPLOAD_FOLDER`` → ``BASE_DIR/uploads``（本地上传目录）
-    - ``LOG_DIR`` → ``BASE_DIR/logs``（生产环境日志目录）
+   - ``BASE_DIR/data`` — 数据目录（RSA 密钥、SQLite 数据库默认存放于此）
+   - ``BASE_DIR/uploads`` — 本地上传目录
+   - ``BASE_DIR/logs`` — 日志文件目录（``LOG_FILE`` 设置后写入此目录）
 
-    此外，``OIDC_RSA_PUBLIC_KEY``、``OIDC_RSA_PRIVATE_KEY`` 和 ``DB_URI``（SQLite 模式）
-    中引用的 ``APP_DIR`` 也会自动替换为 ``BASE_DIR``。
-
-    若需单独覆盖某个路径，仍可通过独立环境变量设置（如 ``PASSPORT_DATA_DIR``）。
+   ``DB_URI``（SQLite 模式）中的 ``APP_DIR`` 也会自动替换为 ``BASE_DIR``。
 
 数据库配置
 ----------
@@ -116,29 +111,11 @@ passportd 支持三种数据库后端，通过 ``DB_URI`` 配置：
 OpenID Connect 配置
 --------------------
 
-.. list-table::
-   :header-rows: 1
+OIDC 相关的以下值由 ``PinConfig`` 固定管理，不可通过配置或环境变量更改：
 
-   * - 配置项
-     - 类型
-     - 默认值
-     - 说明
-   * - ``OIDC_RSA_PUBLIC_KEY``
-     - str
-     - ``BASE_DIR/data/public.pem``
-     - RSA 公钥文件路径
-   * - ``OIDC_RSA_PRIVATE_KEY``
-     - str
-     - ``BASE_DIR/data/private.key``
-     - RSA 私钥文件路径
-   * - ``OIDC_RSA_KEY_SIZE``
-     - int
-     - ``2048``
-     - RSA 密钥长度（生产环境 4096）
-   * - ``OAUTH2_TOKEN_EXPIRES_IN``
-     - dict
-     - ``{"authorization_code": 86400}``
-     - Token 过期时间配置（秒）
+- ``OIDC_RSA_KEY_SIZE`` = ``4096``
+- ``OIDC_RSA_PUBLIC_KEY`` → ``BASE_DIR/data/public.pem``
+- ``OIDC_RSA_PRIVATE_KEY`` → ``BASE_DIR/data/private.key``
 
 上传配置
 ---------
@@ -162,10 +139,6 @@ OpenID Connect 配置
      - str
      - ``""``
      - Sapic LinkToken
-   * - ``LOCAL_UPLOAD_FOLDER``
-     - str
-     - ``BASE_DIR/uploads``
-     - 本地上传目录
 
 邮件配置
 ---------
@@ -288,14 +261,10 @@ OAuth2 第三方登录配置
      - ``DEBUG``
      - ``INFO``
      - 日志级别
-   * - LOG_FILE / LOG_DIR
+   * - ``LOG_FILE``
      - stdout
-     - 文件（``sys.log`` 写入 ``LOG_DIR``）
+     - ``sys.log``
      - 生产环境自动写入 ``BASE_DIR/logs/sys.log``
-   * - ``OIDC_RSA_KEY_SIZE``
-     - ``2048``
-     - ``4096``
-     - RSA 密钥长度
    * - ``NO_DAEMON``
      - N/A
      - ``False``
