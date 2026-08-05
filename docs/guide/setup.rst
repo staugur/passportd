@@ -83,7 +83,7 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
    - ``BASE_DIR/uploads`` — 本地上传目录
    - ``BASE_DIR/logs`` — 日志文件目录（``LOG_FILE`` 设置后写入此目录）
 
-   ``DB_URI``（SQLite 模式）中的 ``APP_DIR`` 也会自动替换为 ``BASE_DIR``。
+   ``DB_URI`` （SQLLite 模式）中的 ``APP_DIR`` 也会自动替换为 ``BASE_DIR``。
 
 数据库配置
 ----------

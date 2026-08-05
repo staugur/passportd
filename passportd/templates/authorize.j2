@@ -17,7 +17,7 @@
 
         <div class="notification is-info is-light mb-4">
           <p class="mb-2">
-            <strong>{{ grant.client.name or grant.client.client_id }}</strong> 正在请求访问你的账号权限。
+            <strong>{{ grant.client.client_name or grant.client.client_id }}</strong> 正在请求访问你的账号权限。
           </p>
           <p class="is-size-7 has-text-grey">
             客户端 ID：<span class="is-family-monospace">{{ grant.client.client_id }}</span>

@@ -211,7 +211,19 @@ def apilogin_required(f):
 
 
 def get_ip() -> str:
-    """获取客户端真实IP（由 ProxyFix 中间件修正后的 REMOTE_ADDR）"""
+    """获取客户端真实 IP。
+
+    多级代理环境下，优先从 ``X-Real-IP`` 读取；其次从
+    ``X-Forwarded-For`` 的最左端读取；兜底使用 ``remote_addr``。
+    """
+    real_ip = request.headers.get("X-Real-IP", "")
+    if real_ip:
+        return real_ip.strip().split(",")[0].strip()
+
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.strip().split(",")[0].strip()
+
     return request.remote_addr
 
 

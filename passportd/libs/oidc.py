@@ -81,6 +81,14 @@ class OIDCClient(ClientMixin, AuthorizationCodeMixin):
         if not self.client_info:
             raise OAuth2Error("invalid_request", "Invalid client_id")
 
+    @property
+    def client_name(self) -> str:
+        """获取客户端名称，供授权页面展示。
+
+        :returns: 客户端名称字符串
+        """
+        return self.client_info.get("name", "")
+
     def get_client_id(self) -> str:
         """获取客户端 ID。
 

@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 from flask import Blueprint, request, abort, g
+from time import strftime
 
 from ..libs.interface import (
     RecordLoginInterface,
@@ -24,17 +25,22 @@ from ..libs.interface import (
     VCodeInterface,
 )
 from ..models.user import (
+    add_account,
     change_password,
+    delete_account,
     generate_jwt,
     get_account as get_auth,
     has_account,
+    list_accounts,
     list_login_records,
 )
 from ..models.oidc import (
     count_oauth_authorizations,
     create_oauth_client,
     delete_oauth_client,
+    delete_oauth_authorization,
     list_oauth_clients,
+    list_oauth_authorizations_by_user,
     update_oauth_client,
 )
 from ..basis.errors import ApiError, PassportError
@@ -50,6 +56,38 @@ from ..utils.common import (
 )
 
 bp = Blueprint("api", "api")
+
+
+def _check_sms_rate_limit(account: str) -> None:
+    """短信发送频率限制。
+
+    每个手机号每天最多 10 次，全局每天最多 100 次。
+    Redis 计数器 key 按天（YYYY-MM-DD）划分，自动过期。
+
+    :param account: 手机号
+    :raises ApiError: 超过限制时抛出
+    """
+    if parse_account_classify(account) != "mobile":
+        return
+
+    today = strftime("%Y-%m-%d")
+
+    phone_key = f"{PROC_NAME}:sms_rl:phone:{today}:{account}"
+    phone_count = int(rdb.get(phone_key) or 0)
+    if phone_count >= 10:
+        raise ApiError("该手机号今日发送验证码次数已达上限（10次），请明天再试")
+
+    global_key = f"{PROC_NAME}:sms_rl:global:{today}"
+    global_count = int(rdb.get(global_key) or 0)
+    if global_count >= 100:
+        raise ApiError("今日短信验证码发送次数已达全局上限，请明天再试")
+
+    pipe = rdb.pipeline()
+    pipe.incr(phone_key)
+    pipe.expire(phone_key, 86400)
+    pipe.incr(global_key)
+    pipe.expire(global_key, 86400)
+    pipe.execute()
 
 
 @bp.get("/key")
@@ -290,6 +328,34 @@ def oidc_client():
         return res
 
 
+@bp.route("/user/oauth/authorizations", methods=["GET", "DELETE"])
+@login_required
+def user_oauth_authorizations():
+    """用户 OIDC 授权管理接口。
+
+    - **GET**: 列出当前用户所有已授权的 OIDC 客户端
+    - **DELETE**: 撤销对指定客户端的授权（同时清除关联 Token）
+
+    :form client_id: 客户端 ID（DELETE 时必填）
+    :returns: 操作结果 JSON
+    """
+    uid = g.user["uid"]
+    if request.method == "GET":
+        ret = list_oauth_authorizations_by_user(uid=uid)
+        return new_res(success=True, data=ret)
+
+    # DELETE
+    client_id = request.form.get("client_id", "")
+    if not client_id:
+        raise ApiError("client_id is required")
+    try:
+        ret = delete_oauth_authorization(uid=uid, client_id=client_id)
+    except PassportError as e:
+        raise ApiError(str(e))
+    else:
+        return new_res(success=True, data=dict(deleted=ret))
+
+
 @bp.post("/send_signup_vcode")
 def send_signup_vcode():
     """发送注册验证码（邮箱或短信）。
@@ -310,6 +376,8 @@ def send_signup_vcode():
 
     if has_account(account):
         raise ApiError("该账号已注册，请直接登录")
+
+    _check_sms_rate_limit(account)
 
     # 60s 内同一账号不可重复发送
     rl_key = f"{PROC_NAME}:signup_vcode_rl:{account}"
@@ -353,6 +421,8 @@ def send_login_vcode():
     if not has_account(account):
         raise ApiError("该账号不存在，请先注册")
 
+    _check_sms_rate_limit(account)
+
     # 60s 内同一账号不可重复发送
     rl_key = f"{PROC_NAME}:login_vcode_rl:{account}"
     if rdb.exists(rl_key):
@@ -372,6 +442,170 @@ def send_login_vcode():
         rdb.setex(rl_key, 60, "1")
 
     return ret
+
+
+@bp.post("/user/send_bind_vcode")
+@login_required
+def user_send_bind_vcode():
+    """发送绑定验证码（邮箱或短信）。
+
+    向待绑定的邮箱或手机号发送 6 位数字验证码。
+    该账号必须未被注册，同一账号 60 秒内不可重复请求，验证码 5 分钟内有效。
+
+    :form account: 邮箱地址或手机号（必填）
+    :returns: 发送结果 JSON
+    """
+    account = request.form.get("account", "").strip()
+    if not account:
+        raise ApiError("账号不能为空")
+
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ApiError("请输入有效的邮箱或手机号")
+
+    if has_account(account):
+        raise ApiError("该账号已被绑定，请使用其他账号")
+
+    _check_sms_rate_limit(account)
+
+    rl_key = f"{PROC_NAME}:bind_vcode_rl:{account}"
+    if rdb.exists(rl_key):
+        raise ApiError("操作过于频繁，请 60 秒后重试")
+
+    code = generate_digital_verification_code()
+    vi = VCodeInterface()
+
+    if classify == "email":
+        ret = vi.send_email(account, code)
+    else:
+        ret = vi.send_sms(account, code)
+
+    if ret["success"] is True:
+        rdb.setex(f"{PROC_NAME}:bind_vcode:{account}", 300, code)
+        rdb.setex(rl_key, 60, "1")
+
+    return ret
+
+
+@bp.post("/user/bind_account")
+@login_required
+def user_bind_account():
+    """绑定邮箱或手机号接口。
+
+    校验用户提交的验证码，验证通过后将账号添加到当前用户的 Auth 记录。
+
+    :form account: 邮箱地址或手机号（必填）
+    :form code: 验证码（必填）
+    :returns: 绑定结果 JSON
+    """
+    uid = g.user["uid"]
+    account = request.form.get("account", "").strip()
+    code = request.form.get("code", "").strip()
+
+    if not account or not code:
+        raise ApiError("账号和验证码不能为空")
+
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ApiError("仅支持绑定邮箱或手机号")
+
+    if has_account(account):
+        raise ApiError("该账号已被绑定，请使用其他账号")
+
+    stored = rdb.get(f"{PROC_NAME}:bind_vcode:{account}")
+    if not stored or stored.decode() != code:
+        raise ApiError("验证码错误或已过期")
+
+    try:
+        add_account(uid=uid, account=account)
+    except PassportError as e:
+        raise ApiError(str(e))
+    else:
+        rdb.delete(f"{PROC_NAME}:bind_vcode:{account}")
+        return new_res(success=True, data=dict(account=account))
+
+
+@bp.post("/user/send_unbind_vcode")
+@login_required
+def user_send_unbind_vcode():
+    """发送解绑验证码（邮箱或短信）。
+
+    向已绑定的邮箱或手机号发送 6 位数字验证码，
+    仅当该账号属于当前用户时才会发送。
+
+    :form account: 邮箱地址或手机号（必填）
+    :returns: 发送结果 JSON
+    """
+    uid = g.user["uid"]
+    account = request.form.get("account", "").strip()
+    if not account:
+        raise ApiError("账号不能为空")
+
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ApiError("请输入有效的邮箱或手机号")
+
+    if not has_account(account):
+        raise ApiError("该账号未绑定")
+
+    # 确认该账号属于当前用户
+    accounts = list_accounts(uid)
+    if account not in [a["account"] for a in accounts]:
+        raise ApiError("该账号不属于当前用户")
+
+    if len(accounts) <= 1 and accounts[0]["account"] == account:
+        raise ApiError("不能解绑唯一的绑定账号")
+
+    _check_sms_rate_limit(account)
+
+    rl_key = f"{PROC_NAME}:unbind_vcode_rl:{account}"
+    if rdb.exists(rl_key):
+        raise ApiError("操作过于频繁，请 60 秒后重试")
+
+    code = generate_digital_verification_code()
+    vi = VCodeInterface()
+
+    if classify == "email":
+        ret = vi.send_email(account, code)
+    else:
+        ret = vi.send_sms(account, code)
+
+    if ret["success"] is True:
+        rdb.setex(f"{PROC_NAME}:unbind_vcode:{account}", 300, code)
+        rdb.setex(rl_key, 60, "1")
+
+    return ret
+
+
+@bp.post("/user/unbind_account")
+@login_required
+def user_unbind_account():
+    """解绑邮箱或手机号接口。
+
+    校验用户提交的验证码，验证通过后删除该 Auth 记录。
+
+    :form account: 邮箱地址或手机号（必填）
+    :form code: 验证码（必填）
+    :returns: 解绑结果 JSON
+    """
+    uid = g.user["uid"]
+    account = request.form.get("account", "").strip()
+    code = request.form.get("code", "").strip()
+
+    if not account or not code:
+        raise ApiError("账号和验证码不能为空")
+
+    stored = rdb.get(f"{PROC_NAME}:unbind_vcode:{account}")
+    if not stored or stored.decode() != code:
+        raise ApiError("验证码错误或已过期")
+
+    try:
+        ret = delete_account(uid=uid, account=account)
+    except PassportError as e:
+        raise ApiError(str(e))
+    else:
+        rdb.delete(f"{PROC_NAME}:unbind_vcode:{account}")
+        return new_res(success=True, data=dict(deleted=ret))
 
 
 @bp.post("/vcode_login")
@@ -414,7 +648,7 @@ def vcode_login():
     RecordLoginInterface(
         uid=uid,
         account=account,
-        method="local_vcode",
+        method="vcode",
         ip=get_ip(),
         ua=request.headers.get("User-Agent", ""),
         accept_lang=request.headers.get("Accept-Language", ""),

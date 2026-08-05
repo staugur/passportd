@@ -34,8 +34,6 @@ spec:
               value: "psycopg3+pool://user:pass@postgres-svc:5432/passportd?max_connections=20"
             - name: PASSPORT_REDIS_URI
               value: "redis://redis-svc:6379/0"
-            - name: PASSPORT_NO_DAEMON
-              value: "true"
           livenessProbe:
             httpGet:
               path: /ping

@@ -247,6 +247,64 @@ def delete_oauth_client(uid: str, client_id: str) -> bool:
         return True
 
 
+def list_oauth_authorizations_by_user(uid: str) -> List[COMMON_DICT_TYPE]:
+    """获取用户所有 OIDC 授权记录（含客户端名称等信息）。
+
+    :param uid: 用户唯一标识符
+    :returns: 授权记录列表，每条包含 client_id, scope, created_at, client_name, homepage, bio
+    """
+    if not uid or len(uid) != 22:
+        return []
+    oa = OAuthAuthorization.alias()
+    oc = OAuthClient.alias()
+    records = (
+        OAuthAuthorization
+        .select(
+            OAuthAuthorization.client_id,
+            OAuthAuthorization.scope,
+            OAuthAuthorization.created_at,
+            OAuthAuthorization.ip,
+            OAuthAuthorization.ua,
+            OAuthClient.name,
+            OAuthClient.homepage,
+            OAuthClient.bio,
+        )
+        .join(OAuthClient, on=(OAuthAuthorization.client_id == OAuthClient.client_id))
+        .where(OAuthAuthorization.uid == uid)
+        .order_by(OAuthAuthorization.created_at.desc())
+    )
+    return [model_to_dict(r) for r in records]
+
+
+def delete_oauth_authorization(uid: str, client_id: str) -> int:
+    """撤销用户对某个 OIDC 客户端的授权，同时删除关联的 Token。
+
+    :param uid: 用户唯一标识符
+    :param client_id: 客户端标识
+    :returns: 删除的授权记录数
+    :raises PermissionError: 授权记录不存在
+    """
+    if not uid or len(uid) != 22 or not client_id or len(client_id) < 24:
+        raise ParamError("Invalid params")
+    # 先删 Token
+    OAuthToken.delete().where(
+        (OAuthToken.client_id == client_id) & (OAuthToken.uid == uid)
+    ).execute()
+    # 再删授权记录
+    result = (
+        OAuthAuthorization
+        .delete()
+        .where(
+            (OAuthAuthorization.client_id == client_id)
+            & (OAuthAuthorization.uid == uid)
+        )
+        .execute()
+    )
+    if result == 0:
+        raise PermissionError("Authorization not found")
+    return result
+
+
 def count_oauth_authorizations(client_id: str) -> int:
     """
     统计某个 OIDC 客户端被多少不同用户授权过（表中仅记录 approved）。

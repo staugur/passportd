@@ -189,6 +189,10 @@
                         <span class="icon"><i class="fa-solid fa-server"></i></span>
                         <span>OIDC Client</span>
                     </a>
+                    <a class="navbar-item" href="{{ url_for('root.front.oauth_authorizations') }}">
+                        <span class="icon"><i class="fa-solid fa-check-to-slot"></i></span>
+                        <span>我的授权</span>
+                    </a>
                     <div class="navbar-item">
                         <a class="button is-light" href="{{ url_for('root.front.signout') }}">登出</a>
                     </div>

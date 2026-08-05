@@ -443,3 +443,10 @@ def profile():
 def oidc_client():
     """OIDC 客户端管理页面。"""
     return render_template("oidc.j2")
+
+
+@bp.get("/user/oauth/authorizations")
+@login_required
+def oauth_authorizations():
+    """我的授权页面——查看并管理已授权的 OIDC 客户端。"""
+    return render_template("oauth_authorizations.j2")

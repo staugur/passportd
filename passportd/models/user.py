@@ -252,6 +252,49 @@ def add_account(
         return True
 
 
+def delete_account(uid: str, account: str) -> int:
+    """解绑用户的某个邮箱或手机号认证方式。
+
+    限制：
+    - 只能解绑邮箱或手机号类型
+    - 至少保留一条 Auth 记录
+    - ``account`` 必须属于该用户
+
+    :param uid: 用户唯一标识符
+    :param account: 待解绑的账号
+    :returns: 删除的记录数
+    :raises ParamError: 参数校验失败
+    :raises AuthError: 不能解绑用户名或这是最后一条记录
+    """
+    if not uid or len(uid) != 22:
+        raise ParamError("Invalid uid")
+    if not account:
+        raise ParamError("Invalid account")
+
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ParamError("仅支持解绑邮箱或手机号")
+
+    if not has_uid(uid):
+        raise AuthError("Not found uid")
+
+    accounts = list_accounts(uid)
+    if len(accounts) <= 1:
+        raise AuthError("至少保留一条绑定记录")
+
+    # 确认该账号属于当前用户
+    owner = [a for a in accounts if a["account"] == account]
+    if not owner:
+        raise AuthError("该账号不属于当前用户")
+
+    result = (
+        Auth.delete()
+        .where((Auth.uid == uid) & (Auth.account == account))
+        .execute()
+    )
+    return result
+
+
 def update_profile(
     uid: str,
     *,

@@ -117,21 +117,27 @@
                     <span class="icon"><i class="fa-solid fa-link"></i></span>
                     <span>绑定账号</span>
                 </span>
+                <span class="ml-3">
+                    <button class="button is-small is-success is-light js-open-bind" data-action="bind">
+                        <span class="icon is-small"><i class="fa-solid fa-plus"></i></span>
+                        <span>绑定</span>
+                    </button>
+                </span>
             </h2>
             {% if accounts %}
-            <div class="table-container">
+            <div class="table-container" id="accounts-table">
                 <table class="table is-fullwidth is-hoverable">
                     <thead>
                         <tr>
                             <th>账号</th>
                             <th>类型</th>
                             <th>绑定时间</th>
-                            <th>第三方 ID</th>
+                            <th style="width: 80px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for acct in accounts %}
-                        <tr>
+                        <tr data-account="{{ acct.account }}" data-classify="{{ acct.classify }}">
                             <td>
                                 <span class="is-size-7 is-family-monospace">{{ acct.account }}</span>
                             </td>
@@ -149,11 +155,11 @@
                                 {% endif %}
                             </td>
                             <td class="is-size-7 js-timestamp" data-ts="{{ acct.ctime }}"></td>
-                            <td class="is-size-7">
-                                {% if acct.tpid %}
-                                <span class="is-family-monospace">{{ acct.tpid }}</span>
-                                {% else %}
-                                <span class="has-text-grey-light">—</span>
+                            <td>
+                                {% if acct.classify in ('email', 'mobile') and not loop.first %}
+                                <button class="button is-danger is-light is-small js-open-unbind" data-account="{{ acct.account }}">
+                                    <span>解绑</span>
+                                </button>
                                 {% endif %}
                             </td>
                         </tr>
@@ -260,6 +266,61 @@
 
     </div>
 </section>
+
+{# 绑定 / 解绑验证码模态框 #}
+<div class="modal" id="account-vcode-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i id="vcode-modal-icon" class="fa-solid fa-plus"></i></span>
+                    <span id="vcode-modal-title">绑定邮箱 / 手机号</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body">
+            <div id="vcode-msg" class="mb-3" style="display:none;"></div>
+            {# 步骤 1：填写账号 #}
+            <div id="vcode-step-account">
+                <div class="field">
+                    <label class="label" id="vcode-account-label">邮箱 / 手机号</label>
+                    <div class="control">
+                        <input class="input" type="text" id="vcode-account-input" placeholder="请输入邮箱或手机号" maxlength="128">
+                    </div>
+                </div>
+                <div class="field">
+                    <button class="button is-primary" id="vcode-send-btn">
+                        <span>获取验证码</span>
+                    </button>
+                    <span class="has-text-grey is-size-7 ml-2" id="vcode-send-tip"></span>
+                </div>
+            </div>
+            {# 步骤 2：填写验证码 #}
+            <div id="vcode-step-code" style="display:none;">
+                <p class="mb-2 has-text-grey is-size-7" id="vcode-sent-to">验证码已发送至 </p>
+                <div class="field">
+                    <label class="label">验证码</label>
+                    <div class="control">
+                        <input class="input" type="text" id="vcode-input" placeholder="请输入 6 位数字验证码" maxlength="6" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="field">
+                    <button class="button is-primary" id="vcode-confirm-btn">
+                        <span>确认</span>
+                    </button>
+                    <button class="button is-light ml-2" id="vcode-resend-btn" disabled>
+                        <span id="vcode-resend-text">重新发送</span>
+                    </button>
+                    <button class="button is-text ml-2" id="vcode-back-btn">
+                        <span>更换账号</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
 
 {# 编辑资料模态框 #}
 <div class="modal" id="edit-modal">
@@ -484,6 +545,236 @@
     $(document).on('keydown', function (e) {
         if (e.key === 'Escape' && $pwdModal.hasClass('is-active')) {
             closePwdModal();
+        }
+    });
+
+    // =========================================================
+    // 绑定 / 解绑账号
+    // =========================================================
+    let $vcModal = $('#account-vcode-modal');
+    let $vcMsg = $('#vcode-msg');
+    let $vcSendBtn = $('#vcode-send-btn');
+    let $vcConfirmBtn = $('#vcode-confirm-btn');
+    let $vcResendBtn = $('#vcode-resend-btn');
+    let $vcResendText = $('#vcode-resend-text');
+    let $vcBackBtn = $('#vcode-back-btn');
+    let $vcStepAccount = $('#vcode-step-account');
+    let $vcStepCode = $('#vcode-step-code');
+    let vcMode = '';       // 'bind' 或 'unbind'
+    let vcAccount = '';
+    let vcCountdown = null;
+
+    function escHtml(s) {
+        return $('<div>').text(s).html();
+    }
+
+    function showVcMsg(msg, type) {
+        let cls = type === 'success' ? 'is-success' : 'is-danger';
+        $vcMsg.removeClass('is-success is-danger').addClass(cls).text(msg).show();
+    }
+
+    function clearVcMsg() {
+        $vcMsg.hide();
+    }
+
+    function closeVcModal() {
+        $vcModal.removeClass('is-active');
+    }
+
+    function resetVcUI(toAccountStep) {
+        clearVcMsg();
+        if (vcCountdown) { clearTimeout(vcCountdown); vcCountdown = null; }
+        $vcResendBtn.prop('disabled', true);
+        $vcResendText.text('重新发送');
+        $vcSendBtn.prop('disabled', false).find('span').text('获取验证码');
+        $vcConfirmBtn.prop('disabled', false).find('span').text('确认');
+        $('#vcode-input').val('');
+        if (toAccountStep) {
+            $vcStepAccount.show();
+            $vcStepCode.hide();
+            $('#vcode-account-input').val('').prop('readonly', false);
+            vcAccount = '';
+        }
+    }
+
+    // 打开绑定弹窗
+    function openBind() {
+        resetVcUI(true);
+        vcMode = 'bind';
+        $('#vcode-modal-icon').attr('class', 'fa-solid fa-plus');
+        $('#vcode-modal-title').text('绑定邮箱 / 手机号');
+        $('#vcode-account-label').text('邮箱 / 手机号');
+        $('#vcode-account-input').attr('placeholder', '请输入要绑定的邮箱或手机号');
+        $vcModal.addClass('is-active');
+    }
+
+    // 打开解绑弹窗
+    function openUnbind(account) {
+        resetVcUI(true);
+        vcMode = 'unbind';
+        vcAccount = account;
+        $('#vcode-modal-icon').attr('class', 'fa-solid fa-link-slash has-text-danger');
+        $('#vcode-modal-title').text('解绑账号');
+        $('#vcode-account-label').text('待解绑账号');
+        $('#vcode-account-input').val(account).prop('readonly', true);
+        $('#vcode-account-input').attr('placeholder', '');
+        $vcModal.addClass('is-active');
+    }
+
+    // 事件绑定
+    $('.js-open-bind').on('click', openBind);
+
+    $(document).on('click', '.js-open-unbind', function () {
+        let account = $(this).data('account');
+        openUnbind(account);
+    });
+
+    // 关闭操作
+    $('.js-close-vcode, #account-vcode-modal .delete, #account-vcode-modal .modal-background').on('click', function () {
+        closeVcModal();
+        resetVcUI(true);
+    });
+
+    $(document).on('click', '.js-close-vcode', function () {
+        closeVcModal();
+        resetVcUI(true);
+    });
+
+    // 发送验证码
+    $vcSendBtn.on('click', function () {
+        clearVcMsg();
+        let account;
+        if (vcMode === 'unbind') {
+            account = vcAccount;
+        } else {
+            account = $('#vcode-account-input').val().trim();
+        }
+
+        if (!account) {
+            showVcMsg('请输入邮箱或手机号', 'error');
+            return;
+        }
+
+        let url = vcMode === 'bind'
+            ? '{{ url_for("root.api.user_send_bind_vcode") }}'
+            : '{{ url_for("root.api.user_send_unbind_vcode") }}';
+
+        $vcSendBtn.prop('disabled', true).find('span').text('发送中...');
+
+        $.ajax({
+            url: url,
+            method: 'POST',
+            data: { account: account },
+            success: function (res) {
+                if (!res.success) {
+                    showVcMsg(res.message || '发送失败', 'error');
+                    $vcSendBtn.prop('disabled', false).find('span').text('获取验证码');
+                    return;
+                }
+                vcAccount = account;
+                showVcMsg('验证码已发送', 'success');
+                $vcStepAccount.hide();
+                $('#vcode-sent-to').text('验证码已发送至 ' + escHtml(account));
+                $vcStepCode.show();
+                $('#vcode-input').focus();
+                // 倒计时 60 秒重新发送
+                startResendCountdown();
+            },
+            error: function () {
+                showVcMsg('网络异常，请重试', 'error');
+                $vcSendBtn.prop('disabled', false).find('span').text('获取验证码');
+            }
+        });
+    });
+
+    // 倒计时
+    function startResendCountdown() {
+        let left = 60;
+        $vcResendBtn.prop('disabled', true);
+        function tick() {
+            if (left <= 0) {
+                $vcResendBtn.prop('disabled', false);
+                $vcResendText.text('重新发送');
+                return;
+            }
+            $vcResendText.text('重新发送（' + left + 's）');
+            left--;
+            vcCountdown = setTimeout(tick, 1000);
+        }
+        tick();
+    }
+
+    // 重新发送
+    $vcResendBtn.on('click', function () {
+        clearVcMsg();
+        let url = vcMode === 'bind'
+            ? '{{ url_for("root.api.user_send_bind_vcode") }}'
+            : '{{ url_for("root.api.user_send_unbind_vcode") }}';
+
+        $.ajax({
+            url: url,
+            method: 'POST',
+            data: { account: vcAccount },
+            success: function (res) {
+                if (!res.success) {
+                    showVcMsg(res.message || '发送失败', 'error');
+                    return;
+                }
+                showVcMsg('验证码已重新发送', 'success');
+                startResendCountdown();
+            },
+            error: function () {
+                showVcMsg('网络异常', 'error');
+            }
+        });
+    });
+
+    // 返回修改账号
+    $vcBackBtn.on('click', function () {
+        resetVcUI(true);
+    });
+
+    // 确认：验证并绑定/解绑
+    $vcConfirmBtn.on('click', function () {
+        clearVcMsg();
+        let code = $('#vcode-input').val().trim();
+        if (!code || code.length !== 6) {
+            showVcMsg('请输入 6 位数字验证码', 'error');
+            return;
+        }
+
+        let url = vcMode === 'bind'
+            ? '{{ url_for("root.api.user_bind_account") }}'
+            : '{{ url_for("root.api.user_unbind_account") }}';
+
+        $vcConfirmBtn.prop('disabled', true).find('span').text('验证中...');
+
+        $.ajax({
+            url: url,
+            method: 'POST',
+            data: { account: vcAccount, code: code },
+            success: function (res) {
+                if (!res.success) {
+                    showVcMsg(res.message || '验证失败', 'error');
+                    $vcConfirmBtn.prop('disabled', false).find('span').text('确认');
+                    return;
+                }
+                showVcMsg(vcMode === 'bind' ? '绑定成功' : '解绑成功', 'success');
+                // 刷新页面
+                setTimeout(function () { window.location.reload(); }, 1000);
+            },
+            error: function () {
+                showVcMsg('网络异常，请重试', 'error');
+                $vcConfirmBtn.prop('disabled', false).find('span').text('确认');
+            }
+        });
+    });
+
+    // ESC 关闭验证码弹窗
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $vcModal.hasClass('is-active')) {
+            closeVcModal();
+            resetVcUI(true);
         }
     });
 </script>
