@@ -15,7 +15,7 @@ from authlib.integrations.flask_client import OAuth
 
 client_id = getenv("client_id", "")
 client_secret = getenv("client_secret", "")
-oidc_server_url = "https://passport.saintic.com/.well-known/openid-configuration"
+oidc_server_url = "http://127.0.0.1:10030/.well-known/openid-configuration"
 
 app = Flask(__name__)
 app.secret_key = "!secret"

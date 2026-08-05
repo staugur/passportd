@@ -34,7 +34,7 @@ from ..basis.vars import (
     OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
     OIDC_SUPPORTED_SCOPES,
 )
-from ..utils.web import login_required, get_ip
+from ..utils.web import absolute_url, login_required, get_ip
 from ..utils.common import compute_kid
 from ..models.oidc import save_oauth_authorization
 from ..models.user import get_user_by_uid, get_user_email
@@ -191,7 +191,7 @@ def userinfo():
                 "nickname": profile["nickname"],
                 "bio": profile["bio"],
                 "gender": profile["gender"],
-                "picture": profile["avatar"],
+                "picture": absolute_url(profile["avatar"]),
                 "location": profile["location"],
                 "status": profile["status"],
             }

@@ -251,18 +251,15 @@ def list_oauth_authorizations_by_user(uid: str) -> List[COMMON_DICT_TYPE]:
     """获取用户所有 OIDC 授权记录（含客户端名称等信息）。
 
     :param uid: 用户唯一标识符
-    :returns: 授权记录列表，每条包含 client_id, scope, created_at, client_name, homepage, bio
+    :returns: 授权记录列表，每条包含 client_id, scope, ctime, name, homepage, bio
     """
     if not uid or len(uid) != 22:
         return []
-    oa = OAuthAuthorization.alias()
-    oc = OAuthClient.alias()
     records = (
-        OAuthAuthorization
-        .select(
+        OAuthAuthorization.select(
             OAuthAuthorization.client_id,
             OAuthAuthorization.scope,
-            OAuthAuthorization.created_at,
+            OAuthAuthorization.ctime,
             OAuthAuthorization.ip,
             OAuthAuthorization.ua,
             OAuthClient.name,
@@ -271,9 +268,10 @@ def list_oauth_authorizations_by_user(uid: str) -> List[COMMON_DICT_TYPE]:
         )
         .join(OAuthClient, on=(OAuthAuthorization.client_id == OAuthClient.client_id))
         .where(OAuthAuthorization.uid == uid)
-        .order_by(OAuthAuthorization.created_at.desc())
+        .order_by(OAuthAuthorization.ctime.desc())
+        .dicts()
     )
-    return [model_to_dict(r) for r in records]
+    return list(records)
 
 
 def delete_oauth_authorization(uid: str, client_id: str) -> int:
@@ -292,8 +290,7 @@ def delete_oauth_authorization(uid: str, client_id: str) -> int:
     ).execute()
     # 再删授权记录
     result = (
-        OAuthAuthorization
-        .delete()
+        OAuthAuthorization.delete()
         .where(
             (OAuthAuthorization.client_id == client_id)
             & (OAuthAuthorization.uid == uid)
@@ -318,8 +315,7 @@ def count_oauth_authorizations(client_id: str) -> int:
     if not client_id or len(client_id) < 24:
         return 0
     return (
-        OAuthAuthorization
-        .select(OAuthAuthorization.uid)
+        OAuthAuthorization.select(OAuthAuthorization.uid)
         .where(OAuthAuthorization.client_id == client_id)
         .distinct()
         .count()

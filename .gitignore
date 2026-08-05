@@ -139,3 +139,5 @@ DISABLED
 ENABLED
 .codebuddy/
 data/
+uploads/
+logs/

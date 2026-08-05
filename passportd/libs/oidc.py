@@ -36,7 +36,7 @@ from ..basis.vars import (
     OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 )
 from ..utils.common import now, rdb, read_rsa_private_key, compute_kid
-from ..utils.web import get_ip
+from ..utils.web import absolute_url, get_ip
 from ..models.oidc import get_oauth_client, get_oauth_token, save_oauth_token
 from ..models.user import get_user_by_uid, get_user_email
 
@@ -420,7 +420,7 @@ class OIDCOpenIDCode(OpenIDCode):
         if "profile" in scopes:
             user_info["nickname"] = profile.get("nickname", "")
             user_info["gender"] = profile.get("gender", 2)
-            user_info["picture"] = profile.get("avatar", "")
+            user_info["picture"] = absolute_url(profile.get("avatar", ""))
             user_info["location"] = profile.get("location", "")
             user_info["bio"] = profile.get("bio", "")
             user_info["status"] = profile.get("status", 1)

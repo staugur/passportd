@@ -10,6 +10,7 @@ v2.3.0
 - **「我的授权」管理页面**：用户可在个人中心查看并撤销已授权的 OIDC 客户端，撤销时同步清除关联 Token。
 - **绑定 / 解绑邮箱和手机号**：已登录用户可通过验证码绑定新邮箱或手机号，或解绑已有邮箱/手机号，验证不通过不执行操作。
 - **短信验证码日频限制**：仅对手机号生效——每个手机号每天最多 10 次，全局每天最多 100 次。计数器存储在 Redis，按天自动过期。
+- **头像上传与裁剪**：个人资料编辑页支持上传头像，集成 Cropper.js 进行裁剪（1:1 方形），裁剪后转为 JPEG 通过 ``/api/upload`` 上传，支持 local 和 SAPIC 两种存储后端。
 
 修复
 ~~~~
@@ -21,6 +22,12 @@ v2.3.0
 ~~~~
 
 - 验证码登录 method 标记由 ``local_vcode`` 简化为 ``vcode``。
+- ``auto_create_data_dir()`` 改为接受路径参数，不再硬编码 ``APP_DIR/data``。
+- 移除 Codecov 集成（``ci.yml`` 中删除上传步骤，``README.md`` 中删除 badge）。
+- Dockerfile / kubernetes.yaml 中统一使用 ``PASSPORT_BASE_DIR=/app``。K8s 新增 ``passportd-data`` PVC 挂载 ``/app``。
+- 解绑邮箱/手机号由验证码改为**密码确认**（更安全，符合行业惯例）。
+- OIDC 客户端详情弹窗新增 Discovery 端点（``/.well-known/openid-configuration``）显示。
+- 个人资料头像由手动输入 URL 改为**上传 + 裁剪**，集成 Cropper.js。
 
 v2.2.0
 ------

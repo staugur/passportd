@@ -20,3 +20,5 @@ Makefile
 .coverage
 .pytest_cache
 .data
+uploads
+logs

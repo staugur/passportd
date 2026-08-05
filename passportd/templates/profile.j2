@@ -282,12 +282,18 @@
         </header>
         <section class="modal-card-body">
             <div id="vcode-msg" class="mb-3" style="display:none;"></div>
-            {# 步骤 1：填写账号 #}
+            {# 绑定：步骤1-填写账号；解绑：直接显示待解绑账号+密码输入 #}
             <div id="vcode-step-account">
                 <div class="field">
                     <label class="label" id="vcode-account-label">邮箱 / 手机号</label>
                     <div class="control">
                         <input class="input" type="text" id="vcode-account-input" placeholder="请输入邮箱或手机号" maxlength="128">
+                    </div>
+                </div>
+                <div class="field" id="vcode-pwd-row" style="display:none;">
+                    <label class="label">当前密码</label>
+                    <div class="control">
+                        <input class="input" type="password" id="vcode-pwd-input" placeholder="输入当前密码确认解绑" maxlength="128" autocomplete="current-password">
                     </div>
                 </div>
                 <div class="field">
@@ -297,7 +303,7 @@
                     <span class="has-text-grey is-size-7 ml-2" id="vcode-send-tip"></span>
                 </div>
             </div>
-            {# 步骤 2：填写验证码 #}
+            {# 绑定：步骤2-填写验证码 #}
             <div id="vcode-step-code" style="display:none;">
                 <p class="mb-2 has-text-grey is-size-7" id="vcode-sent-to">验证码已发送至 </p>
                 <div class="field">
@@ -378,14 +384,30 @@
                     </div>
                 </div>
 
-                {# 头像 URL #}
+                {# 头像 #}
                 <div class="field">
-                    <label class="label">头像 URL</label>
+                    <label class="label">头像</label>
                     <div class="control">
-                        <input class="input" type="url" name="avatar" value="{{ profile.avatar or '' }}"
-                            placeholder="https://example.com/avatar.png" maxlength="512">
+                        <div class="columns is-vcentered is-mobile mb-2">
+                            <div class="column is-narrow">
+                                <figure class="image is-64x64" style="border-radius:50%;overflow:hidden;border:2px solid #e5e7eb;" id="edit-avatar-preview-wrap">
+                                    <img id="edit-avatar-preview" src="{{ profile.avatar or '' }}" alt="" style="object-fit:cover;width:100%;height:100%;" onerror="this.style.display='none';">
+                                    <span class="icon is-large has-text-grey-lighter" id="edit-avatar-placeholder" style="display:{{ 'none' if profile.avatar else 'flex' }};align-items:center;justify-content:center;width:64px;height:64px;"><i class="fa-solid fa-user fa-2x"></i></span>
+                                </figure>
+                            </div>
+                            <div class="column">
+                                <button type="button" class="button is-small is-light" id="btn-upload-avatar">
+                                    <span class="icon"><i class="fa-solid fa-upload"></i></span>
+                                    <span>上传头像</span>
+                                </button>
+                                <button type="button" class="button is-small is-light is-danger ml-2" id="btn-clear-avatar" title="清除头像" style="display:{{ 'inline-flex' if profile.avatar else 'none' }};">
+                                    <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+                                </button>
+                            </div>
+                        </div>
+                        <input type="hidden" name="avatar" id="edit-avatar-url" value="{{ profile.avatar or '' }}">
+                        <input type="file" id="avatar-file-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
                     </div>
-                    <p class="help">输入头像图片的完整 URL 地址</p>
                 </div>
             </section>
             <footer class="modal-card-foot">
@@ -398,6 +420,36 @@
                 </div>
             </footer>
         </form>
+    </div>
+</div>
+
+{# 头像裁剪模态框 #}
+<div class="modal" id="crop-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card" style="max-width: 520px;">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-crop-simple"></i></span>
+                    <span>裁剪头像</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close" id="btn-close-crop"></button>
+        </header>
+        <section class="modal-card-body">
+            <div style="max-height:400px;">
+                <img id="crop-image" style="display:block;max-width:100%;">
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div class="buttons">
+                <button type="button" class="button is-primary" id="btn-crop-confirm">
+                    <span class="icon"><i class="fa-solid fa-check"></i></span>
+                    <span>确认裁剪</span>
+                </button>
+                <button type="button" class="button" id="btn-crop-cancel">取消</button>
+            </div>
+        </footer>
     </div>
 </div>
 
@@ -445,7 +497,12 @@
 
 {% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='cropperjs-1.6.2/cropper.min.css') }}">
+{% endblock %}
+
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='cropperjs-1.6.2/cropper.min.js') }}"></script>
 <script>
     $(function () {
         let $modal = $('#edit-modal');
@@ -466,6 +523,126 @@
                 $modal.removeClass('is-active');
             }
         });
+    });
+
+    // =========================================================
+    // 头像上传 & 裁剪
+    // =========================================================
+    let $cropModal = $('#crop-modal');
+    let $fileInput = $('#avatar-file-input');
+    let $avatarPreview = $('#edit-avatar-preview');
+    let $avatarPlaceholder = $('#edit-avatar-placeholder');
+    let $avatarUrlHidden = $('#edit-avatar-url');
+    let cropper = null;
+
+    function initCropper(imageUrl) {
+        if (cropper) { cropper.destroy(); }
+        let $img = $('#crop-image');
+        $img.attr('src', imageUrl);
+        cropper = new Cropper($img[0], {
+            aspectRatio: 1,
+            viewMode: 1,
+            autoCropArea: 1,
+            guides: false,
+            background: false,
+            dragMode: 'move',
+            cropBoxMovable: false,
+            cropBoxResizable: false,
+        });
+    }
+
+    function openCropModal(file) {
+        let reader = new FileReader();
+        reader.onload = function (e) {
+            $cropModal.addClass('is-active');
+            initCropper(e.target.result);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function closeCropModal() {
+        $cropModal.removeClass('is-active');
+        if (cropper) { cropper.destroy(); cropper = null; }
+        $fileInput.val('');
+    }
+
+    function setAvatarPreview(url) {
+        if (url) {
+            $avatarPreview.attr('src', url).show();
+            $avatarPlaceholder.hide();
+            $avatarUrlHidden.val(url);
+            $('#btn-clear-avatar').show();
+        } else {
+            $avatarPreview.attr('src', '').hide();
+            $avatarPlaceholder.show();
+            $avatarUrlHidden.val('');
+            $('#btn-clear-avatar').hide();
+        }
+    }
+
+    function uploadAvatar(dataUrl) {
+        let $confirmBtn = $('#btn-crop-confirm');
+        $confirmBtn.prop('disabled', true).addClass('is-loading');
+
+        $.ajax({
+            url: '{{ url_for("root.api.upload") }}',
+            method: 'POST',
+            data: { base64: dataUrl },
+            success: function (res) {
+                $confirmBtn.prop('disabled', false).removeClass('is-loading');
+                if (res.success && res.data && res.data.url) {
+                    setAvatarPreview(res.data.url);
+                    closeCropModal();
+                } else {
+                    alert(res.message || '上传失败');
+                }
+            },
+            error: function () {
+                $confirmBtn.prop('disabled', false).removeClass('is-loading');
+                alert('网络异常，请重试');
+            }
+        });
+    }
+
+    // 触发文件选择
+    $('#btn-upload-avatar').on('click', function () {
+        $fileInput.trigger('click');
+    });
+
+    // 文件选择后打开裁剪
+    $fileInput.on('change', function () {
+        if (this.files && this.files.length > 0) {
+            openCropModal(this.files[0]);
+        }
+    });
+
+    // 裁剪确认 → 获取结果并上传
+    $('#btn-crop-confirm').on('click', function () {
+        if (!cropper) return;
+        let canvas = cropper.getCroppedCanvas({
+            width: 512,
+            height: 512,
+            imageSmoothingQuality: 'high',
+        });
+        let dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        uploadAvatar(dataUrl);
+    });
+
+    // 裁剪取消
+    $('#btn-crop-cancel, #btn-close-crop').on('click', function () {
+        closeCropModal();
+    });
+
+    // 清除头像
+    $('#btn-clear-avatar').on('click', function () {
+        setAvatarPreview('');
+    });
+
+    // ESC 关闭裁剪框
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $cropModal.hasClass('is-active')) {
+            closeCropModal();
+        }
     });
 
     // =========================================================
@@ -589,6 +766,8 @@
         $vcSendBtn.prop('disabled', false).find('span').text('获取验证码');
         $vcConfirmBtn.prop('disabled', false).find('span').text('确认');
         $('#vcode-input').val('');
+        $('#vcode-pwd-input').val('');
+        $('#vcode-pwd-row').hide();
         if (toAccountStep) {
             $vcStepAccount.show();
             $vcStepCode.hide();
@@ -618,6 +797,8 @@
         $('#vcode-account-label').text('待解绑账号');
         $('#vcode-account-input').val(account).prop('readonly', true);
         $('#vcode-account-input').attr('placeholder', '');
+        $('#vcode-pwd-row').show();
+        $vcSendBtn.find('span').text('确认解绑');
         $vcModal.addClass('is-active');
     }
 
@@ -640,7 +821,7 @@
         resetVcUI(true);
     });
 
-    // 发送验证码
+    // 发送验证码（绑定）/ 确认解绑（输入密码后直接提交）
     $vcSendBtn.on('click', function () {
         clearVcMsg();
         let account;
@@ -655,14 +836,43 @@
             return;
         }
 
-        let url = vcMode === 'bind'
-            ? '{{ url_for("root.api.user_send_bind_vcode") }}'
-            : '{{ url_for("root.api.user_send_unbind_vcode") }}';
+        // 解绑：直接提交密码
+        if (vcMode === 'unbind') {
+            let password = $('#vcode-pwd-input').val().trim();
+            if (!password) {
+                showVcMsg('请输入当前密码', 'error');
+                return;
+            }
+            $vcSendBtn.prop('disabled', true).find('span').text('解绑中...');
+
+            $.ajax({
+                url: '{{ url_for("root.api.user_unbind_account") }}',
+                method: 'POST',
+                data: { account: account, password: password },
+                success: function (res) {
+                    if (!res.success) {
+                        showVcMsg(res.message || '解绑失败', 'error');
+                        $vcSendBtn.prop('disabled', false).find('span').text('确认解绑');
+                        return;
+                    }
+                    showVcMsg('解绑成功', 'success');
+                    setTimeout(function () { window.location.reload(); }, 1000);
+                },
+                error: function () {
+                    showVcMsg('网络异常，请重试', 'error');
+                    $vcSendBtn.prop('disabled', false).find('span').text('确认解绑');
+                }
+            });
+            return;
+        }
+
+        // 绑定：发送验证码
+        let url = '{{ url_for("root.api.user_send_bind_vcode") }}';
 
         $vcSendBtn.prop('disabled', true).find('span').text('发送中...');
 
         $.ajax({
-            url: url,
+            url: '{{ url_for("root.api.user_send_bind_vcode") }}',
             method: 'POST',
             data: { account: account },
             success: function (res) {
@@ -704,15 +914,12 @@
         tick();
     }
 
-    // 重新发送
+    // 重新发送（仅绑定模式使用）
     $vcResendBtn.on('click', function () {
         clearVcMsg();
-        let url = vcMode === 'bind'
-            ? '{{ url_for("root.api.user_send_bind_vcode") }}'
-            : '{{ url_for("root.api.user_send_unbind_vcode") }}';
 
         $.ajax({
-            url: url,
+            url: '{{ url_for("root.api.user_send_bind_vcode") }}',
             method: 'POST',
             data: { account: vcAccount },
             success: function (res) {
@@ -734,7 +941,7 @@
         resetVcUI(true);
     });
 
-    // 确认：验证并绑定/解绑
+    // 确认：验证并绑定
     $vcConfirmBtn.on('click', function () {
         clearVcMsg();
         let code = $('#vcode-input').val().trim();
@@ -743,14 +950,10 @@
             return;
         }
 
-        let url = vcMode === 'bind'
-            ? '{{ url_for("root.api.user_bind_account") }}'
-            : '{{ url_for("root.api.user_unbind_account") }}';
-
         $vcConfirmBtn.prop('disabled', true).find('span').text('验证中...');
 
         $.ajax({
-            url: url,
+            url: '{{ url_for("root.api.user_bind_account") }}',
             method: 'POST',
             data: { account: vcAccount, code: code },
             success: function (res) {
@@ -759,7 +962,7 @@
                     $vcConfirmBtn.prop('disabled', false).find('span').text('确认');
                     return;
                 }
-                showVcMsg(vcMode === 'bind' ? '绑定成功' : '解绑成功', 'success');
+                showVcMsg('绑定成功', 'success');
                 // 刷新页面
                 setTimeout(function () { window.location.reload(); }, 1000);
             },
@@ -775,6 +978,13 @@
         if (e.key === 'Escape' && $vcModal.hasClass('is-active')) {
             closeVcModal();
             resetVcUI(true);
+        }
+    });
+
+    // 密码输入框 Enter 提交解绑
+    $('#vcode-pwd-input').on('keydown', function (e) {
+        if (e.key === 'Enter' && vcMode === 'unbind') {
+            $vcSendBtn.trigger('click');
         }
     });
 </script>

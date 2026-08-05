@@ -297,11 +297,13 @@ $(function () {
 
   // --- 查看详情 ---
   function showDetail(client) {
+    let discoveryUrl = window.location.origin + '/.well-known/openid-configuration';
     let fields = [
       ['应用名称', client.name],
       ['Client ID', '<code class="is-size-7">' + escHtml(client.client_id) + '</code>'],
       ['Client Secret', '<code class="is-size-7">' + escHtml(client.client_secret) + '</code>'],
       ['回调地址', client.redirect_uri],
+      ['Discovery 端点', '<a href="' + escHtml(discoveryUrl) + '" target="_blank" class="is-size-7">' + escHtml(discoveryUrl) + ' <span class="icon is-small"><i class="fa-solid fa-arrow-up-right-from-square"></i></span></a>'],
       ['主页', client.homepage || '<span class="has-text-grey-light">—</span>'],
       ['授权范围', client.scope],
       ['授权类型', client.grant_type],

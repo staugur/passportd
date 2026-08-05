@@ -17,6 +17,7 @@ limitations under the License.
 
 from typing import Any, Optional, Tuple, Dict, Union
 from functools import wraps
+from time import strftime
 from urllib.parse import urlparse, urljoin
 from flask import (
     g,
@@ -29,10 +30,11 @@ from flask import (
     current_app,
 )
 
-from ..basis.vars import USR_STATE_KEY
+from ..basis.vars import USR_STATE_KEY, PROC_NAME
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import ApiError
 from ..models.user import verify_jwt, generate_jwt
+from .common import rdb, parse_account_classify
 
 signin_ep = "root.front.signin"
 no_jump_ep = (signin_ep, "root.front.signout", "root.front.signup")
@@ -227,6 +229,38 @@ def get_ip() -> str:
     return request.remote_addr
 
 
+def check_sms_rate_limit(account: str) -> None:
+    """短信发送频率限制。
+
+    每个手机号每天最多 10 次，全局每天最多 100 次。
+    Redis 计数器 key 按天（YYYY-MM-DD）划分，自动过期。
+
+    :param account: 手机号
+    :raises ApiError: 超过限制时抛出
+    """
+    if parse_account_classify(account) != "mobile":
+        return
+
+    today = strftime("%Y-%m-%d")
+
+    phone_key = f"{PROC_NAME}:sms_rl:phone:{today}:{account}"
+    phone_count = int(rdb.get(phone_key) or 0)
+    if phone_count >= 10:
+        raise ApiError("该手机号今日发送验证码次数已达上限（10次），请明天再试")
+
+    global_key = f"{PROC_NAME}:sms_rl:global:{today}"
+    global_count = int(rdb.get(global_key) or 0)
+    if global_count >= 100:
+        raise ApiError("今日短信验证码发送次数已达全局上限，请明天再试")
+
+    pipe = rdb.pipeline()
+    pipe.incr(phone_key)
+    pipe.expire(phone_key, 86400)
+    pipe.incr(global_key)
+    pipe.expire(global_key, 86400)
+    pipe.execute()
+
+
 #: OAuth2 提供商图标/颜色配置，key 为 plugin_name 中 oauth2_ 之后的部分
 _OAUTH2_PROVIDER_CONFIG: dict[str, dict[str, str]] = {
     "github": {"icon": "fa-brands fa-github", "color": "is-dark", "bg": "#24292e"},
@@ -261,3 +295,19 @@ def list_oauth2_providers(oidc_state: Optional[str] = None) -> list[dict[str, st
             }
         )
     return result
+
+
+def absolute_url(path: str) -> str:
+    """将相对路径补全为绝对 URL，用于 OIDC userinfo/picture 等资源链接。
+
+    若 path 为空或是完整 URL（http/https 开头）则直接返回；
+    否则拼接当前请求的 host_url。
+
+    :param path: 资源路径（如 /uploads/xxx.jpg）
+    :returns: 绝对 URL
+    """
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://")):
+        return path
+    return request.host_url.rstrip("/") + path

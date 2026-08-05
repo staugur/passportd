@@ -167,7 +167,7 @@ $(function () {
       '</tr></thead><tbody>';
 
     $.each(records, function (_, r) {
-      let name = (r.name) || (r.oidc_client ? r.oidc_client.name : '');
+      let name = r.name || '';
       html += '<tr>' +
         '<td class="has-text-weight-semibold">' + escHtml(name || r.client_id) + '</td>' +
         '<td><code class="is-size-7">' + escHtml(r.client_id) + '</code></td>' +
@@ -178,7 +178,7 @@ $(function () {
         html += '<span class="tag is-info is-light is-size-7">' + escHtml(s) + '</span>';
       });
       html += '</div></td>' +
-        '<td class="is-size-7 has-text-grey">' + formatTimestamp(r.created_at || r.ctime) + '</td>' +
+        '<td class="is-size-7 has-text-grey">' + formatTimestamp(r.ctime) + '</td>' +
         '<td>' +
         '<button class="button is-danger is-light is-small js-revoke" data-id="' + escHtml(r.client_id) + '" data-name="' + escHtml(name || r.client_id) + '">' +
         '<span class="icon is-small"><i class="fa-solid fa-xmark"></i></span>' +
