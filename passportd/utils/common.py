@@ -214,6 +214,7 @@ def create_log() -> logging.Logger:
     """创建并配置应用日志实例。
 
     根据 ``LOG_LEVEL``、``LOG_FILE`` 配置项创建：
+
     - 有 LOG_FILE 时使用 TimedRotatingFileHandler（按日期轮转），
       日志文件写入 ``BASE_DIR/logs/`` 目录
     - 无 LOG_FILE 时输出到 stdout

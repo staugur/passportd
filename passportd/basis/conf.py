@@ -86,7 +86,8 @@ class BaseConfig:
     SMTP_SERVER: str = ""
     ## 发送邮件服务器端口
     ## 由端口自动判断：465=SSL/TLS(SMTP_SSL), 其他=明文+STARTTLS, 25端口禁止使用
-    SMTP_PORT: int = 587
+    ## 国内主流邮箱（QQ/163/阿里/腾讯企业邮）均使用 465 端口
+    SMTP_PORT: int = 465
     #: SPUG推送助手邮件配置
     SPUG_MAIL_TEMPLATE_ID = ""
 

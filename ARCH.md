@@ -318,7 +318,7 @@ generate_digital_verification_code()
 
 | 账号类型 | 发送方式 | 配置 |
 |----------|----------|------|
-| email | SMTP 邮件（587+STARTTLS） | `SMTP_*` 配置项 |
+| email | SMTP 邮件（465+SSL） | `SMTP_*` 配置项 |
 | mobile | 短信（Spug API） | `SPUG_*` 配置项 |
 
 ```
@@ -498,7 +498,7 @@ DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status
     │ ◄────────────────────────────────────────► │
     │                                          │
     │ ◄───── 302 ──────────────────────────────│ code=xxx
-    │ /oauth2/github/authorize?code=xxx         │
+    │ /oauth2/github/authorized?code=xxx         │
     │ ───────────────────►│                         │
     │                     │ token_endpoint → access_token
     │                     │ ──────────────────────► │
@@ -534,7 +534,7 @@ DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status
   │  ├─ 存 Redis: oidc_bind:<state_jwt> → {uid, oauth_name, action="bind"}
   │  └─ 302 → /oauth2/github/login?oidc_state=<state_jwt>
   │
-  授权回调: /oauth2/github/authorize?state=<state_jwt>&code=xxx
+  授权回调: /oauth2/github/authorized?state=<state_jwt>&code=xxx
   │
   │  OAuthInterface.wrap_userinfo(access_token)
   │  ├─ Redis 取 state → {uid, action="bind"}
@@ -748,7 +748,7 @@ GET  /oauth/client/count/<client_id> → 查看授权用户数
 | 路由 | 方法 | 功能 |
 |---|---|---|
 | `/oauth2/github/login` | GET | 发起 GitHub 授权 |
-| `/oauth2/github/authorize` | GET | GitHub 回调 |
+| `/oauth2/github/authorized` | GET | GitHub 回调 |
 | `/oauth2/gitee/login` | GET | 发起 Gitee 授权 |
 | `/oauth2/gitee/authorize` | GET | Gitee 回调 |
 | `/oauth2/weibo/login` | GET | 发起微博授权 |

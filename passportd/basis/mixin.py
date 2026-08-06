@@ -168,7 +168,7 @@ class SMTPMixIn:
     _smtp_user_mail: str = config.get("SMTP_USER_MAIL", "")
     _smtp_user_passwd: str = config.get("SMTP_USER_PASSWD", "")
     _smtp_server: str = config.get("SMTP_SERVER", "")
-    _smtp_port: int = config.get("SMTP_PORT", 587)
+    _smtp_port: int = config.get("SMTP_PORT", 465)
 
     def smtp_send_email(
         self,

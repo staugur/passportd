@@ -113,7 +113,6 @@ OpenID Connect 配置
 
 OIDC 相关的以下值由 ``PinConfig`` 固定管理，不可通过配置或环境变量更改：
 
-- ``OIDC_RSA_KEY_SIZE`` = ``4096``
 - ``OIDC_RSA_PUBLIC_KEY`` → ``BASE_DIR/data/public.pem``
 - ``OIDC_RSA_PRIVATE_KEY`` → ``BASE_DIR/data/private.key``
 
@@ -168,7 +167,7 @@ OIDC 相关的以下值由 ``PinConfig`` 固定管理，不可通过配置或环
      - SMTP 服务器地址，EMAIL_PROVIDER 为 ``smtp`` 时必填
    * - ``SMTP_PORT``
      - int
-     - ``587``
+     - ``465``
      - SMTP 端口，465=隐式SSL，其他=STARTTLS，25端口禁止使用
    * - ``SPUG_MAIL_TEMPLATE_ID``
      - str
@@ -244,6 +243,47 @@ OAuth2 第三方登录配置
    * - ``QQ_CLIENT_SECRET``
      - str
      - QQ OAuth2 Client Secret
+
+Passkey（WebAuthn）配置
+--------------------------
+
+Passkey 基于 **WebAuthn** 标准，允许用户使用设备生物识别（指纹/面容）或 PIN 码
+进行无密码登录。配置 ``PASSKEY_RP_ID`` 为有效域名即可启用。
+
+.. list-table::
+   :header-rows: 1
+
+   * - 配置项
+     - 类型
+     - 默认值
+     - 说明
+   * - ``PASSKEY_RP_ID``
+     - str
+     - ``""``
+     - Relying Party ID，即当前服务的域名（不含协议和端口）。
+       设置为有效域名后 Passkey 功能自动启用；为空或无效值时禁用。
+
+       示例：
+
+       - 开发环境：``localhost(默认)``
+       - 生产环境：``auth.example.com``
+
+       注意：RP ID 必须是浏览器地址栏中的注册域名（或子域名），
+       **不支持 IP 地址**。
+
+.. tip::
+
+   Passkey 遵循 WebAuthn 规范，要求如下：
+
+   - **HTTPS**：生产环境必须使用 HTTPS（``localhost`` 例外）。
+   - **RP ID 一致性**：前端注册/登录时浏览器提供的 ``rp.id`` 必须与
+     ``PASSKEY_RP_ID`` 完全一致，否则验证会失败。
+   - **RP Name**：固定为 ``passportd``，在浏览器密钥管理界面展示。
+   - **Challenge 有效期**：每次注册/登录 generated challenge 缓存 300 秒，
+     超时需要重新发起。
+
+   服务端未启用时（``PASSKEY_RP_ID`` 为空或无效），前端登录页和个人中心
+   的 Passkey 入口会自动隐藏。
 
 生产环境配置
 -------------

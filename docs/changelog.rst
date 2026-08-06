@@ -14,9 +14,11 @@ v2.4.0
 ~~~~
 
 - 修复登录页面宽度过窄（420px → 480px），避免「密码登录 / 验证码登录 / Passkey 登录」三个 Tab 文字被截断。
-- 修复 Passkey 接口 ``_rp_id`` 为空的错误：业务方法改用 property 访问，确保 ``_ensure_config()`` 被调用。
-- 修复 webauthn 3.0.0 中 ``RegistrationCredential`` / ``AuthenticationCredential`` 已移除 ``parse_obj()`` 的问题：直接传递 JSON dict。
-- 改进 Passkey 设备名称识别：新增 AAGUID 映射表（支持 Bitwarden/Vaultwarden、1Password、Windows Hello、iCloud Keychain、YubiKey 等），无 UA 时精确显示具体设备名称。
+
+变更
+~~~~
+
+- SMTP 默认端口从 587 改为 465：国内主流邮箱服务商（QQ/163/阿里/腾讯企业邮）均使用 465 端口（SSL 隐式加密），587（STARTTLS）在国内几乎不可用。
 
 v2.3.0
 ------

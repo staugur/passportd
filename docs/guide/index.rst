@@ -9,3 +9,4 @@
     install
     quickstart
     setup
+    usage

@@ -11,6 +11,14 @@ import sys
 
 from pallets_sphinx_themes import get_version, ProjectLink
 
+# 文档构建不需要真实数据库与缓存连接，强制使用 SQLite 内存库。
+# postgresql / redis 驱动在文档构建环境可能未安装，且 autodoc 导入
+# 模块时会触发 peewee 的 Field.bind() → get_binary_type() 调用。
+# get_binary_type 定义在 PostgresqlDatabase 子类上，无法通过基类
+# Database 的 monkey-patch 拦截，必须在导入前覆写环境变量。
+os.environ["PASSPORT_DB_URI"] = "sqlite:///:memory:"
+os.environ["PASSPORT_REDIS_URI"] = "redis://localhost:6379/0"
+
 sys.path.insert(0, os.path.abspath("../"))
 
 # autodoc 导入项目模块时 model.py 会执行模块级的：
