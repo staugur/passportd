@@ -23,6 +23,7 @@ from ..libs.interface import (
     RegisterInterface,
     UploadInterface,
     VCodeInterface,
+    PasskeyClient,
 )
 from ..models.user import (
     add_account,
@@ -44,7 +45,7 @@ from ..models.oidc import (
     update_oauth_client,
 )
 from ..models.model import User
-from ..basis.errors import ApiError, PassportError
+from ..basis.errors import ApiError, PassportError, PasskeyError
 from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..basis.common import new_res
 from ..utils.web import apilogin_required, check_sms_rate_limit, get_ip
@@ -581,3 +582,155 @@ def vcode_login():
     )
 
     return new_res(success=True, data=dict(token=token))
+
+
+# ---------------------------------------------------------------------------
+# WebAuthn Passkey API
+# ---------------------------------------------------------------------------
+
+
+@bp.post("/passkey/register/options")
+@apilogin_required
+def passkey_register_options():
+    """生成 Passkey 注册选项。
+
+    用户已登录时调用，返回 ``PublicKeyCredentialCreationOptions`` JSON，
+    浏览器需调用 ``navigator.credentials.create()`` 完成注册。
+
+    :returns: 注册选项 JSON（含 challenge、rp、user 等字段）
+    """
+    uid = g.user["uid"]
+    account = g.user["account"]
+    try:
+        options = PasskeyClient.generate_registration_options(
+            uid=uid,
+            account=account,
+            display_name=account,
+        )
+    except PasskeyError as e:
+        raise ApiError(str(e))
+    return new_res(success=True, data=options)
+
+
+@bp.post("/passkey/register/verify")
+@apilogin_required
+def passkey_register_verify():
+    """验证 Passkey 注册结果。
+
+    接收浏览器调用 ``navigator.credentials.create()`` 返回的
+    ``PublicKeyCredential`` JSON，验证成功后存储公钥。
+
+    :json: 浏览器返回的 PublicKeyCredential 对象
+    :returns: 关联的 credential_id 和 device_name
+    """
+    uid = g.user["uid"]
+    credential_json = request.get_json(silent=True)
+    if not credential_json:
+        raise ApiError("credential data is required")
+    try:
+        result = PasskeyClient.verify_registration_response(uid, credential_json)
+    except PasskeyError as e:
+        raise ApiError(str(e))
+    return new_res(success=True, data=result)
+
+
+@bp.post("/passkey/login/options")
+def passkey_login_options():
+    """生成 Passkey 登录认证选项。
+
+    未登录状态可调用，浏览器需调用 ``navigator.credentials.get()``
+    完成签名认证。支持有条件发现（conditional UI / autofill）。
+
+    :returns: 认证选项 JSON（含 challenge、rpId 等字段）
+    """
+    uid = request.get_json(silent=True, cache=True) or {}
+    uid = uid.get("uid", "") if isinstance(uid, dict) else ""
+    try:
+        options = PasskeyClient.generate_authentication_options(uid=uid)
+    except PasskeyError as e:
+        raise ApiError(str(e))
+    return new_res(success=True, data=options)
+
+
+@bp.post("/passkey/login/verify")
+def passkey_login_verify():
+    """验证 Passkey 登录认证结果。
+
+    接收浏览器调用 ``navigator.credentials.get()`` 返回的
+    ``PublicKeyCredential`` JSON，验证签名成功后返回 JWT token。
+
+    :json: 浏览器返回的 PublicKeyCredential 对象
+    :returns: JWT token（用于后续 API 鉴权）
+    """
+    credential_json = request.get_json(silent=True)
+    if not credential_json:
+        raise ApiError("credential data is required")
+    try:
+        result = PasskeyClient.verify_authentication_response(credential_json)
+    except PasskeyError as e:
+        raise ApiError(str(e))
+
+    uid = result["uid"]
+    # 查找用户的本地账号（优先使用 username 类型账号）
+    accounts = list_accounts(uid)
+    account = ""
+    for a in accounts:
+        if a.get("type") == "username":
+            account = a["account"]
+            break
+    if not account and accounts:
+        account = accounts[0]["account"]
+    if not account:
+        raise ApiError("passkey authentication succeeded but no account found")
+
+    expire = 7200
+    token = generate_jwt(account, expire)
+    if not token:
+        raise ApiError("generate token failed")
+
+    # 记录登录日志
+    RecordLoginInterface(
+        uid=uid,
+        account=account,
+        method="passkey",
+        ip=get_ip(),
+        ua=request.headers.get("User-Agent", ""),
+        accept_lang=request.headers.get("Accept-Language", ""),
+    )
+
+    return new_res(
+        success=True,
+        data={
+            "token": token,
+            "uid": uid,
+            "credential_id": result["credential_id"],
+            "device_name": result["device_name"],
+        },
+    )
+
+
+@bp.get("/passkey/credentials")
+@apilogin_required
+def passkey_list_credentials():
+    """列出当前用户绑定的所有 Passkey 凭证。
+
+    :returns: data 中包含 credentials 列表
+    """
+    uid = g.user["uid"]
+    credentials = PasskeyClient.list_credentials(uid)
+    return new_res(success=True, data=dict(credentials=credentials))
+
+
+@bp.delete("/passkey/credential/<credential_id>")
+@apilogin_required
+def passkey_delete_credential(credential_id: str):
+    """删除指定 Passkey 凭证。
+
+    :param credential_id: 凭证 ID（base64url 编码）
+    :returns: 删除结果
+    """
+    uid = g.user["uid"]
+    ret = PasskeyClient.delete_credential(uid, credential_id)
+    if not ret:
+        raise ApiError("credential not found")
+    return new_res(success=True, data=dict(deleted=True))

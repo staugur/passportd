@@ -80,3 +80,8 @@ class RunError(PassportError):
 class DBError(PassportError):
     """数据库操作异常。"""
     pass
+
+
+class PasskeyError(PassportError):
+    """WebAuthn Passkey 相关异常（注册失败、认证失败、Challenge 过期等）。"""
+    pass

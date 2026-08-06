@@ -26,6 +26,8 @@ from .vars import (
     LOG_LEVEL_TYPE,
     ENV_PREFIX,
     ENV_NAME,
+    OIDC_RSA_KEY_SIZE,
+    PASSKEY_RP_NAME,
 )
 from .common import is_prod
 
@@ -96,6 +98,12 @@ class BaseConfig:
     #: SPUG推送助手，短信模板ID
     SPUG_SMS_TEMPLATE_ID = ""
 
+    # WebAuthn Passkey
+    #: Relying Party ID，即当前服务域名，生产环境必须为真实域名，本地开发可用 localhost
+    PASSKEY_RP_ID: str = "localhost"
+    #: 允许的源 origin，为空时自动从请求中推导。格式：https://example.com
+    PASSKEY_ORIGIN: str = ""
+
     # OAuth2 配置
     #: GitHub OAuth2 配置
     GITHUB_CLIENT_ID = ""
@@ -142,12 +150,10 @@ class PinConfig:
     """固定配置类，不可被环境变量覆盖，在 from_prefixed_env 之后加载。
 
     以下值从 BASE_DIR 固定派生：
-    - OIDC_RSA_KEY_SIZE: 4096
     - DATA_DIR: BASE_DIR/data
     - OIDC_RSA_PUBLIC_KEY / OIDC_RSA_PRIVATE_KEY: BASE_DIR/data/ 下的 RSA 密钥
     - LOCAL_UPLOAD_FOLDER: BASE_DIR/uploads
     """
-    OIDC_RSA_KEY_SIZE = 4096
 
     @classmethod
     def apply(cls, cfg):
@@ -193,10 +199,6 @@ def _check_config_value(cfg):
     ], "DB_URI must start with sqlite, mysql+pool, or psycopg3+pool"
     assert cfg["REDIS_URI"].startswith("redis://"), "REDIS_URI must start with redis://"
     assert cfg["URI_PREFIX"].startswith("/"), "URI_PREFIX must start with /"
-
-    assert isinstance(
-        cfg["OIDC_RSA_KEY_SIZE"], int
-    ), "OIDC_RSA_KEY_SIZE must be an integer"
 
     assert cfg["UPLOAD_METHOD"] in [
         "sapic",

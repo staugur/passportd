@@ -23,6 +23,7 @@ from peewee import (
     CharField,
     IntegerField,
     TextField,
+    BlobField,
     SqliteDatabase,
 )
 from playhouse.db_url import connect
@@ -210,9 +211,34 @@ class LoginRecord(Model):
         indexes = ((("uid", "ctime"), False),)  # 复合索引：按用户查询登录历史
 
 
+class PasskeyCredential(Model):
+    """WebAuthn Passkey 凭证，一个用户可绑定多个设备。"""
+
+    #: 凭证 ID（base64url 编码，对应 WebAuthn credential_id）
+    credential_id = CharField(max_length=512, unique=True, index=True)
+    #: 所属用户 uid
+    uid = CharField(max_length=22, index=True)
+    #: 公钥（COSE 格式二进制，用于签名验证）
+    public_key = BlobField()
+    #: 签名计数器，用于防重放攻击，每次成功认证后 +1
+    sign_count = IntegerField(default=0)
+    #: 设备名称，如 "Chrome on macOS"，方便用户识别
+    device_name = CharField(max_length=128, default="")
+    #: 凭证类型：platform（平台认证器，如指纹/面容）或 cross-platform（跨平台，如 USB 密钥）
+    credential_type = CharField(max_length=32, default="platform")
+    #: 创建时间
+    ctime = IntegerField(default=now)
+    #: 最近使用时间
+    last_used_at = IntegerField(default=0)
+
+    class Meta:
+        database = db
+        table_name = "passport_passkey"
+
+
 # Create tables if they don't exist
 with db.atomic():
     db.create_tables(
-        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord],
+        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord, PasskeyCredential],
         safe=True,
     )

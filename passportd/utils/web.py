@@ -311,3 +311,29 @@ def absolute_url(path: str) -> str:
     if path.startswith(("http://", "https://")):
         return path
     return request.host_url.rstrip("/") + path
+
+
+def get_rp_id() -> str:
+    """获取 WebAuthn Relying Party ID。
+
+    优先使用配置 ``PASSKEY_RP_ID``，为空时自动从请求 Host 中提取（去掉端口）。
+    """
+    from ..basis.conf import config
+
+    rp_id = config.get("PASSKEY_RP_ID", "")
+    if not rp_id:
+        rp_id = urlparse(request.host_url).hostname or "localhost"
+    return rp_id
+
+
+def get_origin() -> str:
+    """获取 WebAuthn 允许的源 origin。
+
+    优先使用配置 ``PASSKEY_ORIGIN``，为空时自动从请求构造。
+    """
+    from ..basis.conf import config
+
+    origin = config.get("PASSKEY_ORIGIN", "")
+    if not origin:
+        origin = request.host_url.rstrip("/")
+    return origin

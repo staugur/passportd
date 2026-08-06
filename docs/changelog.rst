@@ -1,7 +1,20 @@
 更新日志
 ========
 
-v2.3.0
+v2.4.0
+------
+
+新特性
+~~~~~~
+
+- **WebAuthn Passkey 支持**：用户可注册并使用 Passkey（指纹/面容/PIN 码）进行登录，彻底替代密码。
+  - 注册流程：已登录用户调用 ``POST /api/passkey/register/options`` 获取注册选项，浏览器创建凭证后通过 ``POST /api/passkey/register/verify`` 提交验证。
+  - 登录流程：浏览器调用 ``POST /api/passkey/login/options`` 获取认证选项，用户完成生物识别后通过 ``POST /api/passkey/login/verify`` 验证并获取 JWT Token。
+  - 凭证管理：``GET /api/passkey/credentials`` 列出已绑定设备，``DELETE /api/passkey/credential/<id>`` 删除指定凭证。
+  - 配置文件新增 ``PASSKEY_RP_ID``、``PASSKEY_RP_NAME``、``PASSKEY_ORIGIN`` 三个配置项，均为可选，支持自动从请求中推导。
+  - 核心实现位于 ``passportd/libs/interface.py`` 的 ``PasskeyInterface`` 类，依赖 ``webauthn>=2.0``。
+
+v2.3.1
 ------
 
 新特性

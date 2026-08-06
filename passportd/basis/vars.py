@@ -84,6 +84,14 @@ OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS: List[str] = [
     "client_secret_basic",
 ]
 OIDC_SUPPORTED_SCOPES: List[str] = ["openid", "profile", "email", "role"]
+OIDC_RSA_KEY_SIZE: int = 4096
 
 #: 用户登录状态索引字段
 USR_STATE_KEY: str = "sid"
+
+#: WebAuthn Passkey
+#: Challenge 缓存有效期（秒）
+PASSKEY_CHALLENGE_TTL: int = 300
+#: Relying Party 名称，展示给用户的应用名称
+PASSKEY_RP_NAME: str = PROC_NAME
+

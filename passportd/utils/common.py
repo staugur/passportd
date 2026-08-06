@@ -404,7 +404,8 @@ def auto_init_rsa_key():
     """Automatically generate an RSA key if it does not exist."""
     pubkey = config["OIDC_RSA_PUBLIC_KEY"]
     prikey = config["OIDC_RSA_PRIVATE_KEY"]
-    keysize = config["OIDC_RSA_KEY_SIZE"]
+    from ..basis.vars import OIDC_RSA_KEY_SIZE as _rsa_keysize
+    keysize = _rsa_keysize
     if not isinstance(keysize, int) or keysize < 1024:
         raise ParamError("Invalid RSA key size: {}".format(keysize))
     if not isfile(pubkey) or not isfile(prikey):
@@ -591,3 +592,56 @@ def generate_fingerprint(ip: str, ua: str, accept_lang: str) -> str:
     """
     raw = f"{ip}|{ua}|{accept_lang}"
     return sha256(raw.encode()).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# WebAuthn Passkey 工具函数
+# ---------------------------------------------------------------------------
+
+
+def base64url_encode(data: bytes) -> str:
+    """将 bytes 编码为 base64url（不含末尾 = 填充）字符串。
+
+    WebAuthn 协议全程使用 base64url，此函数封装了标准编码。
+    """
+    return urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def base64url_decode(s: str) -> bytes:
+    """将 base64url 字符串解码为原始 bytes，自动补齐末尾 = 填充。"""
+    padding = 4 - len(s) % 4
+    if padding != 4:
+        s += "=" * padding
+    return urlsafe_b64decode(s.encode("ascii"))
+
+
+def generate_passkey_challenge() -> bytes:
+    """生成 WebAuthn 随机 challenge（32 字节）。"""
+    from os import urandom
+    return urandom(32)
+
+
+def save_passkey_challenge(key: str, challenge: bytes, ttl: int = 300) -> bool:
+    """将 WebAuthn challenge 存入 Redis。
+
+    :param key: 缓存键（如 uid 或 session_id）
+    :param challenge: 原始 challenge bytes
+    :param ttl: 过期时间，默认 300 秒
+    :returns: 是否设置成功
+    """
+    redis_key = f"{PROC_NAME}:passkey:challenge:{key}"
+    return bool(rdb.set(redis_key, base64url_encode(challenge), ex=ttl))
+
+
+def get_passkey_challenge(key: str) -> Optional[bytes]:
+    """从 Redis 读取 WebAuthn challenge 并删除（一次性使用）。
+
+    :param key: 缓存键
+    :returns: challenge bytes，不存在时返回 None
+    """
+    redis_key = f"{PROC_NAME}:passkey:challenge:{key}"
+    encoded = rdb.get(redis_key)
+    if encoded:
+        rdb.delete(redis_key)
+        return base64url_decode(encoded.decode("utf-8") if isinstance(encoded, bytes) else encoded)
+    return None

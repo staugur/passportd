@@ -39,6 +39,7 @@ from ..basis.vars import (
     PROC_NAME,
     APP_DIR,
     OAuthUserInfoType,
+    PASSKEY_RP_NAME,
 )
 from ..basis.common import new_res
 from ..basis.errors import PassportError, ParamError, ApiError, RunError
@@ -486,5 +487,399 @@ def RecordLoginInterface(
     Thread(target=_run, daemon=True).start()
 
 
+class PasskeyInterface(object):
+    """WebAuthn Passkey 接口，管理密码密钥的注册与认证。
+
+    使用 ``webauthn`` 库实现 WebAuthn Level 2 协议，支持 platform（指纹/面容）
+    和 cross-platform（USB 安全密钥）认证器。
+    """
+
+    def __init__(self):
+        self._rp_id: str = ""
+        self._rp_name: str = ""
+        self._origin: str = ""
+        self._initialized: bool = False
+
+    def _ensure_config(self):
+        """确保配置已初始化（首次调用时从请求上下文获取）。"""
+        if self._initialized:
+            return
+        from ..utils.web import get_rp_id, get_origin
+
+        self._rp_id = get_rp_id()
+        self._rp_name = config.get("PASSKEY_RP_NAME", PASSKEY_RP_NAME)
+        self._origin = get_origin()
+        self._initialized = True
+
+    @property
+    def rp_id(self) -> str:
+        self._ensure_config()
+        return self._rp_id
+
+    @property
+    def rp_name(self) -> str:
+        self._ensure_config()
+        return self._rp_name
+
+    @property
+    def origin(self) -> str:
+        self._ensure_config()
+        return self._origin
+
+    # ---- 注册 ----
+
+    def generate_registration_options(
+        self, uid: str, account: str, display_name: str = ""
+    ) -> dict:
+        """生成 Passkey 注册选项，下发给浏览器。
+
+        浏览器收到后需调用 ``navigator.credentials.create({ publicKey: options })``。
+
+        :param uid: 用户唯一标识符
+        :param account: 用户账号名（username）
+        :param display_name: 展示名称，为空时使用 account
+        :returns: PublicKeyCredentialCreationOptions 转 JSON 后的字典
+        :raises PasskeyError: 配置或生成失败时抛出
+        """
+        from webauthn import generate_registration_options
+        from webauthn.helpers.structs import AuthenticatorSelectionCriteria
+        from webauthn.helpers import bytes_to_base64url
+        from ..utils.common import (
+            base64url_encode,
+            generate_passkey_challenge,
+            save_passkey_challenge,
+        )
+        from ..models.model import PasskeyCredential
+
+        try:
+            # 获取已注册的凭证 ID（用于排除已有设备）
+            existing_creds = PasskeyCredential.select().where(
+                PasskeyCredential.uid == uid
+            )
+            exclude_credentials = []
+            for cred in existing_creds:
+                exclude_credentials.append(
+                    {
+                        "id": cred.credential_id,
+                        "type": "public-key",
+                        "transports": ["internal", "hybrid"],
+                    }
+                )
+
+            options = generate_registration_options(
+                rp_id=self._rp_id,
+                rp_name=self._rp_name,
+                user_id=uid.encode("utf-8"),
+                user_name=account,
+                user_display_name=display_name or account,
+                exclude_credentials=exclude_credentials if exclude_credentials else None,
+                authenticator_selection=AuthenticatorSelectionCriteria(
+                    authenticator_attachment="platform",
+                    resident_key="required",
+                    user_verification="preferred",
+                ),
+                attestation="none",
+            )
+
+            # 缓存 challenge
+            challenge_b64 = bytes_to_base64url(options.challenge)
+            save_passkey_challenge(uid, options.challenge)
+
+            return {
+                "rp": {"name": options.rp.name, "id": options.rp.id},
+                "user": {
+                    "id": base64url_encode(uid.encode("utf-8")),
+                    "name": options.user.name,
+                    "displayName": options.user.display_name,
+                },
+                "challenge": challenge_b64,
+                "pubKeyCredParams": [
+                    {"type": "public-key", "alg": -7},
+                    {"type": "public-key", "alg": -257},
+                ],
+                "timeout": 60000,
+                "excludeCredentials": [
+                    {
+                        "id": c["id"],
+                        "type": c["type"],
+                        "transports": c.get("transports", []),
+                    }
+                    for c in exclude_credentials
+                ],
+                "authenticatorSelection": {
+                    "authenticatorAttachment": "platform",
+                    "residentKey": "required",
+                    "userVerification": "preferred",
+                },
+                "attestation": "none",
+            }
+        except Exception as e:
+            logger.error(f"generate_registration_options error: {e}", exc_info=True)
+            raise PasskeyError(f"Failed to generate registration options: {e}") from e
+
+    def verify_registration_response(
+        self, uid: str, credential_json: dict
+    ) -> dict:
+        """验证浏览器返回的注册结果，成功则存储公钥。
+
+        :param uid: 用户唯一标识符
+        :param credential_json: 浏览器返回的 ``PublicKeyCredential`` JSON
+        :returns: 包含 credential_id 和 device_name 的字典
+        :raises PasskeyError: 验证失败时抛出
+        """
+        from webauthn import verify_registration_response
+        from webauthn.helpers.structs import RegistrationCredential
+        from webauthn.helpers import bytes_to_base64url
+        from ..utils.common import (
+            base64url_decode,
+            get_passkey_challenge,
+        )
+        from ..models.model import PasskeyCredential
+        from ..basis.common import now
+
+        try:
+            # 读取并清除 challenge（一次性使用）
+            expected_challenge = get_passkey_challenge(uid)
+            if not expected_challenge:
+                raise PasskeyError("Registration challenge expired, please try again")
+
+            credential = RegistrationCredential.parse_obj(credential_json)
+
+            verification = verify_registration_response(
+                credential=credential,
+                expected_challenge=expected_challenge,
+                expected_rp_id=self._rp_id,
+                expected_origin=self._origin,
+            )
+
+            # 解析设备名称
+            device_name = self._parse_device_name(
+                credential.response.client_data_json
+            )
+
+            # 存储凭证
+            PasskeyCredential.create(
+                credential_id=bytes_to_base64url(verification.credential_id),
+                uid=uid,
+                public_key=verification.credential_public_key,
+                sign_count=verification.sign_count,
+                device_name=device_name,
+                credential_type="platform",
+                ctime=now(),
+            )
+
+            return {
+                "credential_id": bytes_to_base64url(verification.credential_id),
+                "device_name": device_name,
+            }
+        except PasskeyError:
+            raise
+        except Exception as e:
+            logger.error(f"verify_registration_response error: {e}", exc_info=True)
+            raise PasskeyError(f"Failed to verify registration: {e}") from e
+
+    # ---- 认证（登录）----
+
+    def generate_authentication_options(self, uid: str = "") -> dict:
+        """生成 Passkey 认证选项，下发给浏览器进行登录。
+
+        浏览器收到后需调用 ``navigator.credentials.get({ publicKey: options })``。
+
+        :param uid: 可选的用户标识符，为空时使用无用户名登录（resident key）
+        :returns: PublicKeyCredentialRequestOptions 转 JSON 后的字典
+        :raises PasskeyError: 配置或生成失败时抛出
+        """
+        from webauthn import generate_authentication_options
+        from webauthn.helpers import bytes_to_base64url
+        from ..utils.common import (
+            generate_passkey_challenge,
+            save_passkey_challenge,
+        )
+        from ..models.model import PasskeyCredential
+
+        try:
+            # 如果指定了用户，限定该用户的凭证
+            allow_credentials = None
+            if uid:
+                existing_creds = PasskeyCredential.select().where(
+                    PasskeyCredential.uid == uid
+                )
+                cred_list = list(existing_creds)
+                if cred_list:
+                    allow_credentials = []
+                    for cred in cred_list:
+                        allow_credentials.append(
+                            {
+                                "id": cred.credential_id,
+                                "type": "public-key",
+                                "transports": ["internal", "hybrid"],
+                            }
+                        )
+
+            options = generate_authentication_options(
+                rp_id=self._rp_id,
+                allow_credentials=allow_credentials,
+                user_verification="preferred",
+            )
+
+            # 缓存 challenge，key 使用 uid 或临时 session
+            # 登录阶段 challenge 不需绑定用户，用统一 key
+            challenge_key = uid or "__anonymous__"
+            save_passkey_challenge(f"login:{challenge_key}", options.challenge)
+
+            result = {
+                "challenge": bytes_to_base64url(options.challenge),
+                "timeout": 60000,
+                "rpId": self._rp_id,
+                "userVerification": "preferred",
+            }
+            if allow_credentials:
+                result["allowCredentials"] = allow_credentials
+
+            return result
+        except Exception as e:
+            logger.error(f"generate_authentication_options error: {e}", exc_info=True)
+            raise PasskeyError(
+                f"Failed to generate authentication options: {e}"
+            ) from e
+
+    def verify_authentication_response(
+        self, credential_json: dict
+    ) -> dict:
+        """验证浏览器返回的认证结果，认证成功返回用户信息。
+
+        :param credential_json: 浏览器返回的 ``PublicKeyCredential`` JSON
+        :returns: 包含 uid 和 account 的字典
+        :raises PasskeyError: 验证失败时抛出
+        """
+        from webauthn import verify_authentication_response
+        from webauthn.helpers.structs import AuthenticationCredential
+        from webauthn.helpers import bytes_to_base64url
+        from ..utils.common import base64url_decode, get_passkey_challenge
+        from ..models.model import PasskeyCredential
+
+        try:
+            credential = AuthenticationCredential.parse_obj(credential_json)
+
+            # 根据 credential_id 查找凭证
+            try:
+                passkey = PasskeyCredential.get(
+                    PasskeyCredential.credential_id == credential.id
+                )
+            except PasskeyCredential.DoesNotExist:
+                raise PasskeyError("Passkey credential not found")
+
+            # 读取 challenge（先尝试绑定用户，再尝试匿名）
+            expected_challenge = get_passkey_challenge(f"login:{passkey.uid}")
+            if not expected_challenge:
+                expected_challenge = get_passkey_challenge("login:__anonymous__")
+            if not expected_challenge:
+                raise PasskeyError(
+                    "Authentication challenge expired, please try again"
+                )
+
+            verification = verify_authentication_response(
+                credential=credential,
+                expected_challenge=expected_challenge,
+                expected_rp_id=self._rp_id,
+                expected_origin=self._origin,
+                credential_public_key=passkey.public_key,
+                credential_current_sign_count=passkey.sign_count,
+            )
+
+            # 更新签名计数器和最近使用时间
+            from ..basis.common import now
+
+            PasskeyCredential.update(
+                sign_count=verification.new_sign_count,
+                last_used_at=now(),
+            ).where(
+                PasskeyCredential.credential_id == passkey.credential_id
+            ).execute()
+
+            return {
+                "uid": passkey.uid,
+                "credential_id": passkey.credential_id,
+                "device_name": passkey.device_name,
+            }
+        except PasskeyError:
+            raise
+        except Exception as e:
+            logger.error(
+                f"verify_authentication_response error: {e}", exc_info=True
+            )
+            raise PasskeyError(f"Failed to verify authentication: {e}") from e
+
+    # ---- 凭证管理 ----
+
+    def list_credentials(self, uid: str) -> list:
+        """列出用户绑定的所有 Passkey 凭证。
+
+        :param uid: 用户唯一标识符
+        :returns: 凭证列表
+        """
+        from ..models.model import PasskeyCredential
+
+        creds = (
+            PasskeyCredential.select()
+            .where(PasskeyCredential.uid == uid)
+            .order_by(PasskeyCredential.ctime.desc())
+        )
+        return [
+            {
+                "credential_id": c.credential_id,
+                "device_name": c.device_name,
+                "credential_type": c.credential_type,
+                "sign_count": c.sign_count,
+                "ctime": c.ctime,
+                "last_used_at": c.last_used_at,
+            }
+            for c in creds
+        ]
+
+    def delete_credential(self, uid: str, credential_id: str) -> bool:
+        """删除用户的指定 Passkey 凭证。
+
+        :param uid: 用户唯一标识符
+        :param credential_id: 凭证 ID（base64url）
+        :returns: 是否删除成功
+        """
+        from ..models.model import PasskeyCredential
+
+        deleted = (
+            PasskeyCredential.delete()
+            .where(
+                PasskeyCredential.uid == uid,
+                PasskeyCredential.credential_id == credential_id,
+            )
+            .execute()
+        )
+        return deleted > 0
+
+    @staticmethod
+    def _parse_device_name(client_data_json_base64url: str) -> str:
+        """从 clientDataJSON 解析设备名称。
+
+        优先解析 User-Agent，获取「浏览器 on 操作系统」格式。
+        """
+        from ..utils.common import base64url_decode
+        from ..utils.common import parse_user_agent
+        try:
+            data = base64url_decode(client_data_json_base64url)
+            client_data = json.loads(data.decode("utf-8"))
+            # 尝试从 clientExtensionResults 或自行解析 UA
+            ua = client_data.get("userAgent", "")
+            if ua:
+                browser, os_name, _ = parse_user_agent(ua)
+                if browser != "Unknown":
+                    return f"{browser} on {os_name}"
+            return "Unknown device"
+        except Exception:
+            return "Unknown device"
+
+
 #: OAuth2 Client
 OAuthClient = OAuthClintInterface()
+
+#: Passkey 接口实例
+PasskeyClient = PasskeyInterface()
