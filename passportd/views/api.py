@@ -49,7 +49,12 @@ from ..models.model import User
 from ..basis.errors import ApiError, PassportError, PasskeyError
 from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..basis.common import new_res, is_passkey_enabled
-from ..utils.web import apilogin_required, check_sms_rate_limit, get_ip
+from ..utils.web import (
+    apilogin_required,
+    check_sms_rate_limit,
+    get_ip,
+    auto_set_user_state,
+)
 from ..utils.common import (
     generate_digital_verification_code,
     parse_account_classify,
@@ -538,12 +543,13 @@ def user_unbind_account():
 def vcode_login():
     """验证码登录接口。
 
-    校验用户提交的验证码，验证通过后生成 JWT token 返回，
+    校验用户提交的验证码，验证通过后设置登录态 Cookie，
     同时写入登录记录。
 
     :form account: 邮箱地址或手机号（必填）
     :form code: 验证码（必填）
-    :returns: 登录结果及 JWT token JSON
+    :form remember: 是否记住登录（可选，勾选后 Cookie 有效期 7 天，否则 2 小时）
+    :returns: 登录结果 JSON（服务端已设置 sid Cookie）
     """
     account = request.form.get("account", "").strip()
     code = request.form.get("code", "").strip()
@@ -562,13 +568,9 @@ def vcode_login():
     # 验证通过，删除已用验证码
     rdb.delete(f"{PROC_NAME}:login_vcode:{account}")
 
-    expire = 7200
+    expire = 604800 if request.form.get("remember") else 7200
     auth = get_auth(account)
     if not auth:
-        raise ApiError("登录失败，账号异常")
-
-    token = generate_jwt(account, expire)
-    if not token:
         raise ApiError("登录失败，账号异常")
 
     # 记录登录日志（异步，含 IP 地理位置、设备指纹）
@@ -582,12 +584,7 @@ def vcode_login():
         accept_lang=request.headers.get("Accept-Language", ""),
     )
 
-    return new_res(success=True, data=dict(token=token))
-
-
-# ---------------------------------------------------------------------------
-# WebAuthn Passkey API
-# ---------------------------------------------------------------------------
+    return auto_set_user_state(account, expire, new_res(success=True))
 
 
 def passkey_required(f):
@@ -596,6 +593,7 @@ def passkey_required(f):
     检查 ``PASSKEY_RP_ID`` 是否为有效值（localhost 或真实域名），
     否则抛出 ApiError 提示用户该功能不可用。
     """
+
     @wraps(f)
     def decorated(*args, **kwargs):
         from ..basis.conf import config
@@ -604,6 +602,7 @@ def passkey_required(f):
         if not is_passkey_enabled(rp_id):
             raise ApiError("Passkey 功能未开启，请配置 PASSKEY_RP_ID 为有效域名")
         return f(*args, **kwargs)
+
     return decorated
 
 

@@ -132,6 +132,13 @@
           </div>
 
           <div class="field mt-4">
+            <label class="checkbox">
+              <input type="checkbox" id="vcode-remember">
+              记住登录（7天有效）
+            </label>
+          </div>
+
+          <div class="field">
             <button class="button is-primary is-fullwidth" id="btn-vcode-login"
                     type="button">
               <strong>登 录</strong>
@@ -296,21 +303,19 @@
       $.ajax({
         url: '{{ url_for("root.api.vcode_login") }}',
         method: 'POST',
-        data: { account: account, code: code },
+        data: {
+          account: account,
+          code: code,
+          remember: $('#vcode-remember').is(':checked') ? '1' : ''
+        },
         dataType: 'json',
         success: function (res) {
           if (res.success) {
-            let token = res.data && res.data.token;
-            if (token) {
-              showNotification('登录成功，正在跳转…', 'success');
-              let nextUrl = '{{ next }}' || '/';
-              // 通过 cookie 写入 token 并跳转
-              document.cookie = 'sid=' + token
-                + ';path=/;max-age=7200;SameSite=Lax';
-              setTimeout(function () {
-                window.location.href = nextUrl;
-              }, 500);
-            }
+            let nextUrl = '{{ next }}' || '/';
+            showNotification('登录成功，正在跳转…', 'success');
+            setTimeout(function () {
+              window.location.href = nextUrl;
+            }, 500);
           } else {
             showNotification(res.message || '登录失败', 'danger');
             $btnLogin.prop('disabled', false).removeClass('is-loading');

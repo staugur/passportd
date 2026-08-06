@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from ipaddress import ip_address, ip_network
 from typing import Any, Optional, Tuple, Dict, Union
 from functools import wraps
 from time import strftime
@@ -212,21 +213,49 @@ def apilogin_required(f):
     return decorated_function
 
 
+# 内网地址段：RFC 1918 + CGNAT + 环回 + 链路本地
+_PRIVATE_NETS = [
+    ip_network("10.0.0.0/8"),
+    ip_network("172.16.0.0/12"),
+    ip_network("192.168.0.0/16"),
+    ip_network("100.64.0.0/10"),   # CGNAT (Tailscale/EasyTier 等)
+    ip_network("127.0.0.0/8"),     # loopback
+    ip_network("169.254.0.0/16"),  # link-local
+]
+
+
+def _is_private_ip(ip_str: str) -> bool:
+    """判断 IP 是否为内网地址。"""
+    try:
+        addr = ip_address(ip_str.strip())
+        return any(addr in net for net in _PRIVATE_NETS)
+    except ValueError:
+        return True  # 无法解析的 IP 视为内网（跳过）
+
+
 def get_ip() -> str:
     """获取客户端真实 IP。
 
-    多级代理环境下，优先从 ``X-Real-IP`` 读取；其次从
-    ``X-Forwarded-For`` 的最左端读取；兜底使用 ``remote_addr``。
+    优先从 ``X-Forwarded-For`` 提取第一个公网 IP，跳过中间代理的内网地址；
+    若链路中全为内网 IP，则取最左端；其次从 ``X-Real-IP`` 读取；
+    兜底使用 ``remote_addr``。
+
+    适配多级代理：WAF → VPN → Ingress → Pod。
     """
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
+        for ip in ips:
+            if not _is_private_ip(ip):
+                return ip
+        # 全是内网 IP，返回最左端（链中第一个）
+        return ips[0]
+
     real_ip = request.headers.get("X-Real-IP", "")
     if real_ip:
         return real_ip.strip().split(",")[0].strip()
 
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.strip().split(",")[0].strip()
-
-    return request.remote_addr
+    return request.remote_addr or ""
 
 
 def check_sms_rate_limit(account: str) -> None:

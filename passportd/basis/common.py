@@ -28,15 +28,17 @@ from .vars import ENV_PREFIX, ApiRespType, COMMON_DICT_TYPE
 
 def new_res(
     success: bool = False,
+    message: str = "",
     data: Union[COMMON_DICT_TYPE, List[COMMON_DICT_TYPE], str] = "",
 ) -> ApiRespType:
     """构造统一 API 响应结构。
 
     :param success: 请求是否成功
+    :param message: 提示信息，可选
     :param data: 响应数据，可选
     :returns: 标准 API 响应字典 ``{"success": bool, "message": str, "data": ...}``
     """
-    res = ApiRespType(success=success, message="")
+    res = ApiRespType(success=success, message=message)
     if data:
         res.update(data=data)
     return res
