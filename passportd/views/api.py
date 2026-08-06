@@ -17,6 +17,7 @@ limitations under the License.
 
 from flask import Blueprint, request, abort, g
 from werkzeug.security import check_password_hash
+from functools import wraps
 
 from ..libs.interface import (
     RecordLoginInterface,
@@ -47,7 +48,7 @@ from ..models.oidc import (
 from ..models.model import User
 from ..basis.errors import ApiError, PassportError, PasskeyError
 from ..basis.vars import JWE_HEADER, PROC_NAME
-from ..basis.common import new_res
+from ..basis.common import new_res, is_passkey_enabled
 from ..utils.web import apilogin_required, check_sms_rate_limit, get_ip
 from ..utils.common import (
     generate_digital_verification_code,
@@ -589,8 +590,26 @@ def vcode_login():
 # ---------------------------------------------------------------------------
 
 
+def passkey_required(f):
+    """装饰器：Passkey 功能未开启时直接返回 功能未开启 错误。
+
+    检查 ``PASSKEY_RP_ID`` 是否为有效值（localhost 或真实域名），
+    否则抛出 ApiError 提示用户该功能不可用。
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        from ..basis.conf import config
+
+        rp_id = (config.get("PASSKEY_RP_ID") or "").strip()
+        if not is_passkey_enabled(rp_id):
+            raise ApiError("Passkey 功能未开启，请配置 PASSKEY_RP_ID 为有效域名")
+        return f(*args, **kwargs)
+    return decorated
+
+
 @bp.post("/passkey/register/options")
 @apilogin_required
+@passkey_required
 def passkey_register_options():
     """生成 Passkey 注册选项。
 
@@ -614,6 +633,7 @@ def passkey_register_options():
 
 @bp.post("/passkey/register/verify")
 @apilogin_required
+@passkey_required
 def passkey_register_verify():
     """验证 Passkey 注册结果。
 
@@ -635,6 +655,7 @@ def passkey_register_verify():
 
 
 @bp.post("/passkey/login/options")
+@passkey_required
 def passkey_login_options():
     """生成 Passkey 登录认证选项。
 
@@ -653,6 +674,7 @@ def passkey_login_options():
 
 
 @bp.post("/passkey/login/verify")
+@passkey_required
 def passkey_login_verify():
     """验证 Passkey 登录认证结果。
 
@@ -711,6 +733,7 @@ def passkey_login_verify():
 
 @bp.get("/passkey/credentials")
 @apilogin_required
+@passkey_required
 def passkey_list_credentials():
     """列出当前用户绑定的所有 Passkey 凭证。
 
@@ -723,6 +746,7 @@ def passkey_list_credentials():
 
 @bp.delete("/passkey/credential/<credential_id>")
 @apilogin_required
+@passkey_required
 def passkey_delete_credential(credential_id: str):
     """删除指定 Passkey 凭证。
 

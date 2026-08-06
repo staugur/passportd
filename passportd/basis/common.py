@@ -18,6 +18,7 @@ limitations under the License.
 from sys import version_info
 from os import getenv, makedirs
 from os.path import exists
+from re import compile as _re_compile
 from typing import Any, Optional, Union, List
 from time import time, mktime
 from datetime import timedelta, datetime
@@ -123,3 +124,26 @@ def auto_create_data_dir(path: str):
     """
     if not exists(path):
         makedirs(path, exist_ok=True)
+
+
+# 用于校验有效域名（不含端口）：字母数字开头，标签 1-63 字符，至少一个点，总长 ≤ 253
+_DOMAIN_RE = _re_compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
+    r"[a-zA-Z]{2,}$"
+)
+
+
+def is_passkey_enabled(rp_id: str = "") -> bool:
+    """判断 Passkey 功能是否已正确配置。
+
+    ``PASSKEY_RP_ID`` 必须为 ``"localhost"`` 或一个有效的域名，
+    否则（如为空、IP 地址等）视为未开启。
+
+    :param rp_id: 配置的 RP ID 值
+    :returns: True 表示 passkey 功能可用
+    """
+    if not rp_id or not isinstance(rp_id, str):
+        return False
+    if rp_id == "localhost":
+        return True
+    return bool(_DOMAIN_RE.match(rp_id)) and len(rp_id) <= 253

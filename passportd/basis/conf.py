@@ -29,7 +29,7 @@ from .vars import (
     OIDC_RSA_KEY_SIZE,
     PASSKEY_RP_NAME,
 )
-from .common import is_prod
+from .common import is_prod, is_passkey_enabled
 
 __all__ = ["config"]
 
@@ -99,8 +99,9 @@ class BaseConfig:
     SPUG_SMS_TEMPLATE_ID = ""
 
     # WebAuthn Passkey
-    #: Relying Party ID，即当前服务域名，生产环境必须为真实域名，本地开发可用 localhost
-    PASSKEY_RP_ID: str = "localhost"
+    #: Relying Party ID，即当前服务的有效域名，如 example.com、passport.example.com。
+    #: 开发环境可用 localhost；为空或无效值时 Passkey 功能不可用。
+    PASSKEY_RP_ID: str = ""
     #: 允许的源 origin，为空时自动从请求中推导。格式：https://example.com
     PASSKEY_ORIGIN: str = ""
 
@@ -128,6 +129,7 @@ class DevConfig(BaseConfig):
 
     ENV = "development"
     DEBUG = True
+    PASSKEY_RP_ID: str = "localhost"
     # Flask-PluginKit 配置
     PLUGINKIT_AUTH_METHOD = "FUNC"
     PLUGINKIT_AUTH_FUNC = lambda: True
@@ -235,6 +237,17 @@ def _check_config_value(cfg):
         assert cfg[
             "SPUG_SMS_TEMPLATE_ID"
         ], "SPUG_SMS_TEMPLATE_ID must be set when SMS_PROVIDER is 'spug'"
+
+    # Passkey RP ID 校验：设置了但无效则给出警告，passkey 功能将不可用
+    _rp_id = (cfg.get("PASSKEY_RP_ID") or "").strip()
+    if _rp_id and not is_passkey_enabled(_rp_id):
+        import warnings
+        warnings.warn(
+            f"PASSKEY_RP_ID '{_rp_id}' is not a valid domain; "
+            "passkey feature will be disabled. "
+            "Set it to 'localhost' (dev) or a real domain like 'example.com'."
+        )
+
 
 
 config = FlaskConfig(APP_DIR)

@@ -317,12 +317,25 @@ def get_rp_id() -> str:
     """获取 WebAuthn Relying Party ID。
 
     优先使用配置 ``PASSKEY_RP_ID``，为空时自动从请求 Host 中提取（去掉端口）。
+    配置值或自动推导的值无效时抛出 PasskeyError。
     """
     from ..basis.conf import config
+    from ..basis.common import is_passkey_enabled
+    from ..basis.errors import PasskeyError
 
-    rp_id = config.get("PASSKEY_RP_ID", "")
-    if not rp_id:
+    rp_id = (config.get("PASSKEY_RP_ID") or "").strip()
+    if rp_id:
+        if not is_passkey_enabled(rp_id):
+            raise PasskeyError(
+                "Passkey 功能未开启：PASSKEY_RP_ID 不是有效域名"
+            )
+    else:
         rp_id = urlparse(request.host_url).hostname or "localhost"
+        # 自动推导的值也需校验
+        if not is_passkey_enabled(rp_id):
+            raise PasskeyError(
+                "Passkey 功能未开启：当前服务域名无法作为有效的 RP ID"
+            )
     return rp_id
 
 

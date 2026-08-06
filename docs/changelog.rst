@@ -13,6 +13,7 @@ v2.4.0
   - 凭证管理：``GET /api/passkey/credentials`` 列出已绑定设备，``DELETE /api/passkey/credential/<id>`` 删除指定凭证。
   - 配置文件新增 ``PASSKEY_RP_ID``、``PASSKEY_RP_NAME``、``PASSKEY_ORIGIN`` 三个配置项，均为可选，支持自动从请求中推导。
   - 核心实现位于 ``passportd/libs/interface.py`` 的 ``PasskeyInterface`` 类，依赖 ``webauthn>=2.0``。
+  - ``PASSKEY_RP_ID`` 配置为空或非有效域名时，Passkey 功能自动禁用，所有 Passkey API 返回"功能未开启"提示。
 
 v2.3.1
 ------

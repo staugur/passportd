@@ -91,35 +91,32 @@ class ChallengeTest(unittest.TestCase):
         self.assertEqual(len(challenge), 32)
         self.assertIsInstance(challenge, bytes)
 
-    def test_save_and_get_challenge(self):
+    @patch("passportd.utils.common.rdb")
+    def test_save_and_get_challenge(self, mock_rdb):
         """挑战存取与一次性消费"""
         key = "test_user_123"
         challenge = generate_passkey_challenge()
-
-        # 重置 mock
-        _mock_redis.get.reset_mock()
-        _mock_redis.set.reset_mock()
-        _mock_redis.delete.reset_mock()
-
-        # 存储
         encoded = base64url_encode(challenge)
-        _mock_redis.set.return_value = True
-        _mock_redis.get.return_value = encoded.encode("utf-8")
-        _mock_redis.delete.return_value = True
+
+        # 配置 mock behavior
+        mock_rdb.set.return_value = True
+        mock_rdb.get.return_value = encoded.encode("utf-8")
+        mock_rdb.delete.return_value = True
 
         # save
         saved = save_passkey_challenge(key, challenge)
         self.assertTrue(saved)
+        mock_rdb.set.assert_called_once()
 
         # get（应删除 key）
         result = get_passkey_challenge(key)
         self.assertEqual(result, challenge)
-        _mock_redis.delete.assert_called_once()
+        mock_rdb.delete.assert_called_once()
 
-    def test_get_nonexistent_challenge(self):
+    @patch("passportd.utils.common.rdb")
+    def test_get_nonexistent_challenge(self, mock_rdb):
         """不存在的挑战返回 None"""
-        _mock_redis.get.reset_mock()
-        _mock_redis.get.return_value = None
+        mock_rdb.get.return_value = None
         result = get_passkey_challenge("no_such_key")
         self.assertIsNone(result)
 
