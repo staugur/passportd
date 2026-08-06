@@ -38,6 +38,14 @@
                 <span>验证码登录</span>
               </a>
             </li>
+            {% if g.passkey_enabled %}
+            <li id="tab-passkey" data-tab="passkey">
+              <a>
+                <span class="icon"><i class="fa-solid fa-fingerprint"></i></span>
+                <span>Passkey 登录</span>
+              </a>
+            </li>
+            {% endif %}
           </ul>
         </div>
 
@@ -135,6 +143,28 @@
           </p>
         </div>
 
+        <!-- Passkey 登录表单 -->
+        {% if g.passkey_enabled %}
+        <div id="form-passkey" class="tab-content is-hidden">
+          <div id="passkey-msg" class="notification is-danger is-light mb-3" style="display:none;">
+            <button class="delete"></button>
+            <span id="passkey-msg-text"></span>
+          </div>
+          <p class="has-text-centered mb-4 has-text-grey is-size-7">
+            使用指纹、面部识别或设备 PIN 码快速登录
+          </p>
+          <div class="field">
+            <button class="button is-primary is-fullwidth" id="btn-passkey-login" type="button">
+              <span class="icon"><i class="fa-solid fa-fingerprint"></i></span>
+              <strong>使用 Passkey 登录</strong>
+            </button>
+          </div>
+          <p class="help has-text-centered mt-2 is-size-7 has-text-grey" id="passkey-hint">
+            请确保当前设备已绑定 Passkey
+          </p>
+        </div>
+        {% endif %}
+
         {% if oauth2_providers %}
           <div class="divider">
             <span>第三方登录</span>
@@ -168,30 +198,37 @@
 {% block extra_scripts %}
 <script>
   $(function () {
-    let $tabPassword = $('#tab-password');
-    let $tabVcode = $('#tab-vcode');
-    let $formPassword = $('#form-password');
-    let $formVcode = $('#form-vcode');
-    let $btnSend = $('#btn-send-vcode');
-    let $btnLogin = $('#btn-vcode-login');
-    let $vcodeHint = $('#vcode-hint');
-    let countdownTimer = null;
+    var $tabs = $('#tab-password, #tab-vcode, #tab-passkey');
+    var $tabPassword = $('#tab-password');
+    var $tabVcode = $('#tab-vcode');
+    var $tabPasskey = $('#tab-passkey');
+    var $formPassword = $('#form-password');
+    var $formVcode = $('#form-vcode');
+    var $formPasskey = $('#form-passkey');
+    var $btnSend = $('#btn-send-vcode');
+    var $btnLogin = $('#btn-vcode-login');
+    var $btnPasskeyLogin = $('#btn-passkey-login');
+    var $vcodeHint = $('#vcode-hint');
+    var countdownTimer = null;
 
     // Tab 切换
-    $('#tab-password a, #tab-vcode a').on('click', function () {
-      let tab = $(this).parent().data('tab');
+    $('#tab-password a, #tab-vcode a, #tab-passkey a').on('click', function () {
+      var tab = $(this).parent().data('tab');
+      $tabs.removeClass('is-active');
+      $formPassword.addClass('is-hidden');
+      $formVcode.addClass('is-hidden');
+      $formPasskey.addClass('is-hidden');
+      $('#forgot-password-hint').hide();
 
       if (tab === 'password') {
         $tabPassword.addClass('is-active');
-        $tabVcode.removeClass('is-active');
         $formPassword.removeClass('is-hidden');
-        $formVcode.addClass('is-hidden');
-        $('#forgot-password-hint').hide();
-      } else {
+      } else if (tab === 'vcode') {
         $tabVcode.addClass('is-active');
-        $tabPassword.removeClass('is-active');
         $formVcode.removeClass('is-hidden');
-        $formPassword.addClass('is-hidden');
+      } else if (tab === 'passkey') {
+        $tabPasskey.addClass('is-active');
+        $formPasskey.removeClass('is-hidden');
       }
     });
 
@@ -320,6 +357,100 @@
         $notification.fadeOut(300, function () { $(this).remove(); });
       }, 6000);
     }
+
+    {% if g.passkey_enabled %}
+    // ---- Passkey 登录 ----
+
+    function b64urlToBuf(b64) {
+      var bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+      var len = bin.length, buf = new ArrayBuffer(len), arr = new Uint8Array(buf);
+      for (var i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+      return buf;
+    }
+    function bufToB64url(buf) {
+      var arr = new Uint8Array(buf), bin = '';
+      for (var i = 0; i < arr.byteLength; i++) bin += String.fromCharCode(arr[i]);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    // Passkey 登录按钮
+    $btnPasskeyLogin.on('click', function () {
+      var $msg = $('#passkey-msg');
+      var $msgText = $('#passkey-msg-text');
+      $msg.hide();
+      $btnPasskeyLogin.prop('disabled', true).addClass('is-loading');
+
+      $.ajax({
+        url: '{{ url_for("root.api.passkey_login_options") }}',
+        method: 'POST',
+        dataType: 'json',
+        success: function (res) {
+          if (!res.success || !res.data) {
+            showPasskeyErr(res.message || '获取认证选项失败');
+            return;
+          }
+          var opts = res.data;
+          opts.challenge = b64urlToBuf(opts.challenge);
+          if (opts.allowCredentials) {
+            opts.allowCredentials = opts.allowCredentials.map(function (c) {
+              c.id = b64urlToBuf(c.id);
+              return c;
+            });
+          }
+          navigator.credentials.get({ publicKey: opts }).then(function (cred) {
+            var json = {
+              id: cred.id,
+              rawId: bufToB64url(cred.rawId),
+              type: cred.type,
+              response: {
+                clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+                authenticatorData: bufToB64url(cred.response.authenticatorData),
+                signature: bufToB64url(cred.response.signature)
+              }
+            };
+            if (cred.response.userHandle) {
+              json.response.userHandle = bufToB64url(cred.response.userHandle);
+            }
+            return $.ajax({
+              url: '{{ url_for("root.api.passkey_login_verify") }}',
+              method: 'POST',
+              contentType: 'application/json',
+              data: JSON.stringify(json),
+              dataType: 'json'
+            });
+          }).then(function (res) {
+            if (res.success) {
+              var token = res.data && res.data.token;
+              if (token) {
+                showNotification('登录成功，正在跳转…', 'success');
+                var nextUrl = '{{ next }}' || '/';
+                document.cookie = 'sid=' + token + ';path=/;max-age=7200;SameSite=Lax';
+                setTimeout(function () { window.location.href = nextUrl; }, 500);
+              }
+            } else {
+              showPasskeyErr(res.message || 'Passkey 验证失败');
+            }
+          }).catch(function (err) {
+            if (err.name !== 'NotAllowedError') {
+              showPasskeyErr('Passkey 认证失败：' + (err.message || '请重试'));
+            }
+            $btnPasskeyLogin.prop('disabled', false).removeClass('is-loading');
+          });
+        },
+        error: function (xhr) {
+          var msg = '服务请求失败';
+          try { var r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
+          showPasskeyErr(msg);
+        }
+      });
+    });
+
+    function showPasskeyErr(msg) {
+      $('#passkey-msg-text').text(msg);
+      $('#passkey-msg').show();
+      $btnPasskeyLogin.prop('disabled', false).removeClass('is-loading');
+    }
+    {% endif %}
   });
 </script>
 {% endblock %}

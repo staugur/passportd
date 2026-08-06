@@ -263,6 +263,43 @@
             {% endif %}
         </div>
 
+        {# Passkey 管理 #}
+        {% if g.passkey_enabled %}
+        <div class="box" id="passkey-section">
+            <h2 class="title is-5 mb-4">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-fingerprint"></i></span>
+                    <span>Passkey 管理</span>
+                </span>
+                <span class="ml-3">
+                    <button class="button is-small is-success is-light" id="btn-add-passkey">
+                        <span class="icon is-small"><i class="fa-solid fa-plus"></i></span>
+                        <span>绑定 Passkey</span>
+                    </button>
+                </span>
+            </h2>
+            <p class="mb-3 has-text-grey is-size-7">绑定 Passkey 后，可使用指纹、面部识别或设备 PIN 码快速登录。</p>
+            <div id="passkey-msg" class="mb-3" style="display:none;"></div>
+            <div class="table-container">
+                <table class="table is-fullwidth is-hoverable" id="passkey-table">
+                    <thead>
+                        <tr>
+                            <th>设备名称</th>
+                            <th>绑定时间</th>
+                            <th>最近使用</th>
+                            <th style="width:80px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="passkey-tbody">
+                        <tr id="passkey-empty-row">
+                            <td colspan="4" class="has-text-centered has-text-grey">暂无绑定的 Passkey 设备</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
 
     </div>
 </section>
@@ -986,6 +1023,162 @@
         if (e.key === 'Enter' && vcMode === 'unbind') {
             $vcSendBtn.trigger('click');
         }
+    });
+
+    // =========================================================
+    // Passkey 管理
+    // =========================================================
+    {% if g.passkey_enabled %}
+    var $passkeySection = $('#passkey-section');
+    var $passkeyTbody = $('#passkey-tbody');
+    var $passkeyMsg = $('#passkey-msg');
+    var $btnAddPasskey = $('#btn-add-passkey');
+
+    function b64urlToBuf(b64) {
+      var bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+      var len = bin.length, buf = new ArrayBuffer(len), arr = new Uint8Array(buf);
+      for (var i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+      return buf;
+    }
+    function bufToB64url(buf) {
+      var arr = new Uint8Array(buf), bin = '';
+      for (var i = 0; i < arr.byteLength; i++) bin += String.fromCharCode(arr[i]);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function showPasskeyMsg(msg, type) {
+        var cls = 'notification is-' + (type === 'success' ? 'success' : 'danger') + ' is-light';
+        $passkeyMsg.attr('class', cls).text(msg).show();
+        setTimeout(function () { $passkeyMsg.fadeOut(); }, 6000);
+    }
+
+    function renderCredentials(list) {
+        $passkeyTbody.empty();
+        if (!list || list.length === 0) {
+            $passkeyTbody.append('<tr id="passkey-empty-row"><td colspan="4" class="has-text-centered has-text-grey">暂无绑定的 Passkey 设备</td></tr>');
+            return;
+        }
+        for (var i = 0; i < list.length; i++) {
+            var c = list[i];
+            var name = c.device_name || '未知设备';
+            var ctime = c.ctime ? formatTimestamp(c.ctime) : '—';
+            var lastUsed = c.last_used_at ? formatTimestamp(c.last_used_at) : '—';
+            var row = '<tr data-credential-id="' + c.credential_id + '">' +
+                '<td><span class="is-size-7 has-text-weight-medium">' + $('<div>').text(name).html() + '</span></td>' +
+                '<td class="is-size-7">' + ctime + '</td>' +
+                '<td class="is-size-7">' + lastUsed + '</td>' +
+                '<td><button class="button is-danger is-light is-small btn-del-passkey" data-credential-id="' + c.credential_id + '">' +
+                '<span>删除</span></button></td></tr>';
+            $passkeyTbody.append(row);
+        }
+    }
+
+    function loadCredentials() {
+        $.ajax({
+            url: '{{ url_for("root.api.passkey_list_credentials") }}',
+            method: 'GET',
+            dataType: 'json',
+            success: function (res) {
+                if (res.success && res.data) {
+                    renderCredentials(res.data.credentials || res.data);
+                }
+            }
+        });
+    }
+
+    // 页面加载时直接获取已绑定列表
+    loadCredentials();
+
+    // 绑定 Passkey
+    $btnAddPasskey.on('click', function () {
+        $btnAddPasskey.prop('disabled', true).addClass('is-loading');
+
+        $.ajax({
+            url: '{{ url_for("root.api.passkey_register_options") }}',
+            method: 'POST',
+            dataType: 'json',
+            success: function (res) {
+                if (!res.success || !res.data) {
+                    showPasskeyMsg(res.message || '获取注册选项失败', 'error');
+                    $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
+                    return;
+                }
+                var opts = res.data;
+                opts.challenge = b64urlToBuf(opts.challenge);
+                opts.user.id = b64urlToBuf(opts.user.id);
+                if (opts.excludeCredentials) {
+                    opts.excludeCredentials = opts.excludeCredentials.map(function (c) {
+                        c.id = b64urlToBuf(c.id);
+                        return c;
+                    });
+                }
+
+                navigator.credentials.create({ publicKey: opts }).then(function (cred) {
+                    var json = {
+                        id: cred.id,
+                        rawId: bufToB64url(cred.rawId),
+                        type: cred.type,
+                        response: {
+                            clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+                            attestationObject: bufToB64url(cred.response.attestationObject)
+                        }
+                    };
+                    return $.ajax({
+                        url: '{{ url_for("root.api.passkey_register_verify") }}',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify(json),
+                        dataType: 'json'
+                    });
+                }).then(function (vres) {
+                    $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
+                    if (vres.success) {
+                        showPasskeyMsg('Passkey 绑定成功', 'success');
+                        loadCredentials();
+                    } else {
+                        showPasskeyMsg(vres.message || '验证失败', 'error');
+                    }
+                }).catch(function (err) {
+                    $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
+                    if (err.name !== 'NotAllowedError') {
+                        showPasskeyMsg('绑定失败：' + (err.message || '请重试'), 'error');
+                    }
+                });
+            },
+            error: function (xhr) {
+                var msg = '服务请求失败';
+                try { var r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
+                showPasskeyMsg(msg, 'error');
+                $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
+            }
+        });
+    });
+
+    // 删除 Passkey
+    $(document).on('click', '.btn-del-passkey', function () {
+        var credId = $(this).data('credential-id');
+        var $btn = $(this);
+        if (!confirm('确定要删除这个 Passkey 设备吗？')) return;
+        $btn.prop('disabled', true).addClass('is-loading');
+
+        $.ajax({
+            url: '{{ url_for("root.api.passkey_delete_credential", credential_id="CRED_ID") }}'.replace('CRED_ID', encodeURIComponent(credId)),
+            method: 'DELETE',
+            dataType: 'json',
+            success: function (res) {
+                if (res.success) {
+                    showPasskeyMsg('已删除', 'success');
+                    loadCredentials();
+                } else {
+                    showPasskeyMsg(res.message || '删除失败', 'error');
+                    $btn.prop('disabled', false).removeClass('is-loading');
+                }
+            },
+            error: function () {
+                showPasskeyMsg('删除失败，请重试', 'error');
+                $btn.prop('disabled', false).removeClass('is-loading');
+            }
+        });
     });
 </script>
 {% endblock %}
