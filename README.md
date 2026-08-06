@@ -10,7 +10,8 @@
 ## 核心功能
 
 - **本地账号系统**：支持用户名、手机号、邮箱注册与登录
-- **OAuth2 第三方登录**：内置 GitHub 和 Gitee OAuth2 登录插件
+- **WebAuthn Passkey**：支持指纹/面容/PIN 码免密登录，兼容 Windows Hello、Apple Touch ID、YubiKey、Vaultwarden 等
+- **OAuth2 第三方登录**：内置 GitHub、Gitee、Weibo、QQ OAuth2 登录插件
 - **OpenID Connect Provider**：支持 OIDC Server 模式，可作为独立 SSO 服务
 - **插件扩展**：基于 Flask-PluginKit 的插件架构，方便扩展更多登录方式
 - **多数据库支持**：SQLite（开发） / MySQL / PostgreSQL（生产）

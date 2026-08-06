@@ -340,13 +340,5 @@ def get_rp_id() -> str:
 
 
 def get_origin() -> str:
-    """获取 WebAuthn 允许的源 origin。
-
-    优先使用配置 ``PASSKEY_ORIGIN``，为空时自动从请求构造。
-    """
-    from ..basis.conf import config
-
-    origin = config.get("PASSKEY_ORIGIN", "")
-    if not origin:
-        origin = request.host_url.rstrip("/")
-    return origin
+    """获取 WebAuthn 允许的源 origin，从当前请求自动推导。"""
+    return request.host_url.rstrip("/")

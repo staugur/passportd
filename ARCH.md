@@ -78,7 +78,7 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 │  ┌──────────────────────────────────────────────────────────────────┐ │
 │  │ uid         │ 用户 uid                                           │ │
 │  │ account     │ 登录账号                                           │ │
-│  │ method      │ 登录方式: local / oauth2_xxx                        │ │
+│  │ method      │ 登录方式: local / oauth2_xxx / passkey              │ │
 │  │ ip          │ 客户端 IP                                          │ │
 │  │ location    │ 地理位置 (城市/省份/国家)                            │ │
 │  │ user_agent  │ 原始 User-Agent                                    │ │
@@ -87,6 +87,21 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 │  │ device      │ 设备类型: Desktop / Mobile / Tablet                 │ │
 │  │ fingerprint │ 浏览器指纹哈希                                      │ │
 │  │ ctime       │ 登录时间戳                                         │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  PasskeyCredential  (passport_passkey_credential)  Passkey 凭证        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │ credential_id│ 凭证 ID (Base64URL, PK)                           │ │
+│  │ uid          │ → User.uid                                        │ │
+│  │ public_key   │ 公钥 (DER 格式)                                   │ │
+│  │ sign_count   │ 签名次数 (防重放)                                  │ │
+│  │ device_name  │ 设备名称 (AAGUID 识别)                             │ │
+│  │ credential_type│ 凭证类型: platform / cross-platform              │ │
+│  │ status       │ 1=启用 0=已撤销                                    │ │
+│  │ ctime        │ 绑定时间                                           │ │
+│  │ ltime        │ 最后使用时间                                       │ │
 │  └──────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────┘
 
@@ -336,6 +351,108 @@ RecordLoginInterface(uid, account, method, request, fingerprint)
 GET /api/login_history
   → { login_history: [...] }
 ```
+
+### 3.7 Passkey 登录、绑定与管理
+
+Passkey 基于 **WebAuthn** 标准，使用设备的生物识别（指纹/面容）或 PIN 码完成免密登录。
+
+**前置条件**：配置 ``PASSKEY_RP_ID`` 为有效域名（开发环境默认 ``localhost``）。
+
+#### 3.7.1 登录流程
+
+```
+用户点击「Passkey 登录」
+  │
+  POST /api/passkey/login/options (无需登录态)
+  ├─ PasskeyClient.generate_authentication_options()
+  │   ├─ rp_id   ← get_rp_id()   (从 PASSKEY_RP_ID 或请求 Host 推导)
+  │   ├─ origin  ← get_origin()   (从 request.host_url 推导)
+  │   └─ save_passkey_challenge("login:__anonymous__", challenge)
+  └─ 返回 { challenge, rpId, allowCredentials }
+      │
+      ▼ 浏览器调用
+  navigator.credentials.get({ publicKey: options })
+      │
+      ▼ 返回 credential
+  POST /api/passkey/login/verify
+  ├─ PasskeyClient.verify_authentication_response(credential_json, uid=None)
+  │   ├─ get_passkey_challenge("login:__anonymous__") → 读取并清除 challenge
+  │   ├─ PasskeyCredential.get(credential_id=...) → 查找凭证
+  │   ├─ verify_authentication_response(credential=credential_json, ...)
+  │   │   └─ 验证签名 + challenge + rp_id + origin
+  │   └─ 更新 sign_count 和 ltime
+  ├─ 签发 JWT (sid cookie)
+  ├─ RecordLoginInterface(method="passkey", ...) → 记录登录
+  └─ 返回 success + token
+```
+
+#### 3.7.2 凭证绑定流程
+
+```
+用户已登录 → 个人中心 → 点击「绑定 Passkey」
+  │
+  POST /api/passkey/register/options (@apilogin_required)
+  ├─ PasskeyClient.generate_registration_options(uid, username)
+  │   ├─ rp_id, rp_name ← 配置
+  │   ├─ user_id, user_name, user_display_name
+  │   ├─ save_passkey_challenge(uid, challenge)
+  │   └─ 返回 { challenge, rp, user }
+      │
+      ▼ 浏览器调用
+  navigator.credentials.create({ publicKey: options })
+      │
+      ▼ 返回 credential
+  POST /api/passkey/register/verify (@apilogin_required)
+  ├─ PasskeyClient.verify_registration_response(credential_json, uid)
+  │   ├─ get_passkey_challenge(uid) → 读取并清除 challenge
+  │   ├─ verify_registration_response(credential=credential_json, ...)
+  │   │   └─ 验证签名 + challenge + rp_id + origin
+  │   ├─ _parse_device_name(clientDataJSON, credential_json, verification)
+  │   │   ├─ 1. userAgent → "Chrome on Windows"
+  │   │   ├─ 2. AAGUID  → "Bitwarden / Vaultwarden" / "YubiKey 5"
+  │   │   └─ 3. credential_device_type → "Cross-Platform Multi Device"
+  │   ├─ PasskeyCredential.create(credential_id, uid, public_key, ...)
+  │   └─ 返回 { credential_id, device_name }
+  └─ 返回 success + 设备名称
+```
+
+#### 3.7.3 设备名称识别
+
+```
+_parse_device_name(clientDataJSON, credential_json, verification)
+  │
+  ├─ 1. 解析 userAgent（浏览器场景）
+  │      "Mozilla/5.0 ... Chrome/120 ... Windows NT 10.0 ..."
+  │      → "Chrome on Windows"
+  │
+  ├─ 2. AAGUID 精确匹配（密码管理器 / 硬件密钥）
+  │      内置映射表 _AAGUID_MAP:
+  │        b93fd961-... → "Bitwarden / Vaultwarden"
+  │        ea9b8d66-... → "iCloud Keychain"
+  │        fa2b99c1-... → "YubiKey 5 (FIDO2)"
+  │        ...
+  │
+  └─ 3. 降级描述（未知 AAGUID）
+         authenticatorAttachment + credential_device_type
+         → "Cross-Platform Multi Device Synced Authenticator"
+```
+
+#### 3.7.4 凭证管理
+
+```
+GET  /api/passkey/credentials        → 列出当前用户所有绑定的凭证
+DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status=0）
+```
+
+#### 3.7.5 安全机制
+
+| 机制 | 实现 |
+|------|------|
+| Challenge 一次性 | 每次注册/登录后立即从 Redis 清除，防重放 |
+| origin 校验 | ``verify_*_response`` 校验 origin 防止跨站攻击 |
+| rp_id 校验 | 校验 rp_id 与当前服务匹配 |
+| sign_count | 每次认证递增，检测签名计数器回退 |
+| credential_backed_up | 多设备同步凭证标记为 Synced |
 
 ---
 
@@ -605,6 +722,17 @@ GET  /oauth/client/count/<client_id> → 查看授权用户数
 | `/api/client/count/<client_id>` | GET | 查看授权数 | apilogin_required |
 | `/api/client/list` | GET | 列出我的 Clients | apilogin_required |
 
+**Passkey API：**
+
+| 路由 | 方法 | 功能 | 权限 |
+|---|---|---|---|
+| `/api/passkey/login/options` | POST | 生成登录认证选项 | public (需 PASSKEY_RP_ID 有效) |
+| `/api/passkey/login/verify` | POST | 验证登录签名并签发 JWT | public |
+| `/api/passkey/register/options` | POST | 生成注册选项 | apilogin_required |
+| `/api/passkey/register/verify` | POST | 验证注册结果并存储凭证 | apilogin_required |
+| `/api/passkey/credentials` | GET | 列出用户所有凭证 | apilogin_required |
+| `/api/passkey/credential/<id>` | DELETE | 删除指定凭证 | apilogin_required |
+
 ### 6.3 OIDC Server (`views/oidc.py`)
 
 | 路由 | 方法 | 功能 |
@@ -697,30 +825,31 @@ passportd/
 │   ├── common.py       ← 公共工具 (new_res, is_true, now, raise_version...)
 │   └── mixin.py        ← Mixin 类 (SMTP, Upload, IPQuery, Spug...)
 ├── models/             ← 数据模型 & 业务逻辑 ★
-│   ├── model.py        ← Peewee ORM 表定义 (User, Auth, OAuthClient, LoginRecord...)
+│   ├── model.py        ← Peewee ORM 表定义 (User, Auth, OAuthClient, LoginRecord, PasskeyCredential...)
 │   ├── user.py         ← 用户 CRUD (add_profile, login, change_password, record_login...)
 │   └── oidc.py         ← OIDC Client 管理 + Token/Authorization 操作
 ├── views/              ← 路由层 (Flask Blueprint)
 │   ├── root.py         ← 蓝图注册
 │   ├── front.py        ← 页面路由 (登录/注册/Profile/OAuth绑定)
-│   ├── api.py          ← REST API (用户、验证码、OIDC Client、上传、登录历史)
+│   ├── api.py          ← REST API (用户、验证码、OIDC Client、上传、登录历史、Passkey)
 │   └── oidc.py         ← OIDC Server 端点 (authorize/token/userinfo/jwks)
 ├── libs/               ← 核心库 ★
 │   ├── oidc.py         ← OIDC Server 实现 (authlib AuthorizationServer)
-│   └── interface.py    ← 业务接口层 (OAuth/Register/Login/VCode/Upload/RecordLogin)
+│   └── interface.py    ← 业务接口层 (OAuth/Register/Login/VCode/Upload/RecordLogin/Passkey)
 ├── utils/              ← 工具函数
-│   ├── web.py          ← JWT签发验证, Cookie, 登录态解析, OAuth2提供商列表
-│   └── common.py       ← 通用工具 (校验、RSA密钥、JWE加解密、验证码生成、UA解析)
+│   ├── web.py          ← JWT签发验证, Cookie, 登录态解析, OAuth2提供商列表, get_origin/get_rp_id
+│   └── common.py       ← 通用工具 (校验、RSA密钥、JWE加解密、验证码生成、UA解析、Passkey challenge 缓存)
 ├── modules/            ← OAuth2 第三方插件
 │   ├── oauth2_github/  ← GitHub OAuth2 (__state__ 自动检测启用/禁用)
 │   ├── oauth2_gitee/   ← Gitee OAuth2
 │   ├── oauth2_weibo/   ← 微博 OAuth2
 │   └── oauth2_qq/      ← QQ OAuth2
 ├── templates/          ← Jinja2 模板
-│   ├── signin.j2       ← 登录页（密码 & 验证码双 Tab）
+│   ├── signin.j2       ← 登录页（密码 & 验证码 & Passkey 三 Tab）
 │   ├── signup.j2       ← 注册页（用户名 & 邮箱/手机号双 Tab）
-│   ├── profile.j2      ← 个人资料 & 修改密码
+│   ├── profile.j2      ← 个人资料 & 修改密码 & Passkey 管理
 │   ├── authorize.j2    ← OIDC 授权确认页
+│   ├── layout.j2       ← 基础布局 (含 Passkey 开关全局变量)
 │   └── error.j2        ← 错误页
 ├── static/             ← 前端静态资源 (Bulma, FontAwesome, jQuery, favicon)
 └── data/               ← 运行时数据 (SQLite, RSA密钥)
@@ -734,6 +863,7 @@ passportd/
 ├── requirements/       ← pip 依赖 (base/dev/prod/docs)
 ├── tests/              ← 测试套件
 │   ├── test_api.py             ← API 接口测试 (key/signup/change_password/login_history/upload)
+│   ├── test_passkey.py         ← Passkey 接口测试 (注册/认证/凭证管理)
 │   ├── test_util_common.py     ← utils/common.py 工具函数测试
 │   ├── test_basis_common.py    ← basis/common.py 基础函数测试
 │   └── test_basis_errors.py    ← basis/errors.py 异常体系测试

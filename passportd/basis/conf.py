@@ -102,8 +102,6 @@ class BaseConfig:
     #: Relying Party ID，即当前服务的有效域名，如 example.com、passport.example.com。
     #: 开发环境可用 localhost；为空或无效值时 Passkey 功能不可用。
     PASSKEY_RP_ID: str = ""
-    #: 允许的源 origin，为空时自动从请求中推导。格式：https://example.com
-    PASSKEY_ORIGIN: str = ""
 
     # OAuth2 配置
     #: GitHub OAuth2 配置

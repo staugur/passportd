@@ -13,9 +13,12 @@ v2.4.0
 修复
 ~~~~
 
-- 修复 OIDC「我的授权」页面授权时间列显示 1970 年的问题（``formatTimestamp`` 缺少 ``* 1000`` 转换秒为毫秒）。
+- 修复登录页面宽度过窄（420px → 480px），避免「密码登录 / 验证码登录 / Passkey 登录」三个 Tab 文字被截断。
+- 修复 Passkey 接口 ``_rp_id`` 为空的错误：业务方法改用 property 访问，确保 ``_ensure_config()`` 被调用。
+- 修复 webauthn 3.0.0 中 ``RegistrationCredential`` / ``AuthenticationCredential`` 已移除 ``parse_obj()`` 的问题：直接传递 JSON dict。
+- 改进 Passkey 设备名称识别：新增 AAGUID 映射表（支持 Bitwarden/Vaultwarden、1Password、Windows Hello、iCloud Keychain、YubiKey 等），无 UA 时精确显示具体设备名称。
 
-v2.3.1
+v2.3.0
 ------
 
 新特性

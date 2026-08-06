@@ -42,7 +42,7 @@ from ..basis.vars import (
     PASSKEY_RP_NAME,
 )
 from ..basis.common import new_res
-from ..basis.errors import PassportError, ParamError, ApiError, RunError
+from ..basis.errors import PassportError, ParamError, ApiError, RunError, PasskeyError
 from ..utils.common import (
     logger,
     rdb,
@@ -567,8 +567,8 @@ class PasskeyInterface(object):
                 )
 
             options = generate_registration_options(
-                rp_id=self._rp_id,
-                rp_name=self._rp_name,
+                rp_id=self.rp_id,
+                rp_name=self.rp_name,
                 user_id=uid.encode("utf-8"),
                 user_name=account,
                 user_display_name=display_name or account,
@@ -628,7 +628,6 @@ class PasskeyInterface(object):
         :raises PasskeyError: 验证失败时抛出
         """
         from webauthn import verify_registration_response
-        from webauthn.helpers.structs import RegistrationCredential
         from webauthn.helpers import bytes_to_base64url
         from ..utils.common import (
             base64url_decode,
@@ -643,18 +642,24 @@ class PasskeyInterface(object):
             if not expected_challenge:
                 raise PasskeyError("Registration challenge expired, please try again")
 
-            credential = RegistrationCredential.parse_obj(credential_json)
-
             verification = verify_registration_response(
-                credential=credential,
+                credential=credential_json,
                 expected_challenge=expected_challenge,
-                expected_rp_id=self._rp_id,
-                expected_origin=self._origin,
+                expected_rp_id=self.rp_id,
+                expected_origin=self.origin,
             )
 
             # 解析设备名称
             device_name = self._parse_device_name(
-                credential.response.client_data_json
+                credential_json.get("response", {}).get("clientDataJSON", ""),
+                credential_json,
+                verification,
+            )
+
+            # 判断凭证类型
+            is_platform = (
+                credential_json.get("authenticatorAttachment", "")
+                == "platform"
             )
 
             # 存储凭证
@@ -664,7 +669,7 @@ class PasskeyInterface(object):
                 public_key=verification.credential_public_key,
                 sign_count=verification.sign_count,
                 device_name=device_name,
-                credential_type="platform",
+                credential_type="platform" if is_platform else "cross-platform",
                 ctime=now(),
             )
 
@@ -717,7 +722,7 @@ class PasskeyInterface(object):
                         )
 
             options = generate_authentication_options(
-                rp_id=self._rp_id,
+                rp_id=self.rp_id,
                 allow_credentials=allow_credentials,
                 user_verification="preferred",
             )
@@ -730,7 +735,7 @@ class PasskeyInterface(object):
             result = {
                 "challenge": bytes_to_base64url(options.challenge),
                 "timeout": 60000,
-                "rpId": self._rp_id,
+                "rpId": self.rp_id,
                 "userVerification": "preferred",
             }
             if allow_credentials:
@@ -753,18 +758,15 @@ class PasskeyInterface(object):
         :raises PasskeyError: 验证失败时抛出
         """
         from webauthn import verify_authentication_response
-        from webauthn.helpers.structs import AuthenticationCredential
         from webauthn.helpers import bytes_to_base64url
         from ..utils.common import base64url_decode, get_passkey_challenge
         from ..models.model import PasskeyCredential
 
         try:
-            credential = AuthenticationCredential.parse_obj(credential_json)
-
             # 根据 credential_id 查找凭证
             try:
                 passkey = PasskeyCredential.get(
-                    PasskeyCredential.credential_id == credential.id
+                    PasskeyCredential.credential_id == credential_json.get("id", "")
                 )
             except PasskeyCredential.DoesNotExist:
                 raise PasskeyError("Passkey credential not found")
@@ -779,10 +781,10 @@ class PasskeyInterface(object):
                 )
 
             verification = verify_authentication_response(
-                credential=credential,
+                credential=credential_json,
                 expected_challenge=expected_challenge,
-                expected_rp_id=self._rp_id,
-                expected_origin=self._origin,
+                expected_rp_id=self.rp_id,
+                expected_origin=self.origin,
                 credential_public_key=passkey.public_key,
                 credential_current_sign_count=passkey.sign_count,
             )
@@ -856,25 +858,102 @@ class PasskeyInterface(object):
         )
         return deleted > 0
 
+    # AAGUID → 设备/服务名称映射
+    # 参考: https://github.com/passkeydeveloper/passkey-authenticator-aaguids
+    _AAGUID_MAP: dict[str, str] = {
+        # 密码管理器
+        "b93fd961-f2e6-462f-b122-82002247de78": "Bitwarden / Vaultwarden",
+        "d548826e-79b4-db40-a3d8-11116f7e8349": "Bitwarden / Vaultwarden",
+        "b537cfd0-3bf2-42a4-91f0-cf697de23f5e": "1Password (Desktop)",
+        "53414d53-4241-4700-8137-934f001fe977": "1Password (Browser)",
+        "66a0c194-51f1-4503-b99e-5271bd8f8bfe": "Dashlane",
+        # 平台认证器
+        "6028b017-b1d4-4c02-b4b3-afcdafc96bb2": "Windows Hello",
+        "ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4": "iCloud Keychain",
+        "8836336a-f590-0921-301d-46427531eee6": "Apple Touch ID",
+        "175b38db-76b8-59dc-b0a8-2f4f10dd5d58": "Apple Passkey (iOS/macOS)",
+        # Google
+        "930b2fd6-4f21-41f1-9437-15bfce5aa3f2": "Google Password Manager (Android)",
+        "b84e4048-15dc-4289-8b84-6383fb6a8b2c": "Google Password Manager (Desktop)",
+        "adce0002-35bc-c60a-648b-0b25f1f05503": "Chrome on Android",
+        # 硬件密钥
+        "fa2b99c1-71e8-5489-a0d4-e53f79e7d01a": "YubiKey 5 (FIDO2)",
+        "73bb0cd4-e502-49b8-9c6f-b59445bf720b": "YubiKey Bio",
+        "d548826e-79b4-db40-a3d8-1116ea7b1344": "YubiKey 5Ci",
+        "d7a423f3-71e9-4181-82a4-0fae6878e507": "Feitian BioPass",
+        "e1a96183-5016-4f24-b55b-e3ae23614cc6": "SoloKey",
+        "887f9bfb-1f31-48bf-877c-1ac1bcb2f64c": "Nitrokey",
+    }
+
     @staticmethod
-    def _parse_device_name(client_data_json_base64url: str) -> str:
+    def _parse_device_name(
+        client_data_json_base64url: str,
+        credential_json: dict | None = None,
+        verification=None,
+    ) -> str:
         """从 clientDataJSON 解析设备名称。
 
-        优先解析 User-Agent，获取「浏览器 on 操作系统」格式。
+        优先解析 User-Agent → AAGUID 精确匹配 → authenticatorAttachment
+        → credential_device_type，逐步降级。
         """
         from ..utils.common import base64url_decode
         from ..utils.common import parse_user_agent
         try:
             data = base64url_decode(client_data_json_base64url)
             client_data = json.loads(data.decode("utf-8"))
-            # 尝试从 clientExtensionResults 或自行解析 UA
+            # 1. 优先解析 UA（浏览器）
             ua = client_data.get("userAgent", "")
             if ua:
                 browser, os_name, _ = parse_user_agent(ua)
                 if browser != "Unknown":
                     return f"{browser} on {os_name}"
+
+            # 2. AAGUID 精确匹配（密码管理器 / 硬件密钥）
+            if verification is not None:
+                aaguid = getattr(verification, "aaguid", None)
+                if aaguid and aaguid != "00000000-0000-0000-0000-000000000000":
+                    name = PasskeyClient._AAGUID_MAP.get(aaguid, "")
+                    if name:
+                        return name
+                    logger.debug("Unknown AAGUID: %s", aaguid)
+
+            # 3. 无 UA / 未知 AAGUID 时从其他来源推断名称
+            parts = []
+
+            if credential_json:
+                attachment = credential_json.get("authenticatorAttachment", "")
+                if attachment == "platform":
+                    parts.append("Platform")
+                elif attachment == "cross-platform":
+                    parts.append("Cross-Platform")
+
+            if verification is not None:
+                dev_type = getattr(verification, "credential_device_type", None)
+                if dev_type is not None:
+                    type_name = getattr(dev_type, "value", str(dev_type))
+                    parts.append(type_name.replace("_", " ").title())
+                backed_up = getattr(verification, "credential_backed_up", False)
+                if backed_up:
+                    parts.append("Synced")
+
+            if parts:
+                return " ".join(parts) + " Authenticator"
+
+            # 4. transports 信息
+            if credential_json:
+                transports = (
+                    credential_json.get("response", {}).get("transports", []) or []
+                )
+                if transports:
+                    return f"Security Key ({', '.join(transports)})"
+
+            logger.debug(
+                "_parse_device_name fallback: client_data=%s credential_json=%s",
+                client_data, credential_json,
+            )
             return "Unknown device"
         except Exception:
+            logger.exception("_parse_device_name error")
             return "Unknown device"
 
 
