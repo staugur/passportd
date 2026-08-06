@@ -312,7 +312,8 @@ def user_oauth_authorizations():
     """
     uid = g.user["uid"]
     if request.method == "GET":
-        ret = list_oauth_authorizations_by_user(uid=uid)
+        limit = int(request.args.get("limit", 10))
+        ret = list_oauth_authorizations_by_user(uid=uid, limit=limit)
         return new_res(success=True, data=ret)
 
     # DELETE

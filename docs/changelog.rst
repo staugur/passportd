@@ -21,6 +21,7 @@ v2.3.0
 变更
 ~~~~
 
+- 「我的授权」独立页面取消，内容合并至 OIDC Client 页面下方，仅显示最近 10 条授权记录。
 - 验证码登录 method 标记由 ``local_vcode`` 简化为 ``vcode``。
 - ``auto_create_data_dir()`` 改为接受路径参数，不再硬编码 ``APP_DIR/data``。
 - 移除 Codecov 集成（``ci.yml`` 中删除上传步骤，``README.md`` 中删除 badge）。

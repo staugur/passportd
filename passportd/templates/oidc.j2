@@ -36,6 +36,30 @@
     {# 客户端列表 #}
     <div id="client-list"></div>
 
+    {# 授权列表 #}
+    <hr class="my-6">
+    <div class="mb-4">
+      <h2 class="title is-5 mb-1">
+        <span class="icon-text">
+          <span class="icon"><i class="fa-solid fa-check-to-slot"></i></span>
+          <span>我的授权</span>
+        </span>
+      </h2>
+      <p class="subtitle is-6 has-text-grey mb-0">已授权的应用（最近 10 条）</p>
+    </div>
+
+    <div id="auth-loading-notice" class="has-text-centered py-6 is-hidden">
+      <span class="icon is-large has-text-grey-light"><i class="fa-solid fa-spinner fa-pulse fa-2x"></i></span>
+      <p class="has-text-grey mt-2">加载中...</p>
+    </div>
+
+    <div id="auth-error-notice" class="notification is-danger is-light is-hidden">
+      <button class="delete"></button>
+      <span id="auth-error-msg"></span>
+    </div>
+
+    <div id="auth-list"></div>
+
   </div>
 </section>
 
@@ -159,6 +183,30 @@
   </div>
 </div>
 
+{# 撤销授权确认模态框 #}
+<div class="modal" id="auth-revoke-modal">
+  <div class="modal-background"></div>
+  <div class="modal-card">
+    <header class="modal-card-head">
+      <p class="modal-card-title">
+        <span class="icon-text">
+          <span class="icon has-text-warning"><i class="fa-solid fa-triangle-exclamation"></i></span>
+          <span>确认撤销授权</span>
+        </span>
+      </p>
+      <button class="delete" aria-label="close"></button>
+    </header>
+    <section class="modal-card-body">
+      <p>确定要撤销对 <strong id="auth-revoke-client-name"></strong> 的授权吗？</p>
+      <p class="has-text-grey is-size-7 mt-2">撤销后该应用将无法继续访问你的账户信息。</p>
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button is-danger" id="confirm-auth-revoke-btn">确认撤销</button>
+      <button class="button js-close-auth-revoke">取消</button>
+    </footer>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -171,7 +219,13 @@ $(function () {
   let $formModal = $('#form-modal');
   let $deleteModal = $('#delete-modal');
   let $detailModal = $('#detail-modal');
+  let $authRevokeModal = $('#auth-revoke-modal');
+  let $authListEl = $('#auth-list');
+  let $authLoadingEl = $('#auth-loading-notice');
+  let $authErrorEl = $('#auth-error-notice');
+  let $authErrorMsgEl = $('#auth-error-msg');
   let deleteClientId = null;
+  let revokeClientId = null;
   let clientsCache = [];
 
   // --- 通用：关闭 error 通知 ---
@@ -181,14 +235,14 @@ $(function () {
 
   // --- 通用：关闭任意模态框 ---
   function closeAllModals() {
-    $formModal.add($deleteModal).add($detailModal).removeClass('is-active');
+    $formModal.add($deleteModal).add($detailModal).add($authRevokeModal).removeClass('is-active');
   }
 
   $(document).on('keydown', function (e) {
     if (e.key === 'Escape') closeAllModals();
   });
 
-  $(document).on('click', '.modal-background, .modal .delete, .js-close-form, .js-close-delete', function () {
+  $(document).on('click', '.modal-background, .modal .delete, .js-close-form, .js-close-delete, .js-close-auth-revoke', function () {
     closeAllModals();
   });
 
@@ -422,8 +476,110 @@ $(function () {
     return $('<div>').text(str).html();
   }
 
+  function formatTimestamp(ts) {
+    if (!ts) return '<span class="has-text-grey-light">—</span>';
+    let d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+      + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':'
+      + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  }
+
+  // --- 授权列表 ---
+  function loadAuthorizations() {
+    $authLoadingEl.removeClass('is-hidden');
+    $authErrorEl.addClass('is-hidden');
+    $authListEl.empty();
+
+    $.ajax({
+      url: '{{ url_for("root.api.user_oauth_authorizations") }}?limit=10',
+      method: 'GET',
+      success: function (data) {
+        $authLoadingEl.addClass('is-hidden');
+        if (!data.success) {
+          showAuthError(data.message || '加载失败');
+          return;
+        }
+        let auths = data.data || [];
+        if (auths.length === 0) {
+          $authListEl.html('<div class="box has-text-centered has-text-grey py-6">'
+            + '<span class="icon is-large"><i class="fa-solid fa-circle-check fa-2x"></i></span>'
+            + '<p class="mt-3">暂无授权记录</p></div>');
+          return;
+        }
+        renderAuthList(auths);
+      },
+      error: function (xhr) {
+        $authLoadingEl.addClass('is-hidden');
+        showAuthError('网络错误: ' + xhr.statusText);
+      }
+    });
+  }
+
+  function showAuthError(msg) {
+    $authErrorMsgEl.text(msg);
+    $authErrorEl.removeClass('is-hidden');
+  }
+
+  function renderAuthList(auths) {
+    let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable">'
+      + '<thead><tr>'
+      + '<th>应用名称</th>'
+      + '<th>Client ID</th>'
+      + '<th>授权范围</th>'
+      + '<th>授权时间</th>'
+      + '<th style="width: 100px;">操作</th>'
+      + '</tr></thead><tbody>';
+
+    $.each(auths, function (_, a) {
+      html += '<tr>'
+        + '<td>' + (a.name ? '<a href="' + escHtml(a.homepage || '#') + '" target="_blank" class="has-text-weight-semibold">' + escHtml(a.name) + '</a>' : '<span class="has-text-grey-light">—</span>') + '</td>'
+        + '<td><code class="is-size-7">' + escHtml(a.client_id) + '</code></td>'
+        + '<td><span class="tag is-info is-light">' + escHtml(a.scope) + '</span></td>'
+        + '<td class="is-size-7">' + formatTimestamp(a.ctime) + '</td>'
+        + '<td><button class="button is-danger is-small is-light js-auth-revoke" data-id="' + escHtml(a.client_id) + '" data-name="' + escHtml(a.name || a.client_id) + '">'
+        + '<span class="icon is-small"><i class="fa-solid fa-xmark"></i></span><span>撤销</span></button></td></tr>';
+    });
+
+    html += '</tbody></table></div>';
+    $authListEl.html(html);
+
+    $authListEl.on('click', '.js-auth-revoke', function () {
+      revokeClientId = $(this).data('id');
+      $('#auth-revoke-client-name').text($(this).data('name'));
+      $authRevokeModal.addClass('is-active');
+    });
+  }
+
+  // --- 撤销授权 ---
+  $authErrorEl.find('.delete').on('click', function () {
+    $authErrorEl.addClass('is-hidden');
+  });
+
+  $('#confirm-auth-revoke-btn').on('click', function () {
+    if (!revokeClientId) return;
+    $.ajax({
+      url: '{{ url_for("root.api.user_oauth_authorizations") }}',
+      method: 'DELETE',
+      data: JSON.stringify({ client_id: revokeClientId }),
+      contentType: 'application/json',
+      success: function (data) {
+        if (data.success) {
+          $authRevokeModal.removeClass('is-active');
+          revokeClientId = null;
+          loadAuthorizations();
+        } else {
+          alert('撤销失败: ' + (data.message || '未知错误'));
+        }
+      },
+      error: function (xhr) {
+        alert('网络错误: ' + xhr.statusText);
+      }
+    });
+  });
+
   // 初始化加载
   loadClients();
+  loadAuthorizations();
 });
 </script>
 {% endblock %}

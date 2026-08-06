@@ -247,10 +247,13 @@ def delete_oauth_client(uid: str, client_id: str) -> bool:
         return True
 
 
-def list_oauth_authorizations_by_user(uid: str) -> List[COMMON_DICT_TYPE]:
+def list_oauth_authorizations_by_user(
+    uid: str, limit: int = 0
+) -> List[COMMON_DICT_TYPE]:
     """获取用户所有 OIDC 授权记录（含客户端名称等信息）。
 
     :param uid: 用户唯一标识符
+    :param limit: 返回记录数上限，0 表示不限制
     :returns: 授权记录列表，每条包含 client_id, scope, ctime, name, homepage, bio
     """
     if not uid or len(uid) != 22:
@@ -271,6 +274,8 @@ def list_oauth_authorizations_by_user(uid: str) -> List[COMMON_DICT_TYPE]:
         .order_by(OAuthAuthorization.ctime.desc())
         .dicts()
     )
+    if limit > 0:
+        records = records.limit(limit)
     return list(records)
 
 
