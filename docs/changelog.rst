@@ -15,6 +15,11 @@ v2.4.0
   - 核心实现位于 ``passportd/libs/interface.py`` 的 ``PasskeyInterface`` 类，依赖 ``webauthn>=2.0``。
   - ``PASSKEY_RP_ID`` 配置为空或非有效域名时，Passkey 功能自动禁用，所有 Passkey API 返回"功能未开启"提示。
 
+修复
+~~~~
+
+- 修复 OIDC「我的授权」页面授权时间列显示 1970 年的问题（``formatTimestamp`` 缺少 ``* 1000`` 转换秒为毫秒）。
+
 v2.3.1
 ------
 

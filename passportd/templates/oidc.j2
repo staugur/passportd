@@ -477,8 +477,8 @@ $(function () {
   }
 
   function formatTimestamp(ts) {
-    if (!ts) return '<span class="has-text-grey-light">—</span>';
-    let d = new Date(ts);
+    if (!ts || ts <= 0) return '<span class="has-text-grey-light">—</span>';
+    let d = new Date(ts * 1000);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
       + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':'
       + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
