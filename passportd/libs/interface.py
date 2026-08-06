@@ -42,7 +42,7 @@ from ..basis.vars import (
     PASSKEY_RP_NAME,
 )
 from ..basis.common import new_res
-from ..basis.errors import PassportError, ParamError, ApiError, RunError, PasskeyError
+from ..basis.errors import PassportError, ParamError, ApiError, PasskeyError
 from ..utils.common import (
     logger,
     rdb,
@@ -572,7 +572,9 @@ class PasskeyInterface(object):
                 user_id=uid.encode("utf-8"),
                 user_name=account,
                 user_display_name=display_name or account,
-                exclude_credentials=exclude_credentials if exclude_credentials else None,
+                exclude_credentials=(
+                    exclude_credentials if exclude_credentials else None
+                ),
                 authenticator_selection=AuthenticatorSelectionCriteria(
                     authenticator_attachment="platform",
                     resident_key="required",
@@ -617,9 +619,7 @@ class PasskeyInterface(object):
             logger.error(f"generate_registration_options error: {e}", exc_info=True)
             raise PasskeyError(f"Failed to generate registration options: {e}") from e
 
-    def verify_registration_response(
-        self, uid: str, credential_json: dict
-    ) -> dict:
+    def verify_registration_response(self, uid: str, credential_json: dict) -> dict:
         """验证浏览器返回的注册结果，成功则存储公钥。
 
         :param uid: 用户唯一标识符
@@ -658,8 +658,7 @@ class PasskeyInterface(object):
 
             # 判断凭证类型
             is_platform = (
-                credential_json.get("authenticatorAttachment", "")
-                == "platform"
+                credential_json.get("authenticatorAttachment", "") == "platform"
             )
 
             # 存储凭证
@@ -744,13 +743,9 @@ class PasskeyInterface(object):
             return result
         except Exception as e:
             logger.error(f"generate_authentication_options error: {e}", exc_info=True)
-            raise PasskeyError(
-                f"Failed to generate authentication options: {e}"
-            ) from e
+            raise PasskeyError(f"Failed to generate authentication options: {e}") from e
 
-    def verify_authentication_response(
-        self, credential_json: dict
-    ) -> dict:
+    def verify_authentication_response(self, credential_json: dict) -> dict:
         """验证浏览器返回的认证结果，认证成功返回用户信息。
 
         :param credential_json: 浏览器返回的 ``PublicKeyCredential`` JSON
@@ -776,9 +771,7 @@ class PasskeyInterface(object):
             if not expected_challenge:
                 expected_challenge = get_passkey_challenge("login:__anonymous__")
             if not expected_challenge:
-                raise PasskeyError(
-                    "Authentication challenge expired, please try again"
-                )
+                raise PasskeyError("Authentication challenge expired, please try again")
 
             verification = verify_authentication_response(
                 credential=credential_json,
@@ -795,9 +788,7 @@ class PasskeyInterface(object):
             PasskeyCredential.update(
                 sign_count=verification.new_sign_count,
                 last_used_at=now(),
-            ).where(
-                PasskeyCredential.credential_id == passkey.credential_id
-            ).execute()
+            ).where(PasskeyCredential.credential_id == passkey.credential_id).execute()
 
             return {
                 "uid": passkey.uid,
@@ -807,9 +798,7 @@ class PasskeyInterface(object):
         except PasskeyError:
             raise
         except Exception as e:
-            logger.error(
-                f"verify_authentication_response error: {e}", exc_info=True
-            )
+            logger.error(f"verify_authentication_response error: {e}", exc_info=True)
             raise PasskeyError(f"Failed to verify authentication: {e}") from e
 
     # ---- 凭证管理 ----
@@ -858,6 +847,32 @@ class PasskeyInterface(object):
         )
         return deleted > 0
 
+    def rename_credential(
+        self, uid: str, credential_id: str, device_name: str
+    ) -> bool:
+        """重命名指定 Passkey 凭证的设备名称。
+
+        :param uid: 用户唯一标识符
+        :param credential_id: 凭证 ID（base64url）
+        :param device_name: 新的设备名称（最长 128 字符，为空则忽略）
+        :returns: 是否更新成功
+        """
+        from ..models.model import PasskeyCredential
+
+        if not device_name or not device_name.strip():
+            return False
+
+        name = device_name.strip()[:128]
+        updated = (
+            PasskeyCredential.update(device_name=name)
+            .where(
+                PasskeyCredential.uid == uid,
+                PasskeyCredential.credential_id == credential_id,
+            )
+            .execute()
+        )
+        return updated > 0
+
     # AAGUID → 设备/服务名称映射
     # 参考: https://github.com/passkeydeveloper/passkey-authenticator-aaguids
     _AAGUID_MAP: dict[str, str] = {
@@ -898,6 +913,7 @@ class PasskeyInterface(object):
         """
         from ..utils.common import base64url_decode
         from ..utils.common import parse_user_agent
+
         try:
             data = base64url_decode(client_data_json_base64url)
             client_data = json.loads(data.decode("utf-8"))
@@ -918,26 +934,18 @@ class PasskeyInterface(object):
                     logger.debug("Unknown AAGUID: %s", aaguid)
 
             # 3. 无 UA / 未知 AAGUID 时从其他来源推断名称
-            parts = []
-
             if credential_json:
                 attachment = credential_json.get("authenticatorAttachment", "")
+
                 if attachment == "platform":
-                    parts.append("Platform")
-                elif attachment == "cross-platform":
-                    parts.append("Cross-Platform")
+                    # 平台认证器（Touch ID / Windows Hello 等）
+                    return "Platform Passkey"
 
-            if verification is not None:
-                dev_type = getattr(verification, "credential_device_type", None)
-                if dev_type is not None:
-                    type_name = getattr(dev_type, "value", str(dev_type))
-                    parts.append(type_name.replace("_", " ").title())
-                backed_up = getattr(verification, "credential_backed_up", False)
-                if backed_up:
-                    parts.append("Synced")
-
-            if parts:
-                return " ".join(parts) + " Authenticator"
+                # 跨平台认证器，检查是否已同步
+                if verification is not None:
+                    backed_up = getattr(verification, "credential_backed_up", False)
+                    if backed_up:
+                        return "Synced Passkey"
 
             # 4. transports 信息
             if credential_json:
@@ -949,7 +957,8 @@ class PasskeyInterface(object):
 
             logger.debug(
                 "_parse_device_name fallback: client_data=%s credential_json=%s",
-                client_data, credential_json,
+                client_data,
+                credential_json,
             )
             return "Unknown device"
         except Exception:

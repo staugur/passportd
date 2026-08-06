@@ -26,8 +26,6 @@ from .vars import (
     LOG_LEVEL_TYPE,
     ENV_PREFIX,
     ENV_NAME,
-    OIDC_RSA_KEY_SIZE,
-    PASSKEY_RP_NAME,
 )
 from .common import is_prod, is_passkey_enabled
 
@@ -240,12 +238,12 @@ def _check_config_value(cfg):
     _rp_id = (cfg.get("PASSKEY_RP_ID") or "").strip()
     if _rp_id and not is_passkey_enabled(_rp_id):
         import warnings
+
         warnings.warn(
             f"PASSKEY_RP_ID '{_rp_id}' is not a valid domain; "
             "passkey feature will be disabled. "
             "Set it to 'localhost' (dev) or a real domain like 'example.com'."
         )
-
 
 
 config = FlaskConfig(APP_DIR)

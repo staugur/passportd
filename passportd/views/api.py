@@ -758,3 +758,24 @@ def passkey_delete_credential(credential_id: str):
     if not ret:
         raise ApiError("credential not found")
     return new_res(success=True, data=dict(deleted=True))
+
+
+@bp.put("/passkey/credential/<credential_id>")
+@apilogin_required
+@passkey_required
+def passkey_rename_credential(credential_id: str):
+    """重命名指定 Passkey 凭证的设备名称。
+
+    :param credential_id: 凭证 ID（base64url 编码）
+    :returns: 重命名结果
+    """
+    uid = g.user["uid"]
+    device_name = request.form.get("device_name", "").strip()
+    if not device_name:
+        raise ApiError("device_name is required")
+    if len(device_name) > 128:
+        raise ApiError("device_name too long (max 128)")
+    ret = PasskeyClient.rename_credential(uid, credential_id, device_name)
+    if not ret:
+        raise ApiError("credential not found")
+    return new_res(success=True, data=dict(renamed=True))

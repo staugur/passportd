@@ -95,8 +95,9 @@ def create_app():
         #: user:dict  -- uid, account 等用户信息
         g.signin, g.user = parse_user_state()
         #: passkey_enabled:bool -- Passkey 功能是否已配置有效域名
-        _rp_id = (config.get("PASSKEY_RP_ID") or "").strip()
-        g.passkey_enabled = is_passkey_enabled(_rp_id)
+        g.passkey_enabled = is_passkey_enabled(
+            (config.get("PASSKEY_RP_ID") or "").strip()
+        )
 
     @app.after_request
     def ar(response):

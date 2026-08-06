@@ -1047,10 +1047,15 @@
     }
 
     function showPasskeyMsg(msg, type) {
-        var cls = 'notification is-' + (type === 'success' ? 'success' : 'danger') + ' is-light';
+        var cls = 'notification is-light ';
+        if (type === 'success') cls += 'is-success';
+        else if (type === 'warning') cls += 'is-warning';
+        else cls += 'is-danger';
         $passkeyMsg.attr('class', cls).text(msg).show();
         setTimeout(function () { $passkeyMsg.fadeOut(); }, 6000);
     }
+
+    var editingCredentialId = null;
 
     function renderCredentials(list) {
         $passkeyTbody.empty();
@@ -1061,14 +1066,16 @@
         for (var i = 0; i < list.length; i++) {
             var c = list[i];
             var name = c.device_name || '未知设备';
+            var escapedName = $('<div>').text(name).html();
             var ctime = c.ctime ? formatTimestamp(c.ctime) : '—';
             var lastUsed = c.last_used_at ? formatTimestamp(c.last_used_at) : '—';
             var row = '<tr data-credential-id="' + c.credential_id + '">' +
-                '<td><span class="is-size-7 has-text-weight-medium">' + $('<div>').text(name).html() + '</span></td>' +
+                '<td><span class="passkey-name-text is-size-7 has-text-weight-medium">' + escapedName + '</span></td>' +
                 '<td class="is-size-7">' + ctime + '</td>' +
                 '<td class="is-size-7">' + lastUsed + '</td>' +
-                '<td><button class="button is-danger is-light is-small btn-del-passkey" data-credential-id="' + c.credential_id + '">' +
-                '<span>删除</span></button></td></tr>';
+                '<td style="white-space:nowrap;">' +
+                '<button class="button is-info is-light mr-1 btn-rename-passkey" style="font-size:0.7rem;padding:0.15rem 0.5rem;height:auto;" data-credential-id="' + c.credential_id + '">重命名</button>' +
+                '<button class="button is-danger is-light btn-del-passkey" style="font-size:0.7rem;padding:0.15rem 0.5rem;height:auto;" data-credential-id="' + c.credential_id + '">删除</button></td></tr>';
             $passkeyTbody.append(row);
         }
     }
@@ -1118,6 +1125,7 @@
                         id: cred.id,
                         rawId: bufToB64url(cred.rawId),
                         type: cred.type,
+                        authenticatorAttachment: cred.authenticatorAttachment,
                         response: {
                             clientDataJSON: bufToB64url(cred.response.clientDataJSON),
                             attestationObject: bufToB64url(cred.response.attestationObject)
@@ -1140,7 +1148,9 @@
                     }
                 }).catch(function (err) {
                     $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
-                    if (err.name !== 'NotAllowedError') {
+                    if (err.name === 'InvalidStateError') {
+                        showPasskeyMsg('此设备已绑定 Passkey，无需重复绑定', 'warning');
+                    } else if (err.name !== 'NotAllowedError') {
                         showPasskeyMsg('绑定失败：' + (err.message || '请重试'), 'error');
                     }
                 });
@@ -1180,6 +1190,63 @@
             }
         });
     });
+
+    // Passkey 重命名 - inline 编辑
+    $(document).on('click', '.btn-rename-passkey', function () {
+        var credId = $(this).data('credential-id');
+        if (editingCredentialId === credId) return;
+        // 如果正在编辑其他行，先取消
+        if (editingCredentialId) cancelRename(editingCredentialId);
+
+        var $row = $('tr[data-credential-id="' + credId + '"]');
+        var $nameCell = $row.find('.passkey-name-text');
+        var oldName = $nameCell.text();
+
+        editingCredentialId = credId;
+        var $input = $('<input class="input is-small rename-input" type="text" maxlength="128" style="width:220px;">').val(oldName);
+        $nameCell.replaceWith($input);
+        $input.focus().select();
+
+        $input.on('keydown', function (e) {
+            if (e.key === 'Enter') { $input.blur(); }
+            if (e.key === 'Escape') { cancelRename(credId); }
+        }).on('blur', function () {
+            var newName = $input.val().trim();
+            if (!newName || newName === oldName) {
+                cancelRename(credId);
+                return;
+            }
+            $.ajax({
+                url: '{{ url_for("root.api.passkey_rename_credential", credential_id="CRED_ID") }}'.replace('CRED_ID', encodeURIComponent(credId)),
+                method: 'PUT',
+                data: { device_name: newName },
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success) {
+                        showPasskeyMsg('设备名称已更新', 'success');
+                        loadCredentials();
+                    } else {
+                        showPasskeyMsg(res.message || '重命名失败', 'error');
+                        cancelRename(credId);
+                    }
+                },
+                error: function () {
+                    showPasskeyMsg('重命名失败，请重试', 'error');
+                    cancelRename(credId);
+                }
+            });
+        });
+    });
+
+    function cancelRename(credId) {
+        var $row = $('tr[data-credential-id="' + credId + '"]');
+        var $input = $row.find('.rename-input');
+        if ($input.length) {
+            $input.replaceWith('<span class="passkey-name-text is-size-7 has-text-weight-medium">' + $('<div>').text($input.val()).html() + '</span>');
+        }
+        if (editingCredentialId === credId) editingCredentialId = null;
+    }
+
     {% endif %}
 </script>
 {% endblock %}
