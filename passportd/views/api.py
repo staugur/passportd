@@ -25,6 +25,7 @@ from ..libs.interface import (
     UploadInterface,
     VCodeInterface,
     PasskeyClient,
+    NoticeClient,
 )
 from ..models.user import (
     add_account,
@@ -778,3 +779,12 @@ def passkey_rename_credential(credential_id: str):
     if not ret:
         raise ApiError("credential not found")
     return new_res(success=True, data=dict(renamed=True))
+
+
+@bp.get("/notice")
+def notice():
+    """获取公告通知列表，无需登录。
+
+    返回未过期的公告（etime=0 表示永不过期）。
+    """
+    return new_res(success=True, data=NoticeClient.get_notices())

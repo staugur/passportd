@@ -32,6 +32,7 @@ from ..basis.mixin import (
     SMTPMixIn,
     SpugMixIn,
     IPQueryMixIn,
+    RequestMixIn,
 )
 from ..basis.conf import config
 from ..basis.vars import (
@@ -847,9 +848,7 @@ class PasskeyInterface(object):
         )
         return deleted > 0
 
-    def rename_credential(
-        self, uid: str, credential_id: str, device_name: str
-    ) -> bool:
+    def rename_credential(self, uid: str, credential_id: str, device_name: str) -> bool:
         """重命名指定 Passkey 凭证的设备名称。
 
         :param uid: 用户唯一标识符
@@ -966,8 +965,54 @@ class PasskeyInterface(object):
             return "Unknown device"
 
 
+class NoticeClass(RequestMixIn):
+    """公告通知接口，支持本地配置和远程 URL 两种数据源。"""
+
+    @staticmethod
+    def _filter_valid(notices: list) -> list:
+        """过滤未过期的公告（etime=0 为永不过期）。"""
+        from ..basis.common import now
+
+        ts = now()
+        return [
+            n
+            for n in notices
+            if int(n.get("etime", 0)) == 0 or int(n.get("etime", 0)) > ts
+        ]
+
+    def get_notices(self) -> list:
+        """获取有效公告列表。
+
+        :returns: [{"content": "...", "ctime": ..., "etime": ...}, ...]
+        """
+        notice = config.get("NOTICE", [])
+        if not notice:
+            return []
+
+        # 直接是 list
+        if isinstance(notice, list):
+            return self._filter_valid(notice)
+
+        # 是 URL
+        if isinstance(notice, str):
+            try:
+                resp = self.http(notice, method="get", timeout=5)
+                data = resp.json()
+                if data.get("success") and isinstance(data.get("data"), list):
+                    return self._filter_valid(data["data"])
+                return []
+            except Exception:
+                logger.warning("Failed to fetch notice from %s", notice)
+                return []
+
+        return []
+
+
 #: OAuth2 Client
 OAuthClient = OAuthClintInterface()
 
 #: Passkey 接口实例
 PasskeyClient = PasskeyInterface()
+
+#: 公告接口实例
+NoticeClient = NoticeClass()

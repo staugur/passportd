@@ -102,6 +102,12 @@ class BaseConfig:
     #: 开发环境可用 localhost；为空或无效值时 Passkey 功能不可用。
     PASSKEY_RP_ID: str = ""
 
+    #: 公告通知配置。支持两种格式：
+    #: 1. list: [{"content": "公告内容", "ctime": 时间戳, "etime": 0或时间戳}]
+    #:    ctime 创建时间，etime 过期时间（0=永不过期）
+    #: 2. str: URL 地址，需返回 JSON: {success, data: [...]}
+    NOTICE = []
+
     # OAuth2 配置
     #: GitHub OAuth2 配置
     GITHUB_CLIENT_ID = ""

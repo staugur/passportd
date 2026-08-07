@@ -282,7 +282,7 @@ class SpugMixIn(RequestMixIn):
         data = {
             "to": phone,
             "code": code,
-            "minute": "5",
+            "number": "5",
         }
         res = self.http(apiurl, json_data=data, timeout=10).json()
         if res.get("code") == 200:
