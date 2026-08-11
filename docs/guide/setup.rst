@@ -249,6 +249,11 @@ OAuth2 第三方登录配置
    * - ``GOOGLE_CLIENT_SECRET``
      - str
      - Google OAuth2 Client Secret
+   * - ``GOOGLE_CALLBACK_PROXY`` (可选)
+     - str
+     - Google OAuth2 回调时代理地址。
+       服务器无法直连 Google API（googleapis.com）时使用，
+       如 ``http://proxy:8080``。仅支持 HTTP 代理。
 
 Passkey（WebAuthn）配置
 --------------------------

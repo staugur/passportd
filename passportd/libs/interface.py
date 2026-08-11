@@ -52,7 +52,12 @@ from ..utils.common import (
     parse_user_agent,
     generate_fingerprint,
 )
-from ..utils.web import set_user_state, is_safe_url, get_ip
+from ..utils.web import (
+    auto_set_user_state,
+    set_user_state,
+    is_safe_url,
+    get_ip,
+)
 from ..models.audit import record_audit_log
 from ..models.user import (
     login,
@@ -61,7 +66,6 @@ from ..models.user import (
     get_account,
     add_account,
     add_profile,
-    generate_jwt,
     record_login,
 )
 
@@ -436,10 +440,7 @@ class OAuthClintInterface(OAuth):
                     ua=request.headers.get("User-Agent", ""),
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
-                token = generate_jwt(account, expire)
-                if not token:
-                    raise ApiError("generate cookie failed")
-                return set_user_state(token, redirect_url, expire)
+                return auto_set_user_state(account, expire, redirect_url)
             else:
                 # 账号未绑定，拦截返回，跳转到OAuth2选择页面（选择绑定本地账号或直接创建用户）
                 key = f"oauth2go:{token_urlsafe(32)}"

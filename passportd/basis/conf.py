@@ -132,6 +132,7 @@ class BaseConfig:
     #: Google OAuth2 配置
     GOOGLE_CLIENT_ID = ""
     GOOGLE_CLIENT_SECRET = ""
+    GOOGLE_CALLBACK_PROXY = None
 
 
 class DevConfig(BaseConfig):

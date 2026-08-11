@@ -9,6 +9,7 @@
     <link href="{{ url_for('static', filename='img/favicon.png') }}" rel="icon" type="image/x-icon" />
     <link href="{{ url_for('static', filename='img/favicon.png') }}" rel="shortcut icon" type="image/x-icon" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bulma-v1.0.4.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='fontawesome-free-7.3.1-web/css/all.min.css') }}">
     <style>
         :root {
             --green-50: #f0fdf4;
@@ -175,9 +176,11 @@
             font-size: 0.8rem;
             line-height: 1.5;
         }
+
         .notice-bar[hidden] {
             display: none;
         }
+
         .notice-bar .notice-item {
             display: flex;
             align-items: center;
@@ -186,9 +189,11 @@
             color: #4b5563;
             word-break: break-word;
         }
-        .notice-bar .notice-item + .notice-item {
+
+        .notice-bar .notice-item+.notice-item {
             margin-top: 4px;
         }
+
         .notice-bar .notice-close {
             background: none;
             border: none;
@@ -200,6 +205,7 @@
             transition: color 0.15s;
             flex-shrink: 0;
         }
+
         .notice-bar .notice-close:hover {
             color: #dc2626;
         }
@@ -252,18 +258,16 @@
 
     <footer class="footer is-light mt-4">
         <div class="content has-text-centered">
-            <p class="has-text-grey is-size-7">&copy; <span id="footer-year"></span> Passport. All rights reserved.&nbsp;|&nbsp;
-                Powered by <a href="https://github.com/staugur/passportd" target="_blank"
-                    rel="noopener noreferrer" class="has-text-grey">Passportd</a>
+            <p class="has-text-grey is-size-7">&copy; <span id="footer-year"></span> Passport. All rights
+                reserved.&nbsp;|&nbsp;
+                Powered by <a href="https://github.com/staugur/passportd" target="_blank" rel="noopener noreferrer"
+                    class="has-text-grey">Passportd</a>
                 {% if config.get("ICP") %}&nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank"
                     rel="noopener noreferrer" class="has-text-grey">{{ config["ICP"] }}</a>{% endif %}</p>
         </div>
         <div id="notice-bar" class="notice-bar" hidden></div>
     </footer>
 
-    <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/fontawesome.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/solid.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/brands.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/jquery-v3.7.1.min.js') }}"></script>
     <script>
         // 时间戳格式化工具：Unix 秒 → 本地时间 "YYYY-MM-DD HH:mm:ss"，0/null 显示 —

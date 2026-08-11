@@ -19,6 +19,7 @@ from flask import Blueprint, url_for, redirect, request, current_app
 from authlib.integrations.flask_client import FlaskOAuth2App
 
 from passportd.libs.interface import OAuthClient
+from passportd.utils.common import is_valid_http_url
 from passportd.basis.conf import config
 
 __plugin_name__ = "oauth2_google"
@@ -55,7 +56,10 @@ def login():
 @bp.route("/authorized")
 def authorized():
     try:
-        token = google.authorize_access_token()
+        proxy: str = current_app.config.get("GOOGLE_CALLBACK_PROXY")  # type: ignore
+        proxies = {"http": proxy, "https": proxy} if is_valid_http_url(proxy) else None
+
+        token = google.authorize_access_token(proxies=proxies)
 
         # 验证令牌有效性
         if token is None or token.get("access_token") is None:

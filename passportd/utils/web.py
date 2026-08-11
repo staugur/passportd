@@ -162,10 +162,11 @@ def auto_set_user_state(
                 a = Auth.get(Auth.account == account)
                 uid = a.uid if a else ""
             if uid:
+                client_ip = get_ip()
                 create_session(
                     uid=uid,
                     session_key=session_key,
-                    ip=(request.remote_addr or ""),
+                    ip=client_ip,
                     user_agent=request.headers.get("User-Agent", ""),
                     expire_time=int(time()) + expire,
                 )
@@ -174,7 +175,7 @@ def auto_set_user_state(
                 RecordSessionInterface(
                     uid=uid,
                     session_key=session_key,
-                    ip=(request.remote_addr or ""),
+                    ip=client_ip,
                     ua=request.headers.get("User-Agent", ""),
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
