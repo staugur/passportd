@@ -682,13 +682,13 @@ def update_session_info(
     try:
         update_fields = {}
         if location:
-            update_fields[UserSession.location] = location
+            update_fields["location"] = location
         if browser:
-            update_fields[UserSession.browser] = browser
+            update_fields["browser"] = browser
         if os:
-            update_fields[UserSession.os] = os
+            update_fields["os"] = os
         if device:
-            update_fields[UserSession.device] = device
+            update_fields["device"] = device
         if update_fields:
             rows = (
                 UserSession.update(**update_fields)

@@ -209,7 +209,7 @@
                 if (s.device && s.device !== 'Desktop') titleParts.push(s.device);
                 let title = titleParts.join(' · ') || (s.browser || '未知设备');
 
-                // 副标题：浏览器 + IP + 地点
+                // 副标题：浏览器 + IP + 地点 + 登录方式 + 来源
                 let subParts = [];
                 if (s.browser) subParts.push(s.browser);
                 if (s.ip) {
@@ -217,17 +217,9 @@
                     if (s.location) ipLine += ' · ' + s.location;
                     subParts.push(ipLine);
                 }
+                if (s.method) subParts.push(s.method);
+                if (s.source && s.source !== 'self') subParts.push('来自 ' + s.source);
                 let subtitle = subParts.join(' · ') || '—';
-
-                // 登录方式和来源
-                let metaTags = [];
-                if (s.method) {
-                    metaTags.push('<span class="tag is-light is-size-7">' + $('<span>').text(s.method).html() + '</span>');
-                }
-                if (s.source && s.source !== 'self') {
-                    metaTags.push('<span class="tag is-info is-light is-size-7">来自 ' + $('<span>').text(s.source).html() + '</span>');
-                }
-                let metaLine = metaTags.length > 0 ? metaTags.join(' ') : '';
 
                 html += '<div class="box mb-2 py-3 px-4">' +
                     '<div class="is-flex is-align-items-center is-justify-content-space-between">' +
@@ -241,7 +233,6 @@
                                 '<p class="is-size-7 has-text-grey">' +
                                     $('<span>').text(subtitle).html() +
                                 '</p>' +
-                                (metaLine ? '<p class="mt-1" style="line-height:1.2;">' + metaLine + '</p>' : '') +
                             '</div>' +
                         '</div>' +
                         '<div class="has-text-right">' +
