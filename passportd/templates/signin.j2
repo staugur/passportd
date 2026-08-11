@@ -307,12 +307,12 @@
           account: account,
           code: code,
           remember: $('#vcode-remember').is(':checked') ? '1' : '',
-          next: '{{ next }}'
+          next: {{ next|tojson }}
         },
         dataType: 'json',
         success: function (res) {
           if (res.success) {
-            let nextUrl = '{{ next }}' || '/';
+            let nextUrl = {{ next|tojson }} || '/';
             showNotification('登录成功，正在跳转…', 'success');
             setTimeout(function () {
               window.location.href = nextUrl;
@@ -426,13 +426,9 @@
             });
           }).then(function (res) {
             if (res.success) {
-              let token = res.data && res.data.token;
-              if (token) {
-                showNotification('登录成功，正在跳转…', 'success');
-                let nextUrl = '{{ next }}' || '/';
-                document.cookie = 'sid=' + token + ';path=/;max-age=7200;SameSite=Lax';
-                setTimeout(function () { window.location.href = nextUrl; }, 500);
-              }
+              showNotification('登录成功，正在跳转…', 'success');
+              let nextUrl = {{ next|tojson }} || '/';
+              setTimeout(function () { window.location.href = nextUrl; }, 500);
             } else {
               showPasskeyErr(res.message || 'Passkey 验证失败');
             }

@@ -15,16 +15,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import secrets
-from time import time as time_ts
-
 from flask import Blueprint, request, abort, g
 from werkzeug.security import check_password_hash
 from functools import wraps
 
 from ..libs.interface import (
     RecordLoginInterface,
-    RecordSessionInterface,
     RegisterInterface,
     UploadInterface,
     VCodeInterface,
@@ -34,10 +30,8 @@ from ..libs.interface import (
 from ..models.user import (
     add_account,
     change_password,
-    create_session,
     delete_account,
     delete_user_data,
-    generate_jwt,
     get_account as get_auth,
     has_account,
     list_accounts,
@@ -868,28 +862,22 @@ def passkey_login_verify():
         raise ApiError("passkey authentication succeeded but no account found")
 
     expire = 7200
-    session_key = secrets.token_hex(32)
-    token = generate_jwt(account, expire, session_key)
-    if not token:
-        raise ApiError("generate token failed")
-
-    # 创建活跃会话记录
-    create_session(
-        uid=uid,
-        session_key=session_key,
-        ip=get_ip(),
-        user_agent=request.headers.get("User-Agent", ""),
-        expire_time=int(time_ts()) + expire,
+    ret = auto_set_user_state(
+        account=account,
+        expire=expire,
+        data={
+            "success": True,
+            "data": {
+                "uid": uid,
+                "credential_id": result["credential_id"],
+                "device_name": result["device_name"],
+            },
+        },
         method="passkey",
         source="self",
     )
-    RecordSessionInterface(
-        uid=uid,
-        session_key=session_key,
-        ip=get_ip(),
-        ua=request.headers.get("User-Agent", ""),
-        accept_lang=request.headers.get("Accept-Language", ""),
-    )
+    if not ret:
+        raise ApiError("generate token failed")
 
     # 记录登录日志
     RecordLoginInterface(
@@ -901,15 +889,7 @@ def passkey_login_verify():
         accept_lang=request.headers.get("Accept-Language", ""),
     )
 
-    return new_res(
-        success=True,
-        data={
-            "token": token,
-            "uid": uid,
-            "credential_id": result["credential_id"],
-            "device_name": result["device_name"],
-        },
-    )
+    return ret
 
 
 @bp.get("/passkey/credentials")

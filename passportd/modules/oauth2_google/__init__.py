@@ -36,12 +36,25 @@ __state__ = (
 
 bp = Blueprint(__plugin_name__, __plugin_name__)
 
+# 代理配置：生产环境无法直连 Google API 时使用
+_google_proxy = config.get("GOOGLE_CALLBACK_PROXY")
+_google_proxies = (
+    {"http": _google_proxy, "https": _google_proxy}
+    if is_valid_http_url(_google_proxy)
+    else None
+)
+
 google: FlaskOAuth2App = OAuthClient.register(
     name="google",
     access_token_url="https://oauth2.googleapis.com/token",
     authorize_url="https://accounts.google.com/o/oauth2/auth",
     api_base_url="https://www.googleapis.com/oauth2/v1/",
-    client_kwargs={"scope": "openid email profile"},
+    userinfo_endpoint="https://www.googleapis.com/oauth2/v1/userinfo",
+    jwks_uri="https://www.googleapis.com/oauth2/v3/certs",
+    client_kwargs={
+        "scope": "openid email profile",
+        **({"proxies": _google_proxies} if _google_proxies else {}),
+    },
 )  # type: ignore
 
 

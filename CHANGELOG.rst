@@ -1,6 +1,17 @@
 更新日志
 ========
 
+v2.6.4
+------
+
+修复
+~~~~
+
+- 修复登录页面 ``signin.j2`` 中 ``{{ next }}`` 在 ``<script>`` 标签内被 Jinja2 ``autoescape`` 破坏的问题：URL 中的 ``&`` 被转义为 ``&amp;``，导致验证码/passkey 登录后跳转到 OIDC authorize 页面时 state 等查询参数解析错误。改用 ``|tojson`` 过滤器确保 JavaScript 上下文中字符串安全渲染。
+- 修复 Passkey 登录成功后 ``sid`` Cookie 丢失导致后续 OIDC 授权流程抛 ``joserfc.errors.BadSignatureError`` 的问题：``passkey_login_verify`` 端点未调用 ``auto_set_user_state`` 设置 ``sid`` Cookie，仅通过 JSON 返回 JWT token，前端 JS 通过 ``document.cookie`` 设置 Cookie 丢失 ``httponly`` 和 ``secure`` 属性。现已将 ``passkey_login_verify`` 改为调用 ``auto_set_user_state``，由服务端 ``Set-Cookie`` 响应头正确设置登录态。同时清理前端 ``signin.j2`` 中冗余的 ``document.cookie`` 操作。
+- 修复 Google OAuth2 登录报 ``Missing "jwks_uri" in metadata``：scope 含 ``openid`` 时 authlib 自动校验 id_token，需要 ``jwks_uri``。注册时补充 ``jwks_uri`` 和 ``userinfo_endpoint`` 元数据，并将 ``GOOGLE_CALLBACK_PROXY`` 代理注入 ``client_kwargs``，确保 JWKS 公钥拉取也走代理。
+
+
 v2.6.3
 ------
 
