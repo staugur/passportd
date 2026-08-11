@@ -320,6 +320,14 @@ class OAuthClintInterface(OAuth):
                     location=location,
                     gender=self.genderconverter(userinfo.get("gender", "")),
                 )
+            elif provider == "google":
+                user.update(
+                    account=self.build_account(provider, userinfo["sub"]),
+                    tpid=userinfo.get("email", ""),
+                    name=userinfo.get("name") or "",
+                    email=userinfo.get("email") or "",
+                    picture=userinfo.get("picture") or "",
+                )
             else:
                 # 非内置支持的第三方登录尝试解析用户信息
                 pobj = self._clients.get(provider)

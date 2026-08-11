@@ -243,6 +243,12 @@ OAuth2 第三方登录配置
    * - ``QQ_CLIENT_SECRET``
      - str
      - QQ OAuth2 Client Secret
+   * - ``GOOGLE_CLIENT_ID``
+     - str
+     - Google OAuth2 Client ID
+   * - ``GOOGLE_CLIENT_SECRET``
+     - str
+     - Google OAuth2 Client Secret
 
 Passkey（WebAuthn）配置
 --------------------------

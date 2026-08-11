@@ -303,7 +303,7 @@ def oauth2go():
                 RecordLoginInterface(
                     uid=uid,
                     account=userinfo["account"],
-                    method=f"oauth2_{provider}",
+                    method=provider,
                     ip=get_ip(),
                     ua=request.headers.get("User-Agent", ""),
                     accept_lang=request.headers.get("Accept-Language", ""),

@@ -11,7 +11,7 @@ passportd
 --------
 
 - **本地账号系统**：支持用户名、手机号、邮箱注册与登录，支持Passkey通行密钥登录。
-- **OAuth2 第三方登录**：内置 GitHub、Gitee、Weibo、QQ OAuth2 登录插件
+- **OAuth2 第三方登录**：内置 GitHub、Gitee、Weibo、QQ、Google OAuth2 登录插件
 - **OpenID Connect Provider**：可作为独立 SSO 服务，支持 Discovery、JWKS、UserInfo 等标准端点
 - **插件扩展**：基于 Flask-PluginKit 的插件架构，方便扩展更多登录方式
 - **多数据库支持**：SQLite（开发）/ MySQL / PostgreSQL（生产）
@@ -34,7 +34,7 @@ passportd 采用分层架构：
     ├── models/           # 数据访问层（Peewee ORM）
     ├── libs/             # 业务逻辑层（注册、登录、OIDC）
     ├── views/            # 视图层（API、前端页面、OIDC 协议）
-    └── modules/          # 可插拔 OAuth2 模块（GitHub、Gitee）
+    └── modules/          # 可插拔 OAuth2 模块（GitHub、Gitee、Google）
 
 用户指南
 --------

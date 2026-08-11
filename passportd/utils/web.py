@@ -297,6 +297,7 @@ _OAUTH2_PROVIDER_CONFIG: dict[str, dict[str, str]] = {
     "weibo": {"icon": "fa-brands fa-weibo", "color": "is-link", "bg": "#e6162d"},
     "qq": {"icon": "fa-brands fa-qq", "color": "is-success", "bg": "#12b7f5"},
     "wechat": {"icon": "fa-brands fa-weixin", "color": "is-info", "bg": "#07c160"},
+    "google": {"icon": "fa-brands fa-google", "color": "is-info", "bg": "#4285f4"},
 }
 _DEFAULT_OAUTH2_CONFIG = {"icon": "fa-solid fa-right-to-bracket", "color": "", "bg": ""}
 

@@ -126,6 +126,10 @@ class BaseConfig:
     QQ_CLIENT_ID = ""
     QQ_CLIENT_SECRET = ""
 
+    #: Google OAuth2 配置
+    GOOGLE_CLIENT_ID = ""
+    GOOGLE_CLIENT_SECRET = ""
+
 
 class DevConfig(BaseConfig):
     """默认开发环境配置。"""

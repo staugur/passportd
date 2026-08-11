@@ -172,3 +172,10 @@ QQ OAuth2
 .. automodule:: passportd.modules.oauth2_qq
     :members:
     :undoc-members:
+
+Google OAuth2
+~~~~~~~~~~~~~
+
+.. automodule:: passportd.modules.oauth2_google
+    :members:
+    :undoc-members:

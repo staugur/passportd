@@ -83,6 +83,7 @@ def create_app():
             "passportd.modules.oauth2_gitee",
             "passportd.modules.oauth2_weibo",
             "passportd.modules.oauth2_qq",
+            "passportd.modules.oauth2_google",
         ),  # type: ignore
     )
 

@@ -45,9 +45,50 @@ passportd 支持通过 GitHub OAuth2 App 实现第三方登录，用户点击 Gi
 
 配置生效后，登录页面会自动显示 GitHub 登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定 GitHub 账号。
 
+配置 OAuth2 对接 Google
+-----------------------
+
+passportd 也支持通过 Google OAuth2 实现第三方登录。
+
+创建 Google OAuth 2.0 凭据
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. 登录 `Google Cloud Console <https://console.cloud.google.com/>`_，选择一个项目或创建新项目。
+2. 进入 `APIs & Services → Credentials <https://console.cloud.google.com/apis/credentials>`_，点击 **Create Credentials → OAuth client ID**。
+3. 如果尚未配置 OAuth consent screen（同意屏幕），系统会引导完成：
+
+   - **User Type**：选择 **External**（外部用户）
+   - **App name**：自定义应用名称
+   - **User support email**：你的邮箱
+   - **Developer contact email**：你的邮箱
+   - **Scopes** 和 **Test users**：暂时跳过，先点 SAVE AND CONTINUE
+
+4. 创建 OAuth client ID：
+
+   - **Application type**：选择 **Web application**
+   - **Name**：自定义（如 ``Passportd``）
+   - **Authorized redirect URIs**：点击 ADD URI，填写 ``https://passport.example.com/oauth2/google/authorized``
+   - 点击 **Create**
+
+5. 创建成功后，弹窗中会显示 **Client ID** 和 **Client Secret**，立即保存。
+
+启用 Google 登录
+^^^^^^^^^^^^^^^^^
+
+.. code-block:: python
+
+    # passportd/basis/conf.py 或自定义配置文件
+    GOOGLE_CLIENT_ID = "你的 Client ID（类似 xxx.apps.googleusercontent.com）"
+    GOOGLE_CLIENT_SECRET = "你的 Client Secret（类似 GOCSPX-xxxx）"
+
 .. note::
 
-    passportd 还可配置 Gitee、QQ、Weibo 等 OAuth2 第三方登录，配置方式与 GitHub 类似，
+    如果 OAuth consent screen 处于 **Testing** 模式，只有已添加的 Test users 可以登录。发布到生产环境前需要在
+    `OAuth consent screen <https://console.cloud.google.com/apis/credentials/consent>`_ 中点击 **PUBLISH APP**。
+
+.. note::
+
+    passportd 还可配置 Gitee、QQ、Weibo、Google 等 OAuth2 第三方登录，配置方式与 GitHub 类似，
     对应配置项为 ``GITEE_CLIENT_ID`` / ``GITEE_CLIENT_SECRET`` 等，详见 :ref:`setup`。
 
 创建 OIDC Client 提供认证服务

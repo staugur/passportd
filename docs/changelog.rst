@@ -8,6 +8,7 @@ v2.5.0
 ~~~~
 
 - 新增账号注销功能：需密码验证且确认名下无 OIDC 客户端，级联删除用户所有数据（User/Auth/登录记录/OIDC 授权/Passkey 等），操作不可恢复。
+- 新增 Google OAuth2 登录支持：配置 ``GOOGLE_CLIENT_ID`` 和 ``GOOGLE_CLIENT_SECRET`` 即可启用。
 
 修复
 ~~~~
