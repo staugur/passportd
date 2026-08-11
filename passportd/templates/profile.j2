@@ -156,7 +156,7 @@
                             </td>
                             <td class="is-size-7 js-timestamp" data-ts="{{ acct.ctime }}"></td>
                             <td>
-                                {% if acct.classify in ('email', 'mobile') and not loop.first %}
+                                {% if acct.classify in ('email', 'mobile', '3rd') and accounts|length > 1 %}
                                 <button class="button is-danger is-light is-small js-open-unbind" data-account="{{ acct.account }}">
                                     <span>解绑</span>
                                 </button>
@@ -300,9 +300,75 @@
         </div>
         {% endif %}
 
+        {# 危险操作 - 注销账号 #}
+        <div class="box">
+            <h2 class="title is-5 mb-4 has-text-danger">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                    <span>危险操作</span>
+                </span>
+            </h2>
+            <p class="mb-3 has-text-grey is-size-7">注销账号将永久删除您的所有数据，包括个人资料、绑定账号、登录记录、OIDC 授权和 Passkey 凭证，此操作不可恢复。</p>
+            <p class="mb-3 has-text-grey is-size-7">如您名下已创建 OIDC 应用，请先在 <a href="{{ url_for('root.front.oidc_client') }}">OIDC 应用管理</a> 中删除后再来注销。</p>
+            <button class="button is-danger is-light js-open-delete-account">
+                <span class="icon is-small"><i class="fa-solid fa-user-slash"></i></span>
+                <span>注销账号</span>
+            </button>
+        </div>
 
     </div>
 </section>
+
+{# 注销账号确认模态框 #}
+<div class="modal" id="delete-account-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head has-background-danger-light">
+            <p class="modal-card-title has-text-danger">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                    <span>确认注销账号</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body">
+            <div id="delete-account-msg" class="notification is-danger is-light mb-3" style="display:none;"></div>
+            <div class="notification is-warning is-light mb-4">
+                <p class="has-text-weight-bold mb-2">注销后以下数据将被永久删除：</p>
+                <ul class="ml-4" style="list-style:disc;">
+                    <li>个人资料（昵称、头像、简介等）</li>
+                    <li>所有绑定账号（邮箱、手机号、第三方登录）</li>
+                    <li>登录历史记录</li>
+                    <li>OIDC 授权记录</li>
+                    <li>Passkey 凭证</li>
+                </ul>
+                <p class="mt-2 has-text-weight-bold has-text-danger">此操作不可恢复，请谨慎执行！</p>
+            </div>
+            <div class="field">
+                <label class="label">输入密码确认</label>
+                <div class="control">
+                    <input class="input" type="password" id="delete-account-password" placeholder="输入当前密码以确认" maxlength="128" autocomplete="current-password">
+                </div>
+            </div>
+            <div class="field">
+                <label class="checkbox">
+                    <input type="checkbox" id="delete-account-confirm">
+                    我已知晓注销后果，确认要 <strong class="has-text-danger">永久删除</strong> 我的账号
+                </label>
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div class="buttons">
+                <button type="button" class="button is-danger" id="delete-account-submit" disabled>
+                    <span class="icon"><i class="fa-solid fa-user-slash"></i></span>
+                    <span>确认注销</span>
+                </button>
+                <button type="button" class="button js-close-delete-account">取消</button>
+            </div>
+        </footer>
+    </div>
+</div>
 
 {# 绑定 / 解绑验证码模态框 #}
 <div class="modal" id="account-vcode-modal">
@@ -1248,5 +1314,76 @@
     }
 
     {% endif %}
+
+    // =========================================================
+    // 注销账号
+    // =========================================================
+    var $daModal = $('#delete-account-modal');
+    var $daPassword = $('#delete-account-password');
+    var $daConfirm = $('#delete-account-confirm');
+    var $daSubmit = $('#delete-account-submit');
+    var $daMsg = $('#delete-account-msg');
+
+    function toggleDeleteSubmit() {
+        $daSubmit.prop('disabled', !($daPassword.val().trim() && $daConfirm.is(':checked')));
+    }
+
+    $daPassword.on('input', toggleDeleteSubmit);
+    $daConfirm.on('change', toggleDeleteSubmit);
+
+    // 打开注销确认弹窗
+    $('.js-open-delete-account').on('click', function () {
+        $daModal.addClass('is-active');
+        $daPassword.val('');
+        $daConfirm.prop('checked', false);
+        $daSubmit.prop('disabled', true);
+        $daMsg.hide();
+    });
+
+    // 关闭
+    $('.js-close-delete-account, #delete-account-modal .delete, #delete-account-modal .modal-background').on('click', function () {
+        $daModal.removeClass('is-active');
+    });
+
+    // ESC
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $daModal.hasClass('is-active')) {
+            $daModal.removeClass('is-active');
+        }
+    });
+
+    // 提交注销
+    $daSubmit.on('click', function () {
+        var password = $daPassword.val().trim();
+        if (!password || !$daConfirm.is(':checked')) return;
+
+        $daSubmit.prop('disabled', true).addClass('is-loading');
+        $daMsg.hide();
+
+        $.ajax({
+            url: '{{ url_for("root.api.user_delete") }}',
+            method: 'POST',
+            data: { password: password },
+            success: function (res) {
+                if (!res.success) {
+                    $daMsg.text(res.message || '注销失败，请重试').show();
+                    $daSubmit.prop('disabled', false).removeClass('is-loading');
+                    return;
+                }
+                // 注销成功，跳转到首页
+                window.location.href = '{{ url_for("root.front.index") }}';
+            },
+            error: function () {
+                $daMsg.text('网络异常，请重试').show();
+                $daSubmit.prop('disabled', false).removeClass('is-loading');
+            }
+        });
+    });
+
+    $daPassword.on('keydown', function (e) {
+        if (e.key === 'Enter' && !$daSubmit.prop('disabled')) {
+            $daSubmit.trigger('click');
+        }
+    });
 </script>
 {% endblock %}

@@ -168,33 +168,28 @@
             padding: 1.5rem 1.5rem 2rem;
         }
 
-        /* 公告栏 — 页脚位置，多条公告内联显示 */
+        /* 公告栏 — 页脚位置，多条公告独立显示 */
         .notice-bar {
-            margin-top: 12px;
-            padding: 8px 28px 8px 12px;
-            background: #f0f4ff;
-            border: 1px solid #d0d7f5;
-            border-radius: 6px;
+            max-width: 960px;
+            margin: 8px auto 0;
             font-size: 0.8rem;
             line-height: 1.5;
-            position: relative;
         }
-        .notice-content {
+        .notice-bar[hidden] {
+            display: none;
+        }
+        .notice-bar .notice-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
             color: #4b5563;
             word-break: break-word;
         }
-        .notice-content .notice-item {
-            display: inline;
+        .notice-bar .notice-item + .notice-item {
+            margin-top: 4px;
         }
-        .notice-content .notice-item + .notice-item::before {
-            content: " · ";
-            color: #9ca3af;
-            font-weight: bold;
-        }
-        .notice-close {
-            position: absolute;
-            top: 6px;
-            right: 6px;
+        .notice-bar .notice-close {
             background: none;
             border: none;
             color: #9ca3af;
@@ -203,8 +198,9 @@
             cursor: pointer;
             padding: 0 2px;
             transition: color 0.15s;
+            flex-shrink: 0;
         }
-        .notice-close:hover {
+        .notice-bar .notice-close:hover {
             color: #dc2626;
         }
     </style>
@@ -257,11 +253,8 @@
                     rel="noopener noreferrer" class="has-text-grey">Passportd</a>
                 {% if config.get("ICP") %}&nbsp;|&nbsp; <a href="https://beian.miit.gov.cn/" target="_blank"
                     rel="noopener noreferrer" class="has-text-grey">{{ config["ICP"] }}</a>{% endif %}</p>
-            <div id="notice-bar" class="notice-bar" style="display:none">
-                <span class="notice-content"></span>
-                <button class="notice-close" title="不再显示公告">&times;</button>
-            </div>
         </div>
+        <div id="notice-bar" class="notice-bar" hidden></div>
     </footer>
 
     <script src="{{ url_for('static', filename='fontawesome-free-7.3.1-web/js/fontawesome.min.js') }}"></script>
@@ -298,10 +291,9 @@
                 $(this).parent().remove();
             });
 
-            // 公告栏 — 获取 & 渲染 & 永久关闭
+            // 公告栏 — 获取 & 渲染 & 每条单独关闭
             (function () {
                 var $bar = $('#notice-bar');
-                var $content = $bar.find('.notice-content');
                 var STORAGE_KEY = 'passport_dismissed_notices';
 
                 function getDismissed() {
@@ -310,47 +302,47 @@
                     } catch (e) { return []; }
                 }
 
-                function dismissNotices(notices) {
-                    var ids = notices.map(function (n) { return String(n.ctime); });
+                function dismissNotice(ctime) {
                     var all = getDismissed();
-                    ids.forEach(function (id) {
-                        if (all.indexOf(id) < 0) all.push(id);
-                    });
-                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); } catch (e) { }
+                    var id = String(ctime);
+                    if (all.indexOf(id) < 0) {
+                        all.push(id);
+                        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); } catch (e) { }
+                    }
                 }
 
                 function isDismissed(n) { return getDismissed().indexOf(String(n.ctime)) >= 0; }
 
-                function show(notices) {
+                function render(notices) {
                     if (!notices.length) return;
-                    var items = notices.map(function (n) {
+                    $bar.empty();
+                    notices.forEach(function (n) {
                         var t = new Date(n.ctime * 1000);
                         var ds = t.getFullYear() + '-' +
                             String(t.getMonth() + 1).padStart(2, '0') + '-' +
                             String(t.getDate()).padStart(2, '0');
-                        return '<span class="notice-item"><span style="opacity:0.5">[' + ds + ']</span> ' +
-                               n.content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') +
-                               '</span>';
+                        var $item = $('<div class="notice-item"></div>');
+                        $item.append('<span><span style="opacity:0.5">[' + ds + ']</span> ' +
+                            n.content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') +
+                            '</span>');
+                        var $btn = $('<button class="notice-close" title="不再显示此公告">&times;</button>');
+                        $btn.on('click', function () {
+                            dismissNotice(n.ctime);
+                            $item.remove();
+                            if (!$bar.children().length) $bar.attr('hidden', '');
+                        });
+                        $item.append($btn);
+                        $bar.append($item);
                     });
-                    $content.html(items.join(''));
-                    $bar.show();
+                    $bar.removeAttr('hidden');
                 }
-
-                // 关闭按钮 — 清理 DOM 并记入 localStorage
-                $bar.find('.notice-close').on('click', function () {
-                    var notices = $bar.data('notices') || [];
-                    dismissNotices(notices);
-                    $bar.hide();
-                });
 
                 // 请求公告
                 $.getJSON('/api/notice', function (res) {
                     if (!res.success || !res.data || !res.data.length) return;
-                    // 过滤已关闭的
                     var active = res.data.filter(function (n) { return !isDismissed(n); });
                     if (!active.length) return;
-                    $bar.data('notices', active);
-                    show(active);
+                    render(active);
                 });
             })();
         });

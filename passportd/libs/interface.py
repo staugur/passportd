@@ -970,14 +970,14 @@ class NoticeClass(RequestMixIn):
 
     @staticmethod
     def _filter_valid(notices: list) -> list:
-        """过滤未过期的公告（etime=0 为永不过期）。"""
+        """过滤未过期的公告（etime=0 或 None/null 为永不过期）。"""
         from ..basis.common import now
 
         ts = now()
         return [
             n
             for n in notices
-            if int(n.get("etime", 0)) == 0 or int(n.get("etime", 0)) > ts
+            if int(n.get("etime") or 0) == 0 or int(n.get("etime") or 0) > ts
         ]
 
     def get_notices(self) -> list:
@@ -1001,8 +1001,8 @@ class NoticeClass(RequestMixIn):
                 if data.get("success") and isinstance(data.get("data"), list):
                     return self._filter_valid(data["data"])
                 return []
-            except Exception:
-                logger.warning("Failed to fetch notice from %s", notice)
+            except Exception as e:
+                logger.error(e)
                 return []
 
         return []

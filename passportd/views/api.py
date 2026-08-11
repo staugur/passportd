@@ -31,6 +31,7 @@ from ..models.user import (
     add_account,
     change_password,
     delete_account,
+    delete_user_data,
     generate_jwt,
     get_account as get_auth,
     has_account,
@@ -510,11 +511,11 @@ def user_bind_account():
 @bp.post("/user/unbind_account")
 @apilogin_required
 def user_unbind_account():
-    """解绑邮箱或手机号接口。
+    """解绑邮箱、手机号或第三方账号接口。
 
     验证当前密码，通过后删除该 Auth 记录。
 
-    :form account: 邮箱地址或手机号（必填）
+    :form account: 邮箱地址、手机号或第三方账号（必填）
     :form password: 当前密码（必填）
     :returns: 解绑结果 JSON
     """
@@ -538,6 +539,45 @@ def user_unbind_account():
     else:
         rdb.delete(f"{PROC_NAME}:unbind_vcode:{account}")
         return new_res(success=True, data=dict(deleted=ret))
+
+
+@bp.post("/user/delete")
+@apilogin_required
+def user_delete():
+    """注销账号接口。
+
+    需要输入密码确认操作，检查用户名下无 OIDC 客户端后，
+    级联删除所有用户数据（User / Auth / LoginRecord / OIDC 授权 / Passkey 等）。
+
+    :form password: 当前密码（必填）
+    :returns: 操作结果 JSON（成功时同时清除登录态 Cookie）
+    """
+    from flask import jsonify
+
+    uid = g.user["uid"]
+    password = request.form.get("password", "")
+
+    if not password:
+        raise ApiError("请输入密码确认注销")
+
+    u = User.get_or_none(User.uid == uid)
+    if not u or not u.password_hash:
+        raise ApiError("当前账号未设置密码，无法验证身份")
+    if not check_password_hash(u.password_hash, password):
+        raise ApiError("密码错误")
+
+    # 检查是否有 OIDC 客户端
+    if list_oauth_clients(uid):
+        raise ApiError("请先删除名下的所有 OIDC 应用客户端后再注销账号")
+
+    try:
+        ret = delete_user_data(uid=uid)
+    except PassportError as e:
+        raise ApiError(str(e))
+    else:
+        resp = jsonify(new_res(success=True, data=dict(deleted=ret)))
+        resp.set_cookie("sid", "", expires=0, httponly=True, samesite="Lax")
+        return resp
 
 
 @bp.post("/vcode_login")

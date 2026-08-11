@@ -21,7 +21,7 @@ from binascii import Error as BinasciiError
 from werkzeug.security import generate_password_hash, check_password_hash
 from playhouse.shortcuts import model_to_dict
 
-from .model import User, Auth, LoginRecord, db
+from .model import User, Auth, LoginRecord, OAuthToken, OAuthAuthorization, PasskeyCredential, db
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import AuthError, JWTError, ParamError
 from ..basis.vars import COMMON_DICT_TYPE
@@ -253,10 +253,10 @@ def add_account(
 
 
 def delete_account(uid: str, account: str) -> int:
-    """解绑用户的某个邮箱或手机号认证方式。
+    """解绑用户的某个邮箱、手机号或第三方认证方式。
 
     限制：
-    - 只能解绑邮箱或手机号类型
+    - 只能解绑邮箱、手机号或第三方登录类型
     - 至少保留一条 Auth 记录
     - ``account`` 必须属于该用户
 
@@ -272,8 +272,8 @@ def delete_account(uid: str, account: str) -> int:
         raise ParamError("Invalid account")
 
     classify = parse_account_classify(account)
-    if classify not in ("email", "mobile"):
-        raise ParamError("仅支持解绑邮箱或手机号")
+    if classify not in ("email", "mobile", "3rd"):
+        raise ParamError("仅支持解绑邮箱、手机号或第三方账号")
 
     if not has_uid(uid):
         raise AuthError("Not found uid")
@@ -293,6 +293,56 @@ def delete_account(uid: str, account: str) -> int:
         .execute()
     )
     return result
+
+
+def delete_user_data(uid: str) -> bool:
+    """注销账号，级联删除用户所有数据。
+
+    前置条件：
+    - 用户名下不能有 OIDC 客户端（需先手动删除）
+
+    删除顺序：
+    - PasskeyCredential（Passkey 凭证）
+    - OAuthToken（OIDC 令牌）
+    - OAuthAuthorization（OIDC 授权记录）
+    - LoginRecord（登录记录）
+    - Auth（认证方式）
+    - User（用户主记录）
+
+    :param uid: 用户唯一标识符
+    :returns: 删除成功返回 True
+    :raises ParamError: uid 无效
+    :raises AuthError: uid 不存在 / 存在 OIDC 客户端 / 数据库操作失败
+    """
+    from .oidc import list_oauth_clients  # 延迟导入，避免循环引用
+
+    if not uid or len(uid) != 22:
+        raise ParamError("Invalid uid")
+    if not has_uid(uid):
+        raise AuthError("Not found uid")
+
+    # 检查是否有 OIDC 客户端
+    if list_oauth_clients(uid):
+        raise AuthError(
+            "请先删除名下的所有 OIDC 应用客户端后再注销账号"
+        )
+
+    try:
+        with db.atomic():
+            PasskeyCredential.delete().where(
+                PasskeyCredential.uid == uid
+            ).execute()
+            OAuthToken.delete().where(OAuthToken.uid == uid).execute()
+            OAuthAuthorization.delete().where(
+                OAuthAuthorization.uid == uid
+            ).execute()
+            LoginRecord.delete().where(LoginRecord.uid == uid).execute()
+            Auth.delete().where(Auth.uid == uid).execute()
+            User.delete().where(User.uid == uid).execute()
+    except Exception as e:
+        raise AuthError(f"注销账号失败: {e}")
+    else:
+        return True
 
 
 def update_profile(
