@@ -370,5 +370,23 @@ def get_rp_id() -> str:
 
 
 def get_origin() -> str:
-    """获取 WebAuthn 允许的源 origin，从当前请求自动推导。"""
-    return request.host_url.rstrip("/")
+    """获取 WebAuthn 允许的源 origin，从当前请求自动推导。
+
+    兜底保护：当 ``request.host_url`` 在某些代理/反向代理环境下返回残缺值
+    （如仅 ``"https:"``）时，通过 Host header 或 request.host 重建完整 origin。
+    """
+    origin = request.host_url.rstrip("/")
+
+    # 检查 host_url 是否残缺（缺少主机名）
+    parsed = urlparse(origin)
+    if not parsed.hostname:
+        # 从 Host header 或 request.host 重建
+        host = (
+            request.headers.get("Host")
+            or (request.host.split(":")[0] if request.host else None)
+            or "localhost"
+        )
+        scheme = parsed.scheme or request.scheme or "https"
+        origin = "{}://{}".format(scheme, host)
+
+    return origin

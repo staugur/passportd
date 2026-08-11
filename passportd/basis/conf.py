@@ -103,8 +103,8 @@ class BaseConfig:
     PASSKEY_RP_ID: str = ""
 
     #: 公告通知配置。支持两种格式：
-    #: 1. list: [{"content": "公告内容", "ctime": 时间戳, "etime": 0或时间戳}]
-    #:    ctime 创建时间，etime 过期时间（0=永不过期）
+    #: 1. list: [{"content": "公告内容", "ctime": 时间戳, "etime": 0或时间戳, "closable": bool}]
+    #:    ctime 创建时间，etime 过期时间（0=永不过期），closable 是否允许关闭（默认 true）
     #: 2. str: URL 地址，需返回 JSON: {success, data: [...]}
     NOTICE = []
 

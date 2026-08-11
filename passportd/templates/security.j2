@@ -1,0 +1,244 @@
+{% extends "layout.j2" %}
+{% block title %}安全设置 - Passport{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="container" style="max-width: 800px;">
+
+        <h1 class="title is-4 mb-5">
+            <span class="icon-text">
+                <span class="icon"><i class="fa-solid fa-shield-halved"></i></span>
+                <span>安全审计日志</span>
+            </span>
+        </h1>
+
+        <p class="mb-5 has-text-grey is-size-7">
+            记录您账号的所有敏感操作，包括注册、绑定/解绑账号、Passkey 管理、OIDC 客户端管理以及修改密码等。
+        </p>
+
+        <div id="audit-msg" class="mb-3" style="display:none;"></div>
+
+        {# 审计日志表格 #}
+        <div class="box" id="audit-log-box">
+            <div class="table-container">
+                <table class="table is-fullwidth is-hoverable" id="audit-log-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>操作</th>
+                            <th>详情</th>
+                            <th>IP 地址</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-log-tbody">
+                        <tr id="audit-empty-row">
+                            <td colspan="4" class="has-text-centered has-text-grey py-5">
+                                <span class="icon is-medium"><i class="fa-solid fa-spinner fa-pulse"></i></span>
+                                <p class="mt-2">加载中...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {# 分页 #}
+        <nav class="pagination is-centered is-small" role="navigation" aria-label="pagination" id="audit-pagination" style="display:none;">
+            <button class="pagination-previous" id="btn-audit-prev" disabled>上一页</button>
+            <button class="pagination-next" id="btn-audit-next">下一页</button>
+            <ul class="pagination-list" id="audit-page-list">
+            </ul>
+        </nav>
+
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    $(function () {
+        var AUDIT_PAGE_SIZE = 20;
+        var currentPage = 1;
+        var totalPages = 1;
+        var $tbody = $('#audit-log-tbody');
+        var $pagination = $('#audit-pagination');
+        var $pageList = $('#audit-page-list');
+        var $btnPrev = $('#btn-audit-prev');
+        var $btnNext = $('#btn-audit-next');
+        var $msg = $('#audit-msg');
+
+        // 操作系统中文映射
+        var OS_LABELS = {
+            'Windows': 'Windows',
+            'Mac OS': 'macOS',
+            'iOS': 'iOS',
+            'Android': 'Android',
+            'Linux': 'Linux',
+            'Chrome OS': 'Chrome OS',
+        };
+
+        function showMsg(msg, type) {
+            var cls = 'notification is-light ';
+            if (type === 'success') cls += 'is-success';
+            else if (type === 'warning') cls += 'is-warning';
+            else cls += 'is-danger';
+            $msg.attr('class', cls).text(msg).show();
+            setTimeout(function () { $msg.fadeOut(); }, 6000);
+        }
+
+        // 格式化 UTC 时间戳
+        function formatTime(ts) {
+            if (!ts) return '—';
+            var d = new Date(ts * 1000);
+            var y = d.getFullYear();
+            var M = String(d.getMonth() + 1).padStart(2, '0');
+            var D = String(d.getDate()).padStart(2, '0');
+            var h = String(d.getHours()).padStart(2, '0');
+            var m = String(d.getMinutes()).padStart(2, '0');
+            var s = String(d.getSeconds()).padStart(2, '0');
+            return y + '-' + M + '-' + D + ' ' + h + ':' + m + ':' + s;
+        }
+
+        // 从 UA 解析简要设备信息
+        function parseUA(ua) {
+            if (!ua) return '';
+            var parts = [];
+            if (/Windows/i.test(ua)) parts.push('Windows');
+            else if (/Mac OS/i.test(ua)) parts.push('macOS');
+            else if (/iPhone|iPad|iOS/i.test(ua)) parts.push('iOS');
+            else if (/Android/i.test(ua)) parts.push('Android');
+            else if (/Linux/i.test(ua)) parts.push('Linux');
+            else if (/CrOS/i.test(ua)) parts.push('Chrome OS');
+
+            if (/Edg\//i.test(ua)) parts.push('Edge');
+            else if (/Firefox/i.test(ua)) parts.push('Firefox');
+            else if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) parts.push('Chrome');
+            else if (/Safari/i.test(ua) && !/Chrome/i.test(ua) && !/Edg/i.test(ua)) parts.push('Safari');
+
+            return parts.join(' · ') || '未知设备';
+        }
+
+        // 格式化详情
+        function formatDetail(action, detail) {
+            if (!detail || Object.keys(detail).length === 0) return '—';
+            var parts = [];
+            if (detail.account) parts.push('账号：' + $('<span>').text(detail.account).html());
+            if (detail.provider) parts.push('提供商：' + $('<span>').text(detail.provider).html());
+            if (detail.type) parts.push('类型：' + $('<span>').text(detail.type).html());
+            if (detail.client_id) parts.push('Client ID：<code class="is-size-7">' + $('<span>').text(detail.client_id).html() + '</code>');
+            if (detail.name) parts.push('名称：' + $('<span>').text(detail.name).html());
+            if (detail.device_name) parts.push('设备：' + $('<span>').text(detail.device_name).html());
+            if (detail.credential_id) parts.push('凭证ID：<code class="is-size-7">' + $('<span>').text(detail.credential_id).html() + '</code>');
+            return parts.join('<br>') || '—';
+        }
+
+        // 操作类型标签颜色
+        function actionTag(action, label) {
+            var cls = 'is-light';
+            if (action === 'register') cls = 'is-link is-light';
+            else if (action === 'change_password') cls = 'is-warning is-light';
+            else if (action === 'bind_account') cls = 'is-success is-light';
+            else if (action === 'unbind_account') cls = 'is-danger is-light';
+            else if (action.startsWith('passkey_')) cls = 'is-info is-light';
+            else if (action.startsWith('oidc_client_')) cls = 'is-primary is-light';
+            else if (action === 'oidc_auth_revoke') cls = 'is-danger is-light';
+            return '<span class="tag ' + cls + ' is-size-7">' + $('<span>').text(label).html() + '</span>';
+        }
+
+        function renderPage(logs) {
+            $tbody.empty();
+            if (!logs || logs.length === 0) {
+                $tbody.append('<tr id="audit-empty-row"><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-check"></i></span><p class="mt-2">暂无安全审计记录</p></td></tr>');
+                $pagination.hide();
+                return;
+            }
+            for (var i = 0; i < logs.length; i++) {
+                var log = logs[i];
+                var row = '<tr>' +
+                    '<td class="is-size-7" style="white-space:nowrap;">' + formatTime(log.ctime) + '</td>' +
+                    '<td>' + actionTag(log.action, log.action_label) + '</td>' +
+                    '<td class="is-size-7">' + formatDetail(log.action, log.detail) + '</td>' +
+                    '<td class="is-size-7 is-family-monospace" style="white-space:nowrap;" title="' + $('<span>').text(log.user_agent || '').html() + '">' +
+                        ($('<span>').text(log.ip || '—').html()) + '</td>' +
+                    '</tr>';
+                $tbody.append(row);
+            }
+        }
+
+        function renderPagination() {
+            if (totalPages <= 1) {
+                $pagination.hide();
+                return;
+            }
+            $pagination.show();
+            $btnPrev.prop('disabled', currentPage <= 1);
+            $btnNext.prop('disabled', currentPage >= totalPages);
+            $pageList.empty();
+            for (var p = 1; p <= totalPages; p++) {
+                var $li = $('<li>');
+                var $link = $('<a class="pagination-link" aria-label="第 ' + p + ' 页">').text(p);
+                if (p === currentPage) {
+                    $link.addClass('is-current');
+                    $link.attr('aria-current', 'page');
+                } else {
+                    $link.on('click', function () {
+                        var page = parseInt($(this).text(), 10);
+                        goToPage(page);
+                    });
+                }
+                $li.append($link);
+                $pageList.append($li);
+            }
+        }
+
+        function loadPage(page) {
+            var offset = (page - 1) * AUDIT_PAGE_SIZE;
+            $.ajax({
+                url: '{{ url_for("root.api.user_audit_log") }}',
+                method: 'GET',
+                data: { limit: AUDIT_PAGE_SIZE, offset: offset },
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success && res.data) {
+                        var logs = res.data.audit_logs || [];
+                        renderPage(logs);
+                        // 估算总页数：如果返回数量等于 page_size，则可能有更多
+                        if (logs.length >= AUDIT_PAGE_SIZE) {
+                            totalPages = currentPage + 1; // 保守估计至少多一页
+                        } else {
+                            totalPages = currentPage;
+                        }
+                        renderPagination();
+                    } else {
+                        showMsg(res.message || '加载审计日志失败', 'error');
+                        $tbody.html('<tr><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-exclamation"></i></span><p class="mt-2">加载失败</p></td></tr>');
+                        $pagination.hide();
+                    }
+                },
+                error: function () {
+                    showMsg('网络异常，请重试', 'error');
+                    $tbody.html('<tr><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-exclamation"></i></span><p class="mt-2">加载失败</p></td></tr>');
+                    $pagination.hide();
+                }
+            });
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadPage(page);
+        }
+
+        $btnPrev.on('click', function () {
+            goToPage(currentPage - 1);
+        });
+
+        $btnNext.on('click', function () {
+            goToPage(currentPage + 1);
+        });
+
+        // 初始加载
+        loadPage(1);
+    });
+</script>
+{% endblock %}

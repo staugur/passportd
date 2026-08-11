@@ -53,6 +53,7 @@ from ..utils.common import (
     generate_fingerprint,
 )
 from ..utils.web import set_user_state, is_safe_url, get_ip
+from ..models.audit import record_audit_log
 from ..models.user import (
     login,
     list_users,
@@ -397,6 +398,13 @@ class OAuthClintInterface(OAuth):
                 except PassportError as e:
                     return self._bind_redirect(str(e), "danger")
                 else:
+                    record_audit_log(
+                        uid=uid,
+                        action="bind_account",
+                        detail={"account": account, "provider": provider},
+                        ip=get_ip(),
+                        user_agent=request.headers.get("User-Agent", ""),
+                    )
                     return self._bind_redirect("绑定成功", "success")
 
         # 未登录 -> 关联、生成本地账号流程
@@ -513,11 +521,20 @@ class PasskeyInterface(object):
         """确保配置已初始化（首次调用时从请求上下文获取）。"""
         if self._initialized:
             return
+        from urllib.parse import urlparse
+
         from ..utils.web import get_rp_id, get_origin
 
         self._rp_id = get_rp_id()
         self._rp_name = config.get("PASSKEY_RP_NAME", PASSKEY_RP_NAME)
         self._origin = get_origin()
+
+        # 二次校验：写入缓存的 origin 必须合法，避免污染所有后续请求
+        parsed = urlparse(self._origin)
+        if not parsed.hostname or not parsed.scheme:
+            # origin 不合法时不标记已初始化，下次请求会重新尝试获取
+            return
+
         self._initialized = True
 
     @property
@@ -991,7 +1008,8 @@ class NoticeClass(RequestMixIn):
     def get_notices(self) -> list:
         """获取有效公告列表。
 
-        :returns: [{"content": "...", "ctime": ..., "etime": ...}, ...]
+        :returns: [{"content": "...", "ctime": ..., "etime": ..., "closable": ...}, ...]
+                  closable 缺省为 true，设为 false 时前端不渲染关闭按钮。
         """
         notice = config.get("NOTICE", [])
         if not notice:

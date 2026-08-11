@@ -236,9 +236,33 @@ class PasskeyCredential(Model):
         table_name = "passport_passkey"
 
 
+class AuditLog(Model):
+    """用户安全审计日志，记录敏感操作（注册、绑定、解绑、Passkey、OIDC 客户端管理等）。"""
+
+    #: 用户 uid
+    uid = CharField(max_length=22, index=True)
+    #: 操作类型：register / bind_account / unbind_account / passkey_add / passkey_delete
+    #:          / oidc_client_create / oidc_client_update / oidc_client_delete / oidc_auth_revoke
+    #:          / change_password / account_delete
+    action = CharField(max_length=32)
+    #: 操作详情（JSON 字符串，包含相关参数如 account、provider、client_id 等）
+    detail = TextField(default="")
+    #: 客户端 IP
+    ip = CharField(default="")
+    #: User-Agent
+    user_agent = TextField(default="")
+    #: 操作时间戳
+    ctime = IntegerField(default=now)
+
+    class Meta:
+        database = db
+        table_name = "passport_audit_log"
+        indexes = ((("uid", "ctime"), False),)
+
+
 # Create tables if they don't exist
 with db.atomic():
     db.create_tables(
-        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord, PasskeyCredential],
+        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord, PasskeyCredential, AuditLog],
         safe=True,
     )

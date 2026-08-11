@@ -47,6 +47,7 @@ from ..models.oidc import (
     list_oauth_authorizations_by_user,
     update_oauth_client,
 )
+from ..models.audit import list_audit_logs, record_audit_log
 from ..models.model import User
 from ..basis.errors import ApiError, PassportError, PasskeyError
 from ..basis.vars import JWE_HEADER, PROC_NAME
@@ -144,7 +145,7 @@ def signup():
         # 验证通过，删除已用验证码
         rdb.delete(f"{PROC_NAME}:signup_vcode:{account}")
 
-    return RegisterInterface(
+    result = RegisterInterface(
         account,
         decrypted_password,
         nickname=nickname,
@@ -153,6 +154,36 @@ def signup():
         avatar=avatar,
         location=location,
     )
+    # 记录注册审计日志
+    auth = get_auth(account)
+    if auth:
+        record_audit_log(
+            uid=auth["uid"],
+            action="register",
+            detail={"account": account},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
+    return result
+
+
+@bp.get("/user/audit_log")
+@apilogin_required
+def user_audit_log():
+    """获取当前用户的安全审计日志。
+
+    返回用户所有敏感操作记录（注册、绑定/解绑、Passkey、OIDC 客户端管理等），
+    按时间倒序排列。
+
+    :query limit: 返回条数（默认 50）
+    :query offset: 偏移量（默认 0）
+    :returns: data 中包含 audit_logs 列表
+    """
+    uid = g.user["uid"]
+    limit = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+    logs = list_audit_logs(uid=uid, limit=limit, offset=offset)
+    return new_res(success=True, data=dict(audit_logs=logs))
 
 
 @bp.post("/user/change_password")
@@ -192,6 +223,13 @@ def change_pwd():
     except PassportError as e:
         raise ApiError(str(e))
     else:
+        record_audit_log(
+            uid=uid,
+            action="change_password",
+            detail={},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
         return new_res(success=ret)
 
 
@@ -260,6 +298,13 @@ def oidc_client():
         except PassportError as e:
             raise ApiError(str(e))
         else:
+            record_audit_log(
+                uid=uid,
+                action="oidc_client_delete",
+                detail={"client_id": client_id},
+                ip=get_ip(),
+                user_agent=request.headers.get("User-Agent", ""),
+            )
             return new_res(success=True, data=dict(deleted=ret))
 
     if request.method == "PUT":
@@ -284,6 +329,13 @@ def oidc_client():
         except PassportError as e:
             raise ApiError(str(e))
         else:
+            record_audit_log(
+                uid=uid,
+                action="oidc_client_update",
+                detail={"client_id": client_id, "name": name},
+                ip=get_ip(),
+                user_agent=request.headers.get("User-Agent", ""),
+            )
             return new_res(success=True, data=ret)
 
     # POST: create
@@ -304,6 +356,13 @@ def oidc_client():
     except PassportError as e:
         raise ApiError(str(e))
     else:
+        record_audit_log(
+            uid=uid,
+            action="oidc_client_create",
+            detail={"client_id": ret.get("client_id", ""), "name": name},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
         res = new_res(success=True, data=ret)
         return res
 
@@ -334,6 +393,13 @@ def user_oauth_authorizations():
     except PassportError as e:
         raise ApiError(str(e))
     else:
+        record_audit_log(
+            uid=uid,
+            action="oidc_auth_revoke",
+            detail={"client_id": client_id},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
         return new_res(success=True, data=dict(deleted=ret))
 
 
@@ -505,6 +571,13 @@ def user_bind_account():
         raise ApiError(str(e))
     else:
         rdb.delete(f"{PROC_NAME}:bind_vcode:{account}")
+        record_audit_log(
+            uid=uid,
+            action="bind_account",
+            detail={"account": account, "type": classify},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
         return new_res(success=True, data=dict(account=account))
 
 
@@ -538,6 +611,13 @@ def user_unbind_account():
         raise ApiError(str(e))
     else:
         rdb.delete(f"{PROC_NAME}:unbind_vcode:{account}")
+        record_audit_log(
+            uid=uid,
+            action="unbind_account",
+            detail={"account": account},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
         return new_res(success=True, data=dict(deleted=ret))
 
 
@@ -571,7 +651,11 @@ def user_delete():
         raise ApiError("请先删除名下的所有 OIDC 应用客户端后再注销账号")
 
     try:
-        ret = delete_user_data(uid=uid)
+        ret = delete_user_data(
+            uid=uid,
+            ip=request.remote_addr or "",
+            user_agent=request.user_agent.string or "",
+        )
     except PassportError as e:
         raise ApiError(str(e))
     else:
@@ -691,6 +775,13 @@ def passkey_register_verify():
         result = PasskeyClient.verify_registration_response(uid, credential_json)
     except PasskeyError as e:
         raise ApiError(str(e))
+    record_audit_log(
+        uid=uid,
+        action="passkey_add",
+        detail={"device_name": result.get("device_name", ""), "credential_id": result.get("credential_id", "")},
+        ip=get_ip(),
+        user_agent=request.headers.get("User-Agent", ""),
+    )
     return new_res(success=True, data=result)
 
 
@@ -797,6 +888,13 @@ def passkey_delete_credential(credential_id: str):
     ret = PasskeyClient.delete_credential(uid, credential_id)
     if not ret:
         raise ApiError("credential not found")
+    record_audit_log(
+        uid=uid,
+        action="passkey_delete",
+        detail={"credential_id": credential_id},
+        ip=get_ip(),
+        user_agent=request.headers.get("User-Agent", ""),
+    )
     return new_res(success=True, data=dict(deleted=True))
 
 

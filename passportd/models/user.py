@@ -21,7 +21,7 @@ from binascii import Error as BinasciiError
 from werkzeug.security import generate_password_hash, check_password_hash
 from playhouse.shortcuts import model_to_dict
 
-from .model import User, Auth, LoginRecord, OAuthToken, OAuthAuthorization, PasskeyCredential, db
+from .model import User, Auth, AuditLog, LoginRecord, OAuthToken, OAuthAuthorization, PasskeyCredential, db
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import AuthError, JWTError, ParamError
 from ..basis.vars import COMMON_DICT_TYPE
@@ -295,13 +295,18 @@ def delete_account(uid: str, account: str) -> int:
     return result
 
 
-def delete_user_data(uid: str) -> bool:
+def delete_user_data(
+    uid: str,
+    ip: str = "",
+    user_agent: str = "",
+) -> bool:
     """注销账号，级联删除用户所有数据。
 
     前置条件：
     - 用户名下不能有 OIDC 客户端（需先手动删除）
 
     删除顺序：
+    - 写入 account_delete 审计日志
     - PasskeyCredential（Passkey 凭证）
     - OAuthToken（OIDC 令牌）
     - OAuthAuthorization（OIDC 授权记录）
@@ -309,12 +314,17 @@ def delete_user_data(uid: str) -> bool:
     - Auth（认证方式）
     - User（用户主记录）
 
+    注意：审计日志（AuditLog）不会被删除，保留为注销记录。
+
     :param uid: 用户唯一标识符
+    :param ip: 客户端 IP（用于审计日志）
+    :param user_agent: User-Agent（用于审计日志）
     :returns: 删除成功返回 True
     :raises ParamError: uid 无效
     :raises AuthError: uid 不存在 / 存在 OIDC 客户端 / 数据库操作失败
     """
     from .oidc import list_oauth_clients  # 延迟导入，避免循环引用
+    from .audit import record_audit_log
 
     if not uid or len(uid) != 22:
         raise ParamError("Invalid uid")
@@ -329,6 +339,14 @@ def delete_user_data(uid: str) -> bool:
 
     try:
         with db.atomic():
+            # 先写入注销审计日志（保留不删除）
+            record_audit_log(
+                uid=uid,
+                action="account_delete",
+                detail={"method": "password_verified"},
+                ip=ip,
+                user_agent=user_agent,
+            )
             PasskeyCredential.delete().where(
                 PasskeyCredential.uid == uid
             ).execute()

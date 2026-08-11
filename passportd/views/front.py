@@ -39,6 +39,7 @@ from ..models.user import (
     update_profile,
     get_user_by_uid,
 )
+from ..models.audit import record_audit_log
 from ..libs.interface import (
     LoginInterface,
     RegisterInterface,
@@ -149,6 +150,16 @@ def signup():
 
         res = RegisterInterface(account, password, nickname=nickname)
         if res["success"]:
+            # 记录注册审计日志
+            auth = get_account(account)
+            if auth:
+                record_audit_log(
+                    uid=auth["uid"],
+                    action="register",
+                    detail={"account": account},
+                    ip=get_ip(),
+                    user_agent=request.headers.get("User-Agent", ""),
+                )
             return redirect(
                 url_for(".signin")
                 + "?"
@@ -297,6 +308,15 @@ def oauth2go():
             except PassportError as e:
                 raise ApiError(f"绑定失败: {e}")
 
+            # 记录绑定审计日志
+            record_audit_log(
+                uid=uid,
+                action="bind_account",
+                detail={"account": userinfo["account"], "provider": provider},
+                ip=get_ip(),
+                user_agent=request.headers.get("User-Agent", ""),
+            )
+
             # 清除 Redis 并生成登录态
             rdb.delete(key)
             try:
@@ -337,6 +357,17 @@ def oauth2go():
                 )
             except PassportError as e:
                 raise ApiError(f"创建账号失败: {e}")
+
+            # 记录注册审计日志（通过 OAuth2 注册）
+            new_auth = get_account(userinfo["account"])
+            if new_auth:
+                record_audit_log(
+                    uid=new_auth["uid"],
+                    action="register",
+                    detail={"account": userinfo["account"], "provider": provider},
+                    ip=get_ip(),
+                    user_agent=request.headers.get("User-Agent", ""),
+                )
 
             # 清除 Redis 并生成登录态
             rdb.delete(key)
@@ -443,6 +474,13 @@ def profile():
 def oidc_client():
     """OIDC 客户端管理页面。"""
     return render_template("oidc.j2")
+
+
+@bp.get("/user/security")
+@login_required
+def security():
+    """安全页面：展示用户的安全审计日志。"""
+    return render_template("security.j2")
 
 
 

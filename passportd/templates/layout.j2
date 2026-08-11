@@ -226,6 +226,10 @@
                         <span class="icon"><i class="fa-solid fa-server"></i></span>
                         <span>OIDC Client</span>
                     </a>
+                    <a class="navbar-item" href="{{ url_for('root.front.security') }}">
+                        <span class="icon"><i class="fa-solid fa-shield-halved"></i></span>
+                        <span>安全</span>
+                    </a>
                     <div class="navbar-item">
                         <a class="button is-light" href="{{ url_for('root.front.signout') }}">登出</a>
                     </div>
@@ -311,7 +315,13 @@
                     }
                 }
 
-                function isDismissed(n) { return getDismissed().indexOf(String(n.ctime)) >= 0; }
+                function isDismissed(n) {
+                    // 不可关闭的公告始终视为未关闭，永远显示
+                    if (!isClosable(n)) return false;
+                    return getDismissed().indexOf(String(n.ctime)) >= 0;
+                }
+
+                function isClosable(n) { return n.closable !== false; }
 
                 function render(notices) {
                     if (!notices.length) return;
@@ -325,13 +335,15 @@
                         $item.append('<span><span style="opacity:0.5">[' + ds + ']</span> ' +
                             n.content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') +
                             '</span>');
-                        var $btn = $('<button class="notice-close" title="不再显示此公告">&times;</button>');
-                        $btn.on('click', function () {
-                            dismissNotice(n.ctime);
-                            $item.remove();
-                            if (!$bar.children().length) $bar.attr('hidden', '');
-                        });
-                        $item.append($btn);
+                        if (isClosable(n)) {
+                            var $btn = $('<button class="notice-close" title="不再显示此公告">&times;</button>');
+                            $btn.on('click', function () {
+                                dismissNotice(n.ctime);
+                                $item.remove();
+                                if (!$bar.children().length) $bar.attr('hidden', '');
+                            });
+                            $item.append($btn);
+                        }
                         $bar.append($item);
                     });
                     $bar.removeAttr('hidden');
