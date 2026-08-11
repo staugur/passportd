@@ -328,7 +328,10 @@ class OAuthClintInterface(OAuth):
                 )
             elif provider == "google":
                 user.update(
-                    account=self.build_account(provider, userinfo["sub"]),
+                    account=self.build_account(
+                        provider,
+                        userinfo.get("sub", userinfo.get("id", "")),
+                    ),
                     tpid=userinfo.get("email", ""),
                     name=userinfo.get("name") or "",
                     email=userinfo.get("email") or "",

@@ -1,6 +1,15 @@
 更新日志
 ========
 
+v2.6.5
+------
+
+修复
+~~~~
+
+- 修复 Google OAuth2 回调报 ``Failed to parse userinfo: 'sub'``：``userinfo_endpoint`` 配置为 v1 端点（``oauth2/v1/userinfo``），返回字段为 ``id``，但 ``parse_userinfo`` 取 ``userinfo["sub"]`` 导致 ``KeyError``。已将 ``userinfo_endpoint`` 和 ``api_base_url`` 升级到 v3 端点（``oauth2/v3/userinfo``），返回 ``sub`` 字段。同时 ``parse_userinfo`` 增加回退逻辑：优先取 ``sub``，兼容取 ``id``。
+- 修复 OAuth2 首次登录选择「直接创建账号」报 ``Invalid account or credential``：``add_profile`` 中 ``check_credential_rule`` 校验密码长度 6~32 字符，但 OAuth2 回调传入的 ``credential`` 是 ``access_token``（通常远超 32 字符），导致校验失败。改为仅对本地账号校验密码规则，第三方账号跳过该检查。
+
 v2.6.4
 ------
 
@@ -10,7 +19,6 @@ v2.6.4
 - 修复登录页面 ``signin.j2`` 中 ``{{ next }}`` 在 ``<script>`` 标签内被 Jinja2 ``autoescape`` 破坏的问题：URL 中的 ``&`` 被转义为 ``&amp;``，导致验证码/passkey 登录后跳转到 OIDC authorize 页面时 state 等查询参数解析错误。改用 ``|tojson`` 过滤器确保 JavaScript 上下文中字符串安全渲染。
 - 修复 Passkey 登录成功后 ``sid`` Cookie 丢失导致后续 OIDC 授权流程抛 ``joserfc.errors.BadSignatureError`` 的问题：``passkey_login_verify`` 端点未调用 ``auto_set_user_state`` 设置 ``sid`` Cookie，仅通过 JSON 返回 JWT token，前端 JS 通过 ``document.cookie`` 设置 Cookie 丢失 ``httponly`` 和 ``secure`` 属性。现已将 ``passkey_login_verify`` 改为调用 ``auto_set_user_state``，由服务端 ``Set-Cookie`` 响应头正确设置登录态。同时清理前端 ``signin.j2`` 中冗余的 ``document.cookie`` 操作。
 - 修复 Google OAuth2 登录报 ``Missing "jwks_uri" in metadata``：scope 含 ``openid`` 时 authlib 自动校验 id_token，需要 ``jwks_uri``。注册时补充 ``jwks_uri`` 和 ``userinfo_endpoint`` 元数据，并将 ``GOOGLE_CALLBACK_PROXY`` 代理注入 ``client_kwargs``，确保 JWKS 公钥拉取也走代理。
-
 
 v2.6.3
 ------

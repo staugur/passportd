@@ -158,7 +158,9 @@ def add_profile(
     如果是本地化账号，account应该是username格式，密码哈希存入 User.password_hash；
     如果是第三方账号，account应该是OAuthName.tpid格式，access_token 不入库。
     """
-    if not account or not check_credential_rule(credential):
+    if not account:
+        raise ParamError("Invalid account")
+    if is_local_account(account) and not check_credential_rule(credential):
         raise ParamError("Invalid account or credential")
     if len(account) < 4:
         raise ParamError("account length too short")
