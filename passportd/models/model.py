@@ -285,6 +285,8 @@ class UserSession(Model):
     device = CharField(max_length=32, default="")
     #: 登录来源（local/vcode/passkey/oauth2_github 等）
     method = CharField(max_length=32, default="")
+    #: 登录发起方（self 表示直接登录，OIDC 客户端名称表示通过 SSO 跳转登录）
+    source = CharField(max_length=64, default="")
     #: 登录时间戳
     ctime = IntegerField(default=now)
     #: 会话过期时间戳（对应 JWT exp）

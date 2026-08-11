@@ -60,9 +60,10 @@ from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..basis.common import new_res, is_passkey_enabled
 from ..utils.web import (
     apilogin_required,
+    auto_set_user_state,
     check_sms_rate_limit,
     get_ip,
-    auto_set_user_state,
+    resolve_login_source,
 )
 from ..utils.common import (
     generate_digital_verification_code,
@@ -699,6 +700,7 @@ def vcode_login():
     :form account: 邮箱地址或手机号（必填）
     :form code: 验证码（必填）
     :form remember: 是否记住登录（可选，勾选后 Cookie 有效期 7 天，否则 2 小时）
+    :form next: 登录后跳转地址（可选，用于识别 OIDC 客户端来源）
     :returns: 登录结果 JSON（服务端已设置 sid Cookie）
     """
     account = request.form.get("account", "").strip()
@@ -735,7 +737,9 @@ def vcode_login():
     )
 
     return auto_set_user_state(
-        account, expire, new_res(success=True), method="vcode"
+        account, expire, new_res(success=True),
+        method="vcode",
+        source=resolve_login_source(request.form.get("next", "")),
     )
 
 
@@ -877,6 +881,7 @@ def passkey_login_verify():
         user_agent=request.headers.get("User-Agent", ""),
         expire_time=int(time_ts()) + expire,
         method="passkey",
+        source="self",
     )
     RecordSessionInterface(
         uid=uid,

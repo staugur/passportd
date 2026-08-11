@@ -78,6 +78,7 @@ def create_app():
     )
     PluginManager(
         app,
+        logger=logger,
         plugin_packages=(
             "passportd.modules.oauth2_github",
             "passportd.modules.oauth2_gitee",

@@ -60,6 +60,7 @@ from ..utils.web import (
     get_redirect_url,
     auto_set_user_state,
     list_oauth2_providers,
+    resolve_login_source,
 )
 
 bp = Blueprint("front", "front")
@@ -215,7 +216,9 @@ def signin():
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
             return auto_set_user_state(
-                account, expire, get_redirect_url(), method="local"
+                account, expire, get_redirect_url(),
+                method="local",
+                source=resolve_login_source(request.args.get("next", "")),
             )
         else:
             return render_template(
@@ -338,6 +341,7 @@ def oauth2go():
                         data=dict(next=target_next or "/"),
                     ),
                     method=provider,
+                    source=resolve_login_source(target_next),
                 )
             except ApiError as e:
                 raise
@@ -393,6 +397,7 @@ def oauth2go():
                         data=dict(next=target_next or "/"),
                     ),
                     method=provider,
+                    source=resolve_login_source(target_next),
                 )
             except ApiError as e:
                 raise ApiError(f"设置登录态失败: {e}")

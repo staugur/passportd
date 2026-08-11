@@ -306,7 +306,8 @@
         data: {
           account: account,
           code: code,
-          remember: $('#vcode-remember').is(':checked') ? '1' : ''
+          remember: $('#vcode-remember').is(':checked') ? '1' : '',
+          next: '{{ next }}'
         },
         dataType: 'json',
         success: function (res) {

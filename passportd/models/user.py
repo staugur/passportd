@@ -633,6 +633,7 @@ def create_session(
     user_agent: str = "",
     expire_time: int = 0,
     method: str = "",
+    source: str = "",
 ) -> int:
     """创建一条活跃会话记录。
 
@@ -642,6 +643,7 @@ def create_session(
     :param user_agent: 原始 User-Agent 字符串
     :param expire_time: 会话过期时间戳（对应 JWT exp）
     :param method: 登录来源（local/vcode/passkey/oauth2_github 等）
+    :param source: 登录发起方（self 或 OIDC 客户端名称）
     :returns: 新记录的主键 id
     """
     browser, os_name, device = parse_user_agent(user_agent)
@@ -655,8 +657,12 @@ def create_session(
         device=device if device != "Desktop" else "",
         expire_time=expire_time,
         method=method,
+        source=source,
     )
-    logger.info(f"Session created: uid={uid} skey={session_key[:8]}... method={method}")
+    logger.info(
+        "Session created: uid=%s skey=%s... method=%s source=%s",
+        uid, session_key[:8], method, source,
+    )
     return row.id
 
 
@@ -684,9 +690,16 @@ def update_session_info(
         if device:
             update_fields[UserSession.device] = device
         if update_fields:
-            UserSession.update(**update_fields).where(
-                UserSession.session_key == session_key
-            ).execute()
+            rows = (
+                UserSession.update(**update_fields)
+                .where(UserSession.session_key == session_key)
+                .execute()
+            )
+            if rows == 0:
+                logger.warning(
+                    "update_session_info: no session found for skey=%s...",
+                    session_key[:8],
+                )
         return True
     except Exception as e:
         logger.error(f"Failed to update session {session_key[:8]}: {e}")

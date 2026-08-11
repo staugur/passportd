@@ -483,13 +483,14 @@ class IPQueryMixIn(RequestMixIn):
         :returns: 地理位置字符串（"国家, 省份, 城市"），查询失败返回空字符串
         """
         from ..basis.conf import config
-        ip_api_url = config.get("IP_API_URL",
-                                "https://hub.saintic.com/openservice/ip/rest")
+
+        ip_api_url = config.get(
+            "IP_API_URL", "https://hub.saintic.com/openservice/ip/rest"
+        )
         if not ip or ip in ("127.0.0.1", "::1", "localhost"):
             return ""
         try:
-            resp = self.http(ip_api_url, params={"ip": ip}, method="get",
-                             timeout=5)
+            resp = self.http(ip_api_url, params={"ip": ip}, method="get", timeout=5)
             data = resp.json()
         except Exception as e:
             return ""
@@ -515,7 +516,7 @@ class IPQueryMixIn(RequestMixIn):
         if not ip or ip in ("127.0.0.1", "::1", "localhost"):
             return ""
         try:
-            resp = self.http(API_URL, method="get", timeout=3)
+            resp = self.http(API_URL, method="get", timeout=5)
             data = resp.json()
         except Exception as e:
             return ""

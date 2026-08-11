@@ -20,7 +20,7 @@ from ipaddress import ip_address, ip_network
 from typing import Any, Optional, Tuple, Dict, Union
 from functools import wraps
 from time import strftime, time
-from urllib.parse import urlparse, urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 from flask import (
     g,
     request,
@@ -136,11 +136,52 @@ def set_user_state(
     return response
 
 
+def _parse_url_query_param(url: str, param: str) -> str:
+    """从 URL 查询字符串中提取指定参数的值。
+
+    :param url: 完整 URL 或路径
+    :param param: 参数名
+    :returns: 参数值，未找到返回空字符串
+    """
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        values = params.get(param, [])
+        return values[0] if values else ""
+    except Exception:
+        return ""
+
+
+def resolve_login_source(next_url: str) -> str:
+    """解析登录发起方。
+
+    从 next/success URL 中提取 OIDC client_id，匹配到客户端则返回其名称；
+    否则返回 ``"self"`` 表示直接登录。
+
+    :param next_url: 登录后的跳转 URL（通常是 OIDC authorize 地址）
+    :returns: 登录发起方标识（self 或客户端名称）
+    """
+    if not next_url:
+        return "self"
+    client_id = _parse_url_query_param(next_url, "client_id")
+    if not client_id:
+        return "self"
+    try:
+        from ..models.oidc import get_oauth_client  # 延迟导入避免循环引用
+        client = get_oauth_client(client_id)
+        if client:
+            return client.get("name", client_id)
+        return client_id
+    except Exception:
+        return "self"
+
+
 def auto_set_user_state(
     account: str,
     expire: int,
     data: Union[str, Dict[str, Any]],
     method: str = "",
+    source: str = "",
 ) -> Optional[Response]:
     """自动设置登录态
 
@@ -150,6 +191,7 @@ def auto_set_user_state(
     :param int expire: 过期时间（秒）
     :param Union[str, Dict[str, Any]] data: 响应数据，str类型表示url，dict类型表示json数据
     :param str method: 登录来源（local/vcode/passkey/oauth2_github 等）
+    :param str source: 登录发起方（self 或 OIDC 客户端名称）
     :rtype: Response
     """
     if account and isinstance(expire, int) and expire > 0 and data:
@@ -174,6 +216,7 @@ def auto_set_user_state(
                     user_agent=request.headers.get("User-Agent", ""),
                     expire_time=int(time()) + expire,
                     method=method,
+                    source=source,
                 )
                 # 后台线程异步更新 IP 位置和 UA 解析
                 from ..libs.interface import RecordSessionInterface  # 延迟导入避免循环引用

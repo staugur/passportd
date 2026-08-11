@@ -57,6 +57,7 @@ from ..utils.web import (
     set_user_state,
     is_safe_url,
     get_ip,
+    resolve_login_source,
 )
 from ..models.audit import record_audit_log
 from ..models.user import (
@@ -441,7 +442,9 @@ class OAuthClintInterface(OAuth):
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
                 return auto_set_user_state(
-                    account, expire, redirect_url, method=provider
+                    account, expire, redirect_url,
+                    method=provider,
+                    source=resolve_login_source(redirect_url),
                 )
             else:
                 # 账号未绑定，拦截返回，跳转到OAuth2选择页面（选择绑定本地账号或直接创建用户）
@@ -485,24 +488,30 @@ def RecordLoginInterface(
     """
 
     def _run():
-        querier = IPQueryMixIn()
-        location = querier.saintic_ip_query(ip)
-        if not location:
-            location = querier.ip_api_query(ip)
-        browser, os_name, device = parse_user_agent(ua)
-        fingerprint = generate_fingerprint(ip, ua, accept_lang)
-        record_login(
-            uid=uid,
-            account=account,
-            method=method,
-            ip=ip,
-            location=location,
-            user_agent=ua,
-            browser=browser,
-            os=os_name,
-            device=device,
-            fingerprint=fingerprint,
-        )
+        try:
+            querier = IPQueryMixIn()
+            location = querier.saintic_ip_query(ip)
+            if not location:
+                location = querier.ip_api_query(ip)
+            browser, os_name, device = parse_user_agent(ua)
+            fingerprint = generate_fingerprint(ip, ua, accept_lang)
+            record_login(
+                uid=uid,
+                account=account,
+                method=method,
+                ip=ip,
+                location=location,
+                user_agent=ua,
+                browser=browser,
+                os=os_name,
+                device=device,
+                fingerprint=fingerprint,
+            )
+        except Exception as e:
+            logger.error(
+                "RecordLoginInterface thread failed: uid=%s account=%s ip=%s err=%s",
+                uid, account, ip, e,
+            )
 
     Thread(target=_run, daemon=True).start()
 
@@ -528,20 +537,26 @@ def RecordSessionInterface(
     """
 
     def _run():
-        querier = IPQueryMixIn()
-        location = querier.saintic_ip_query(ip)
-        if not location:
-            location = querier.ip_api_query(ip)
-        browser, os_name, device = parse_user_agent(ua)
-        from ..models.user import update_session_info
+        try:
+            querier = IPQueryMixIn()
+            location = querier.saintic_ip_query(ip)
+            if not location:
+                location = querier.ip_api_query(ip)
+            browser, os_name, device = parse_user_agent(ua)
+            from ..models.user import update_session_info
 
-        update_session_info(
-            session_key=session_key,
-            location=location,
-            browser=browser,
-            os=os_name,
-            device=device,
-        )
+            update_session_info(
+                session_key=session_key,
+                location=location,
+                browser=browser,
+                os=os_name,
+                device=device,
+            )
+        except Exception as e:
+            logger.error(
+                "RecordSessionInterface thread failed: uid=%s skey=%s... ip=%s err=%s",
+                uid, session_key[:8], ip, e,
+            )
 
     Thread(target=_run, daemon=True).start()
 

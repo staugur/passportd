@@ -219,6 +219,16 @@
                 }
                 let subtitle = subParts.join(' · ') || '—';
 
+                // 登录方式和来源
+                let metaTags = [];
+                if (s.method) {
+                    metaTags.push('<span class="tag is-light is-size-7">' + $('<span>').text(s.method).html() + '</span>');
+                }
+                if (s.source && s.source !== 'self') {
+                    metaTags.push('<span class="tag is-info is-light is-size-7">来自 ' + $('<span>').text(s.source).html() + '</span>');
+                }
+                let metaLine = metaTags.length > 0 ? metaTags.join(' ') : '';
+
                 html += '<div class="box mb-2 py-3 px-4">' +
                     '<div class="is-flex is-align-items-center is-justify-content-space-between">' +
                         '<div class="is-flex is-align-items-center" style="gap:0.75rem;">' +
@@ -231,6 +241,7 @@
                                 '<p class="is-size-7 has-text-grey">' +
                                     $('<span>').text(subtitle).html() +
                                 '</p>' +
+                                (metaLine ? '<p class="mt-1" style="line-height:1.2;">' + metaLine + '</p>' : '') +
                             '</div>' +
                         '</div>' +
                         '<div class="has-text-right">' +

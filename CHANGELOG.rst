@@ -1,6 +1,25 @@
 更新日志
 ========
 
+v2.6.2
+------
+
+新特性
+~~~~~~
+
+- 活跃会话新增登录发起方记录：``UserSession`` 模型增加 ``source`` 字段，通过解析 OIDC authorize URL 中的 ``client_id`` 自动识别登录来源（``self`` 表示直接登录，OIDC 客户端名称表示通过 SSO 跳转登录）。
+
+.. code-block:: sql
+
+   ALTER TABLE passport_user_session ADD COLUMN source VARCHAR(64) NOT NULL DEFAULT '';
+
+- 安全中心活跃会话列表展示登录方式（``method``）和登录来源（``source``）。
+
+变更
+~~~~
+
+- 验证码登录 API 增加 ``next`` 参数传递，确保 vcode 登录也正确记录登录发起方。
+
 v2.6.1
 ------
 
@@ -18,6 +37,7 @@ v2.6.1
 
 - 修复第三方 OAuth 登录（已绑定账号路径）未生成活跃会话的问题。
 - 修复活跃会话地理位置始终为空的问题：``auto_set_user_state()`` 改用 ``get_ip()`` 提取真实客户端 IP，替代内网 ``remote_addr``。
+- 修复 daemon 线程无异常处理导致会话信息更新静默失败的问题：``RecordLoginInterface`` 和 ``RecordSessionInterface`` 线程体增加 try/except 日志；``update_session_info()`` 增加 0 行匹配诊断日志。
 
 变更
 ~~~~
