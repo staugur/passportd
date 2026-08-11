@@ -15,6 +15,7 @@ v2.6.0
 ~~~~
 
 - 「登录历史」从个人资料页移至安全页面，与活跃会话、审计日志统一展示。
+- IP 地理位置查询接口 ``IP_API_URL`` 改为可配置，通过环境变量 ``PASSPORT_IP_API_URL`` 覆盖，默认值为 ``https://hub.saintic.com/openservice/ip/rest``。
 
 
 v2.5.0

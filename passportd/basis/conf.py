@@ -108,6 +108,9 @@ class BaseConfig:
     #: 2. str: URL 地址，需返回 JSON: {success, data: [...]}
     NOTICE = []
 
+    #: IP 地理位置查询接口
+    IP_API_URL: str = "https://hub.saintic.com/openservice/ip/rest"
+
     # OAuth2 配置
     #: GitHub OAuth2 配置
     GITHUB_CLIENT_ID = ""
