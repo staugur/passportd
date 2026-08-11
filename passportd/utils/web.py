@@ -137,7 +137,10 @@ def set_user_state(
 
 
 def auto_set_user_state(
-    account: str, expire: int, data: Union[str, Dict[str, Any]]
+    account: str,
+    expire: int,
+    data: Union[str, Dict[str, Any]],
+    method: str = "",
 ) -> Optional[Response]:
     """自动设置登录态
 
@@ -146,6 +149,7 @@ def auto_set_user_state(
     :param str account: 用户账号
     :param int expire: 过期时间（秒）
     :param Union[str, Dict[str, Any]] data: 响应数据，str类型表示url，dict类型表示json数据
+    :param str method: 登录来源（local/vcode/passkey/oauth2_github 等）
     :rtype: Response
     """
     if account and isinstance(expire, int) and expire > 0 and data:
@@ -169,6 +173,7 @@ def auto_set_user_state(
                     ip=client_ip,
                     user_agent=request.headers.get("User-Agent", ""),
                     expire_time=int(time()) + expire,
+                    method=method,
                 )
                 # 后台线程异步更新 IP 位置和 UA 解析
                 from ..libs.interface import RecordSessionInterface  # 延迟导入避免循环引用

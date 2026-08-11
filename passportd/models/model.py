@@ -283,6 +283,8 @@ class UserSession(Model):
     os = CharField(max_length=64, default="")
     #: 设备类型
     device = CharField(max_length=32, default="")
+    #: 登录来源（local/vcode/passkey/oauth2_github 等）
+    method = CharField(max_length=32, default="")
     #: 登录时间戳
     ctime = IntegerField(default=now)
     #: 会话过期时间戳（对应 JWT exp）

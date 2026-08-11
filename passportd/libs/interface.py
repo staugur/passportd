@@ -440,7 +440,9 @@ class OAuthClintInterface(OAuth):
                     ua=request.headers.get("User-Agent", ""),
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
-                return auto_set_user_state(account, expire, redirect_url)
+                return auto_set_user_state(
+                    account, expire, redirect_url, method=provider
+                )
             else:
                 # 账号未绑定，拦截返回，跳转到OAuth2选择页面（选择绑定本地账号或直接创建用户）
                 key = f"oauth2go:{token_urlsafe(32)}"

@@ -632,6 +632,7 @@ def create_session(
     ip: str = "",
     user_agent: str = "",
     expire_time: int = 0,
+    method: str = "",
 ) -> int:
     """创建一条活跃会话记录。
 
@@ -640,6 +641,7 @@ def create_session(
     :param ip: 客户端 IP
     :param user_agent: 原始 User-Agent 字符串
     :param expire_time: 会话过期时间戳（对应 JWT exp）
+    :param method: 登录来源（local/vcode/passkey/oauth2_github 等）
     :returns: 新记录的主键 id
     """
     browser, os_name, device = parse_user_agent(user_agent)
@@ -652,8 +654,9 @@ def create_session(
         os=os_name if os_name != "Unknown" else "",
         device=device if device != "Desktop" else "",
         expire_time=expire_time,
+        method=method,
     )
-    logger.info(f"Session created: uid={uid} skey={session_key[:8]}...")
+    logger.info(f"Session created: uid={uid} skey={session_key[:8]}... method={method}")
     return row.id
 
 

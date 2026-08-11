@@ -734,7 +734,9 @@ def vcode_login():
         accept_lang=request.headers.get("Accept-Language", ""),
     )
 
-    return auto_set_user_state(account, expire, new_res(success=True))
+    return auto_set_user_state(
+        account, expire, new_res(success=True), method="vcode"
+    )
 
 
 def passkey_required(f):
@@ -874,6 +876,7 @@ def passkey_login_verify():
         ip=get_ip(),
         user_agent=request.headers.get("User-Agent", ""),
         expire_time=int(time_ts()) + expire,
+        method="passkey",
     )
     RecordSessionInterface(
         uid=uid,

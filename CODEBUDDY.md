@@ -22,7 +22,7 @@ passportd/
 ├── templates/          ← Jinja2 模板 (.j2)
 ├── static/             ← 静态资源
 ├── tests/              ← pytest 测试
-├── docs/               ← Sphinx 文档 + changelog.rst
+├── docs/               ← Sphinx 文档
 └── requirements/       ← pip 依赖 (base/dev/prod/docs)
 ```
 
@@ -87,7 +87,7 @@ def get_user_by_uid(uid: str) -> Optional[dict[str, Any]]:
 - **模块级**：文件开头用 `"""模块功能简述"""` 描述模块职责
 - **类和函数**：使用 docstring (三重双引号)，采用 **Sphinx RST** 格式，使用 `:param:`, `:type:`, `:returns:`, `:raises:` 等指令
 - 复杂逻辑用行内注释 `#` 解释意图，不要注释代码做了什么（代码本身说明了）
-- 注释使用英文，项目文档（ARCH.md / changelog.rst）使用中文
+- 注释使用英文，项目文档（ARCH.md / CHANGELOG.rst）使用中文
 - 项目文档（`docs/` 目录）使用 **Sphinx + reStructuredText**，文件后缀 `.rst`
 
 ```python
@@ -159,9 +159,10 @@ var $box = $('#sessions-box');
 
 ## 变更记录
 
-- **每次新增功能、修复问题或行为变更，必须同步更新 `docs/changelog.rst`**
+- **每次新增功能、修复问题或行为变更，必须同步更新 `CHANGELOG.rst`（项目根目录）**
 - 格式参考已有条目：版本号标题 + 分类（``新特性``/``修复``/``变更``）+ 简要描述
 - 版本号使用 `v<major>.<minor>.<patch>` 格式，如 ``v2.6.0``
+- **修改数据库模型（新增/删除/修改字段）时，必须在 changelog 中附带对应 SQL 语句**（ALTER TABLE / CREATE TABLE 等），使用 ``.. code-block:: sql`` 指令
 
 ```rst
 v2.7.0
@@ -171,6 +172,10 @@ v2.7.0
 ~~~~
 
 - 新增 XXX 功能，支持 YYY。
+
+.. code-block:: sql
+
+   ALTER TABLE some_table ADD COLUMN new_field VARCHAR(64) NOT NULL DEFAULT '';
 
 修复
 ~~~~

@@ -214,7 +214,9 @@ def signin():
                     ua=request.headers.get("User-Agent", ""),
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
-            return auto_set_user_state(account, expire, get_redirect_url())
+            return auto_set_user_state(
+                account, expire, get_redirect_url(), method="local"
+            )
         else:
             return render_template(
                 "signin.j2",
@@ -335,6 +337,7 @@ def oauth2go():
                         msg="绑定成功",
                         data=dict(next=target_next or "/"),
                     ),
+                    method=provider,
                 )
             except ApiError as e:
                 raise
@@ -376,7 +379,7 @@ def oauth2go():
                     RecordLoginInterface(
                         uid=auth["uid"],
                         account=userinfo["account"],
-                        method=f"oauth2_{provider}",
+                        method=provider,
                         ip=get_ip(),
                         ua=request.headers.get("User-Agent", ""),
                         accept_lang=request.headers.get("Accept-Language", ""),
@@ -389,6 +392,7 @@ def oauth2go():
                         msg="创建成功",
                         data=dict(next=target_next or "/"),
                     ),
+                    method=provider,
                 )
             except ApiError as e:
                 raise ApiError(f"设置登录态失败: {e}")
