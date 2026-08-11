@@ -15,18 +15,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import secrets
 from typing import Union, List
 from binascii import Error as BinasciiError
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from playhouse.shortcuts import model_to_dict
 
-from .model import User, Auth, AuditLog, LoginRecord, OAuthToken, OAuthAuthorization, PasskeyCredential, db
+from .model import User, Auth, AuditLog, LoginRecord, OAuthToken, OAuthAuthorization, PasskeyCredential, UserSession, db
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import AuthError, JWTError, ParamError
 from ..basis.vars import COMMON_DICT_TYPE
 from ..basis.common import now
 from ..basis.conf import config
+from ..utils.common import parse_user_agent
 from ..utils.common import (
     is_local_account,
     parse_account_classify,
@@ -307,6 +309,7 @@ def delete_user_data(
 
     删除顺序：
     - 写入 account_delete 审计日志
+    - UserSession（活跃会话）
     - PasskeyCredential（Passkey 凭证）
     - OAuthToken（OIDC 令牌）
     - OAuthAuthorization（OIDC 授权记录）
@@ -347,6 +350,9 @@ def delete_user_data(
                 ip=ip,
                 user_agent=user_agent,
             )
+            UserSession.delete().where(
+                UserSession.uid == uid
+            ).execute()
             PasskeyCredential.delete().where(
                 PasskeyCredential.uid == uid
             ).execute()
@@ -498,20 +504,24 @@ def login(account: str, credential: str) -> bool:
     return check_password_hash(u.password_hash, credential)
 
 
-def generate_jwt(account: str, expire: int = 7200) -> Union[None, str]:
+def generate_jwt(account: str, expire: int = 7200, session_key: str = "") -> Union[None, str]:
     """根据账号和凭证生成 JWT token。
 
     :param account: 用户账号
     :param expire: 过期时间（秒），默认 7200（2 小时）
+    :param session_key: 会话标识（可选），用于关联活跃会话记录
     :returns: JWT 字符串，账号不存在时返回 None
     """
     if not has_account(account):
         return
     a = Auth.get(Auth.account == account)
     if a:
+        payload = dict(sub=account, uid=a.uid)
+        if session_key:
+            payload["skey"] = session_key
         return jwt_encode(
             config["SECRET_KEY"],
-            dict(sub=account, uid=a.uid),
+            payload,
             expire,
         )
 
@@ -609,3 +619,115 @@ def list_login_records(uid: str, limit: int = 10) -> List[dict]:
         .limit(limit)
     )
     return [model_to_dict(r) for r in rows]
+
+
+# -------------------------------------------------------------------
+# 活跃会话管理
+# -------------------------------------------------------------------
+
+def create_session(
+    uid: str,
+    session_key: str,
+    *,
+    ip: str = "",
+    user_agent: str = "",
+    expire_time: int = 0,
+) -> int:
+    """创建一条活跃会话记录。
+
+    :param uid: 用户 uid
+    :param session_key: 会话标识符
+    :param ip: 客户端 IP
+    :param user_agent: 原始 User-Agent 字符串
+    :param expire_time: 会话过期时间戳（对应 JWT exp）
+    :returns: 新记录的主键 id
+    """
+    browser, os_name, device = parse_user_agent(user_agent)
+    row = UserSession.create(
+        uid=uid,
+        session_key=session_key,
+        ip=ip,
+        user_agent=user_agent,
+        browser=browser if browser != "Unknown" else "",
+        os=os_name if os_name != "Unknown" else "",
+        device=device if device != "Desktop" else "",
+        expire_time=expire_time,
+    )
+    logger.info(f"Session created: uid={uid} skey={session_key[:8]}...")
+    return row.id
+
+
+def update_session_info(
+    session_key: str,
+    *,
+    location: str = "",
+    browser: str = "",
+    os: str = "",
+    device: str = "",
+) -> bool:
+    """更新会话的 IP 位置、UA 解析信息（由后台线程调用）。
+
+    :param session_key: 会话标识符
+    :returns: 更新成功返回 True
+    """
+    try:
+        update_fields = {}
+        if location:
+            update_fields[UserSession.location] = location
+        if browser:
+            update_fields[UserSession.browser] = browser
+        if os:
+            update_fields[UserSession.os] = os
+        if device:
+            update_fields[UserSession.device] = device
+        if update_fields:
+            UserSession.update(**update_fields).where(
+                UserSession.session_key == session_key
+            ).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update session {session_key[:8]}: {e}")
+        return False
+
+
+def list_active_sessions(uid: str) -> List[dict]:
+    """查询指定用户的所有活跃会话（未过期），按登录时间倒序。
+
+    :param uid: 用户 uid
+    :returns: 活跃会话列表（dict 格式）
+    """
+    rows = (
+        UserSession.select()
+        .where(
+            (UserSession.uid == uid)
+            & (UserSession.expire_time > now())
+        )
+        .order_by(UserSession.ctime.desc())
+    )
+    return [model_to_dict(r) for r in rows]
+
+
+def delete_session(session_key: str) -> bool:
+    """删除指定会话记录（登出时调用）。
+
+    :param session_key: 会话标识符
+    :returns: 删除成功返回 True
+    """
+    try:
+        row = UserSession.get(UserSession.session_key == session_key)
+        row.delete_instance()
+        return True
+    except UserSession.DoesNotExist:
+        return False
+    except Exception as e:
+        logger.error(f"Failed to delete session {session_key[:8]}: {e}")
+        return False
+
+
+def delete_user_sessions(uid: str) -> int:
+    """删除指定用户的所有会话记录（注销账号或全设备登出时调用）。
+
+    :param uid: 用户 uid
+    :returns: 删除的记录数
+    """
+    return UserSession.delete().where(UserSession.uid == uid).execute()

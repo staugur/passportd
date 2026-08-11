@@ -260,9 +260,43 @@ class AuditLog(Model):
         indexes = ((("uid", "ctime"), False),)
 
 
+class UserSession(Model):
+    """用户活跃会话记录。
+
+    每次登录成功时创建一条会话，登出或注销时删除。
+    用于安全页面展示活跃会话列表（设备、IP、地理位置、浏览器、登录时间）。
+    """
+
+    #: 用户 uid
+    uid = CharField(max_length=22, index=True)
+    #: 会话标识（随机 token）
+    session_key = CharField(max_length=64, unique=True, index=True)
+    #: 客户端 IP
+    ip = CharField(max_length=64, default="")
+    #: 地理位置（通过 IP 查询获得）
+    location = CharField(max_length=128, default="")
+    #: 原始 User-Agent 字符串
+    user_agent = TextField(default="")
+    #: 浏览器名称
+    browser = CharField(max_length=64, default="")
+    #: 操作系统
+    os = CharField(max_length=64, default="")
+    #: 设备类型
+    device = CharField(max_length=32, default="")
+    #: 登录时间戳
+    ctime = IntegerField(default=now)
+    #: 会话过期时间戳（对应 JWT exp）
+    expire_time = IntegerField()
+
+    class Meta:
+        database = db
+        table_name = "passport_user_session"
+        indexes = ((("uid", "ctime"), False),)
+
+
 # Create tables if they don't exist
 with db.atomic():
     db.create_tables(
-        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord, PasskeyCredential, AuditLog],
+        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord, PasskeyCredential, AuditLog, UserSession],
         safe=True,
     )

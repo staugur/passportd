@@ -15,10 +15,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import secrets
 from ipaddress import ip_address, ip_network
 from typing import Any, Optional, Tuple, Dict, Union
 from functools import wraps
-from time import strftime
+from time import strftime, time
 from urllib.parse import urlparse, urljoin
 from flask import (
     g,
@@ -34,7 +35,7 @@ from flask import (
 from ..basis.vars import USR_STATE_KEY, PROC_NAME
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import ApiError
-from ..models.user import verify_jwt, generate_jwt
+from ..models.user import verify_jwt, generate_jwt, create_session, delete_session
 from .common import rdb, parse_account_classify
 
 signin_ep = "root.front.signin"
@@ -88,7 +89,7 @@ def parse_user_state() -> Tuple[bool, GetItemMixIn]:
 
     优先级：Cookie ``sid`` → Authorization Header ``sid`` → Query String ``sid``。
 
-    :returns: (是否登录, GetItemMixIn 字典，包含 uid 和 account)
+    :returns: (是否登录, GetItemMixIn 字典，包含 uid、account 和 skey)
     """
     sid = request.cookies.get(USR_STATE_KEY)
     if not sid:
@@ -101,7 +102,11 @@ def parse_user_state() -> Tuple[bool, GetItemMixIn]:
         payload = verify_jwt(sid, dump=True)
         if payload and isinstance(payload, dict):
             return True, GetItemMixIn(
-                dict(uid=payload["uid"], account=payload["sub"]),
+                dict(
+                    uid=payload["uid"],
+                    account=payload["sub"],
+                    skey=payload.get("skey", ""),
+                ),
             )
     return False, GetItemMixIn({})
 
@@ -136,17 +141,43 @@ def auto_set_user_state(
 ) -> Optional[Response]:
     """自动设置登录态
 
+    登录成功时同时创建活跃会话记录，并后台异步解析 IP 地理位置和 UA 信息。
+
     :param str account: 用户账号
     :param int expire: 过期时间（秒）
     :param Union[str, Dict[str, Any]] data: 响应数据，str类型表示url，dict类型表示json数据
     :rtype: Response
     """
     if account and isinstance(expire, int) and expire > 0 and data:
-        token = generate_jwt(account, expire)
+        session_key = secrets.token_hex(32)
+        token = generate_jwt(account, expire, session_key)
         if not token:
             raise ApiError("generate cookie failed")
         ret = set_user_state(token, data, expire)
         if ret and isinstance(ret, Response):
+            # 同步创建活跃会话记录（基本信息）
+            uid = g.user["uid"] if g.get("signin") else ""
+            if not uid:
+                from ..models.user import Auth
+                a = Auth.get(Auth.account == account)
+                uid = a.uid if a else ""
+            if uid:
+                create_session(
+                    uid=uid,
+                    session_key=session_key,
+                    ip=(request.remote_addr or ""),
+                    user_agent=request.headers.get("User-Agent", ""),
+                    expire_time=int(time()) + expire,
+                )
+                # 后台线程异步更新 IP 位置和 UA 解析
+                from ..libs.interface import RecordSessionInterface  # 延迟导入避免循环引用
+                RecordSessionInterface(
+                    uid=uid,
+                    session_key=session_key,
+                    ip=(request.remote_addr or ""),
+                    ua=request.headers.get("User-Agent", ""),
+                    accept_lang=request.headers.get("Accept-Language", ""),
+                )
             return ret
         else:
             raise ApiError("set cookie failed")
@@ -157,8 +188,16 @@ def auto_set_user_state(
 def clear_user_state():
     """清除用户登录态（设置过期 Cookie 清除 sid）。
 
+    同时删除对应的活跃会话记录（如果存在）。
+
     :returns: 重定向响应
     """
+    skey = g.user.get("skey", "") if g.get("user") else ""
+    if skey:
+        try:
+            delete_session(skey)
+        except Exception:
+            pass
     res = make_response(redirect(get_redirect_url("root.front.index")))
     res.set_cookie(key=USR_STATE_KEY, value="", expires=0)
     return res

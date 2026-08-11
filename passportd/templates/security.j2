@@ -5,6 +5,66 @@
 <section class="section">
     <div class="container" style="max-width: 800px;">
 
+        {# 活跃会话管理 #}
+        <h1 class="title is-4 mb-2">
+            <span class="icon-text">
+                <span class="icon"><i class="fa-solid fa-display"></i></span>
+                <span>活跃会话</span>
+            </span>
+        </h1>
+
+        <p class="mb-5 has-text-grey is-size-7">
+            当前已登录的设备列表。只有未过期的会话才会显示在这里。
+        </p>
+
+        <div id="sessions-msg" class="mb-3" style="display:none;"></div>
+
+        <div id="sessions-list" class="mb-6">
+            <div class="has-text-centered has-text-grey py-4">
+                <span class="icon is-medium"><i class="fa-solid fa-spinner fa-pulse"></i></span>
+                <p class="mt-2 is-size-7">加载会话...</p>
+            </div>
+        </div>
+
+        {# 登录历史 #}
+        <h1 class="title is-4 mb-2">
+            <span class="icon-text">
+                <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                <span>登录历史</span>
+            </span>
+        </h1>
+
+        <p class="mb-5 has-text-grey is-size-7">
+            您最近 10 次登录记录，包含时间、方式、IP、地点和设备信息。
+        </p>
+
+        <div id="login-history-msg" class="mb-3" style="display:none;"></div>
+
+        <div id="login-history-box" class="box mb-6">
+            <div class="table-container">
+                <table class="table is-fullwidth is-hoverable" id="login-history-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>方式</th>
+                            <th>IP</th>
+                            <th>地点</th>
+                            <th>设备</th>
+                        </tr>
+                    </thead>
+                    <tbody id="login-history-tbody">
+                        <tr id="login-empty-row">
+                            <td colspan="5" class="has-text-centered has-text-grey py-5">
+                                <span class="icon is-medium"><i class="fa-solid fa-spinner fa-pulse"></i></span>
+                                <p class="mt-2">加载中...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {# 审计日志 #}
         <h1 class="title is-4 mb-5">
             <span class="icon-text">
                 <span class="icon"><i class="fa-solid fa-shield-halved"></i></span>
@@ -57,18 +117,210 @@
 {% block extra_scripts %}
 <script>
     $(function () {
-        var AUDIT_PAGE_SIZE = 20;
-        var currentPage = 1;
-        var totalPages = 1;
-        var $tbody = $('#audit-log-tbody');
-        var $pagination = $('#audit-pagination');
-        var $pageList = $('#audit-page-list');
-        var $btnPrev = $('#btn-audit-prev');
-        var $btnNext = $('#btn-audit-next');
-        var $msg = $('#audit-msg');
+        let currentSessionKey = '{{ g.user.get("skey", "") }}';
+
+        // ========== 活跃会话 ==========
+        let $sessionsList = $('#sessions-list');
+        let $sessionsMsg = $('#sessions-msg');
+
+        function deviceIcon(s) {
+            // 优先按设备类型，其次按 OS
+            let device = (s.device || '').toLowerCase();
+            let os = (s.os || '').toLowerCase();
+            if (device.indexOf('phone') >= 0 || device.indexOf('mobile') >= 0) {
+                return '<i class="fa-solid fa-mobile-screen"></i>';
+            }
+            if (device.indexOf('tablet') >= 0 || device.indexOf('ipad') >= 0) {
+                return '<i class="fa-solid fa-tablet-screen-button"></i>';
+            }
+            let osIcons = {
+                'windows': 'fa-brands fa-windows',
+                'mac os': 'fa-brands fa-apple',
+                'macos': 'fa-brands fa-apple',
+                'ios': 'fa-brands fa-apple',
+                'android': 'fa-brands fa-android',
+                'linux': 'fa-brands fa-linux',
+                'chrome os': 'fa-brands fa-chrome',
+            };
+            for (let key in osIcons) {
+                if (os.indexOf(key) >= 0) return '<i class="' + osIcons[key] + '"></i>';
+            }
+            return '<i class="fa-solid fa-desktop"></i>';
+        }
+
+        function formatSessionTime(ts) {
+            if (!ts) return '—';
+            let d = new Date(ts * 1000);
+            let now = new Date();
+            let diffSec = Math.floor((now - d) / 1000);
+            if (diffSec < 60) return '刚刚';
+            if (diffSec < 3600) return Math.floor(diffSec / 60) + ' 分钟前';
+            if (diffSec < 86400) return Math.floor(diffSec / 3600) + ' 小时前';
+            let y = d.getFullYear();
+            let M = String(d.getMonth() + 1).padStart(2, '0');
+            let D = String(d.getDate()).padStart(2, '0');
+            let h = String(d.getHours()).padStart(2, '0');
+            let m = String(d.getMinutes()).padStart(2, '0');
+            return M + '-' + D + ' ' + h + ':' + m;
+        }
+
+        function loadSessions() {
+            $.ajax({
+                url: '{{ url_for("root.api.user_sessions") }}',
+                method: 'GET',
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success && res.data && res.data.sessions) {
+                        renderSessions(res.data.sessions);
+                    } else {
+                        $sessionsList.html(
+                            '<div class="has-text-centered has-text-grey py-4">' +
+                            '<p class="is-size-7">' + (res.message || '加载失败') + '</p></div>'
+                        );
+                    }
+                },
+                error: function () {
+                    $sessionsList.html(
+                        '<div class="has-text-centered has-text-grey py-4">' +
+                        '<p class="is-size-7">网络异常，请重试</p></div>'
+                    );
+                }
+            });
+        }
+
+        function renderSessions(sessions) {
+            if (!sessions || sessions.length === 0) {
+                $sessionsList.html(
+                    '<div class="has-text-centered has-text-grey py-4">' +
+                    '<span class="icon is-medium"><i class="fa-solid fa-circle-check"></i></span>' +
+                    '<p class="mt-2 is-size-7">无活跃会话</p></div>'
+                );
+                return;
+            }
+
+            let html = '';
+            for (let i = 0; i < sessions.length; i++) {
+                let s = sessions[i];
+                let isCurrent = currentSessionKey && s.session_key === currentSessionKey;
+
+                // 主标题：OS + 设备类型
+                let titleParts = [];
+                if (s.os) titleParts.push(s.os);
+                if (s.device && s.device !== 'Desktop') titleParts.push(s.device);
+                let title = titleParts.join(' · ') || (s.browser || '未知设备');
+
+                // 副标题：浏览器 + IP + 地点
+                let subParts = [];
+                if (s.browser) subParts.push(s.browser);
+                if (s.ip) {
+                    let ipLine = s.ip;
+                    if (s.location) ipLine += ' · ' + s.location;
+                    subParts.push(ipLine);
+                }
+                let subtitle = subParts.join(' · ') || '—';
+
+                html += '<div class="box mb-2 py-3 px-4">' +
+                    '<div class="is-flex is-align-items-center is-justify-content-space-between">' +
+                        '<div class="is-flex is-align-items-center" style="gap:0.75rem;">' +
+                            '<span class="icon is-medium has-text-grey" style="font-size:1.5rem;">' + deviceIcon(s) + '</span>' +
+                            '<div>' +
+                                '<p class="is-size-6 has-text-weight-medium">' +
+                                    $('<span>').text(title).html() +
+                                    (isCurrent ? ' <span class="tag is-link is-light is-size-7" style="vertical-align:middle;">当前设备</span>' : '') +
+                                '</p>' +
+                                '<p class="is-size-7 has-text-grey">' +
+                                    $('<span>').text(subtitle).html() +
+                                '</p>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="has-text-right">' +
+                            '<p class="is-size-7 has-text-grey" title="' + formatSessionTime(s.ctime) + '">' + formatSessionTime(s.ctime) + '</p>' +
+                        '</div>' +
+                    '</div>' +
+                    '</div>';
+            }
+            $sessionsList.html(html);
+        }
+
+        loadSessions();
+
+        // ========== 登录历史 ==========
+        let $lgTbody = $('#login-history-tbody');
+
+        function loadLoginHistory() {
+            $.ajax({
+                url: '{{ url_for("root.api.login_history") }}',
+                method: 'GET',
+                dataType: 'json',
+                success: function (res) {
+                    if (res.success && res.data && res.data.login_history) {
+                        renderLoginHistory(res.data.login_history);
+                    } else {
+                        $lgTbody.html('<tr><td colspan="5" class="has-text-centered has-text-grey py-4">加载失败</td></tr>');
+                    }
+                },
+                error: function () {
+                    $lgTbody.html('<tr><td colspan="5" class="has-text-centered has-text-grey py-4">网络异常</td></tr>');
+                }
+            });
+        }
+
+        function renderLoginHistory(records) {
+            if (!records.length) {
+                $lgTbody.html('<tr><td colspan="5" class="has-text-centered has-text-grey py-5">' +
+                    '<span class="icon is-medium"><i class="fa-solid fa-clock"></i></span>' +
+                    '<p class="mt-2">暂无登录记录</p></td></tr>');
+                return;
+            }
+            let rows = '';
+            for (let i = 0; i < records.length; i++) {
+                let r = records[i];
+                let t = new Date(r.ctime * 1000);
+                let ds = t.getFullYear() + '-' +
+                    String(t.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(t.getDate()).padStart(2, '0') + ' ' +
+                    String(t.getHours()).padStart(2, '0') + ':' +
+                    String(t.getMinutes()).padStart(2, '0') + ':' +
+                    String(t.getSeconds()).padStart(2, '0');
+                let methodTag;
+                if (r.method === 'local') {
+                    methodTag = '<span class="tag is-info is-light">账号密码</span>';
+                } else {
+                    methodTag = '<span class="tag is-light">' + $('<span>').text(r.method || '—').html() + '</span>';
+                }
+                let deviceInfo = [];
+                if (r.browser) deviceInfo.push(r.browser);
+                if (r.os) deviceInfo.push(r.os);
+                if (r.device === 'Mobile') deviceInfo.push('<span class="tag is-warning is-light is-small">手机</span>');
+                else if (r.device === 'Tablet') deviceInfo.push('<span class="tag is-link is-light is-small">平板</span>');
+                let deviceCell = deviceInfo.join(' ') || '<span class="has-text-grey-light">—</span>';
+
+                rows += '<tr>' +
+                    '<td class="is-size-7">' + ds + '</td>' +
+                    '<td>' + methodTag + '</td>' +
+                    '<td><span class="is-size-7 is-family-monospace">' + $('<span>').text(r.ip || '—').html() + '</span></td>' +
+                    '<td><span class="is-size-7">' + $('<span>').text(r.location || '—').html() + '</span></td>' +
+                    '<td><span class="is-size-7">' + deviceCell + '</span></td>' +
+                    '</tr>';
+            }
+            $lgTbody.html(rows);
+        }
+
+        loadLoginHistory();
+
+        // ========== 审计日志（已有逻辑）==========
+        let AUDIT_PAGE_SIZE = 20;
+        let currentPage = 1;
+        let totalPages = 1;
+        let $tbody = $('#audit-log-tbody');
+        let $pagination = $('#audit-pagination');
+        let $pageList = $('#audit-page-list');
+        let $btnPrev = $('#btn-audit-prev');
+        let $btnNext = $('#btn-audit-next');
+        let $msg = $('#audit-msg');
 
         // 操作系统中文映射
-        var OS_LABELS = {
+        let OS_LABELS = {
             'Windows': 'Windows',
             'Mac OS': 'macOS',
             'iOS': 'iOS',
@@ -78,7 +330,7 @@
         };
 
         function showMsg(msg, type) {
-            var cls = 'notification is-light ';
+            let cls = 'notification is-light ';
             if (type === 'success') cls += 'is-success';
             else if (type === 'warning') cls += 'is-warning';
             else cls += 'is-danger';
@@ -89,20 +341,20 @@
         // 格式化 UTC 时间戳
         function formatTime(ts) {
             if (!ts) return '—';
-            var d = new Date(ts * 1000);
-            var y = d.getFullYear();
-            var M = String(d.getMonth() + 1).padStart(2, '0');
-            var D = String(d.getDate()).padStart(2, '0');
-            var h = String(d.getHours()).padStart(2, '0');
-            var m = String(d.getMinutes()).padStart(2, '0');
-            var s = String(d.getSeconds()).padStart(2, '0');
+            let d = new Date(ts * 1000);
+            let y = d.getFullYear();
+            let M = String(d.getMonth() + 1).padStart(2, '0');
+            let D = String(d.getDate()).padStart(2, '0');
+            let h = String(d.getHours()).padStart(2, '0');
+            let m = String(d.getMinutes()).padStart(2, '0');
+            let s = String(d.getSeconds()).padStart(2, '0');
             return y + '-' + M + '-' + D + ' ' + h + ':' + m + ':' + s;
         }
 
         // 从 UA 解析简要设备信息
         function parseUA(ua) {
             if (!ua) return '';
-            var parts = [];
+            let parts = [];
             if (/Windows/i.test(ua)) parts.push('Windows');
             else if (/Mac OS/i.test(ua)) parts.push('macOS');
             else if (/iPhone|iPad|iOS/i.test(ua)) parts.push('iOS');
@@ -121,7 +373,7 @@
         // 格式化详情
         function formatDetail(action, detail) {
             if (!detail || Object.keys(detail).length === 0) return '—';
-            var parts = [];
+            let parts = [];
             if (detail.account) parts.push('账号：' + $('<span>').text(detail.account).html());
             if (detail.provider) parts.push('提供商：' + $('<span>').text(detail.provider).html());
             if (detail.type) parts.push('类型：' + $('<span>').text(detail.type).html());
@@ -134,7 +386,7 @@
 
         // 操作类型标签颜色
         function actionTag(action, label) {
-            var cls = 'is-light';
+            let cls = 'is-light';
             if (action === 'register') cls = 'is-link is-light';
             else if (action === 'change_password') cls = 'is-warning is-light';
             else if (action === 'bind_account') cls = 'is-success is-light';
@@ -152,9 +404,9 @@
                 $pagination.hide();
                 return;
             }
-            for (var i = 0; i < logs.length; i++) {
-                var log = logs[i];
-                var row = '<tr>' +
+            for (let i = 0; i < logs.length; i++) {
+                let log = logs[i];
+                let row = '<tr>' +
                     '<td class="is-size-7" style="white-space:nowrap;">' + formatTime(log.ctime) + '</td>' +
                     '<td>' + actionTag(log.action, log.action_label) + '</td>' +
                     '<td class="is-size-7">' + formatDetail(log.action, log.detail) + '</td>' +
@@ -174,15 +426,15 @@
             $btnPrev.prop('disabled', currentPage <= 1);
             $btnNext.prop('disabled', currentPage >= totalPages);
             $pageList.empty();
-            for (var p = 1; p <= totalPages; p++) {
-                var $li = $('<li>');
-                var $link = $('<a class="pagination-link" aria-label="第 ' + p + ' 页">').text(p);
+            for (let p = 1; p <= totalPages; p++) {
+                let $li = $('<li>');
+                let $link = $('<a class="pagination-link" aria-label="第 ' + p + ' 页">').text(p);
                 if (p === currentPage) {
                     $link.addClass('is-current');
                     $link.attr('aria-current', 'page');
                 } else {
                     $link.on('click', function () {
-                        var page = parseInt($(this).text(), 10);
+                        let page = parseInt($(this).text(), 10);
                         goToPage(page);
                     });
                 }
@@ -192,7 +444,7 @@
         }
 
         function loadPage(page) {
-            var offset = (page - 1) * AUDIT_PAGE_SIZE;
+            let offset = (page - 1) * AUDIT_PAGE_SIZE;
             $.ajax({
                 url: '{{ url_for("root.api.user_audit_log") }}',
                 method: 'GET',
@@ -200,7 +452,7 @@
                 dataType: 'json',
                 success: function (res) {
                     if (res.success && res.data) {
-                        var logs = res.data.audit_logs || [];
+                        let logs = res.data.audit_logs || [];
                         renderPage(logs);
                         // 估算总页数：如果返回数量等于 page_size，则可能有更多
                         if (logs.length >= AUDIT_PAGE_SIZE) {

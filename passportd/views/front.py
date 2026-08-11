@@ -35,7 +35,6 @@ from ..models.user import (
     add_profile,
     get_account,
     list_accounts,
-    list_login_records,
     update_profile,
     get_user_by_uid,
 )
@@ -457,13 +456,11 @@ def profile():
 
     accounts = list_accounts(uid)
     oauth2_providers = list_oauth2_providers()
-    login_records = list_login_records(uid, limit=10)
     return render_template(
         "profile.j2",
         profile=profile_data,
         accounts=accounts,
         oauth2_providers=oauth2_providers,
-        login_records=login_records,
         msg=msg,
         msg_type=msg_type,
     )

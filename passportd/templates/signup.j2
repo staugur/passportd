@@ -106,24 +106,24 @@
 {% block extra_scripts %}
 <script>
 $(function () {
-    var $tabUsername = $('#tab-username');
-    var $tabVcode = $('#tab-vcode');
-    var $vcodeSection = $('#vcode-section');
-    var $accountInput = $('#signup-account');
-    var $accountHint = $('#account-hint');
-    var $vcodeHint = $('#vcode-hint');
-    var $vcodeInput = $('#signup-vcode');
-    var $btnSendVcode = $('#btn-send-signup-vcode');
-    var $btnSubmit = $('#btn-submit-signup');
+    let $tabUsername = $('#tab-username');
+    let $tabVcode = $('#tab-vcode');
+    let $vcodeSection = $('#vcode-section');
+    let $accountInput = $('#signup-account');
+    let $accountHint = $('#account-hint');
+    let $vcodeHint = $('#vcode-hint');
+    let $vcodeInput = $('#signup-vcode');
+    let $btnSendVcode = $('#btn-send-signup-vcode');
+    let $btnSubmit = $('#btn-submit-signup');
 
-    var currentTab = 'username';
-    var sendTimer = null;
-    var sendCountdown = 0;
+    let currentTab = 'username';
+    let sendTimer = null;
+    let sendCountdown = 0;
 
     // Tab 切换
     $('#signup-tabs li a').on('click', function (e) {
         e.preventDefault();
-        var tab = $(this).parent().data('tab');
+        let tab = $(this).parent().data('tab');
 
         if (tab === 'username') {
             $tabUsername.addClass('is-active');
@@ -151,7 +151,7 @@ $(function () {
 
     // 发送注册验证码
     $btnSendVcode.on('click', function () {
-        var account = $accountInput.val().trim();
+        let account = $accountInput.val().trim();
         if (!account) {
             $vcodeHint.text('请先输入邮箱或手机号').addClass('has-text-danger').removeClass('has-text-success');
             return;
@@ -210,10 +210,10 @@ $(function () {
 
     // 表单提交前校验
     $('#signup-form').on('submit', function () {
-        var account = $accountInput.val().trim();
+        let account = $accountInput.val().trim();
 
         if (currentTab === 'vcode') {
-            var vcode = $vcodeInput.val().trim();
+            let vcode = $vcodeInput.val().trim();
             if (!account || !vcode) {
                 return true; // 交给后端校验
             }

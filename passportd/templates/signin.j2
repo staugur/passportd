@@ -205,22 +205,22 @@
 {% block extra_scripts %}
 <script>
   $(function () {
-    var $tabs = $('#tab-password, #tab-vcode, #tab-passkey');
-    var $tabPassword = $('#tab-password');
-    var $tabVcode = $('#tab-vcode');
-    var $tabPasskey = $('#tab-passkey');
-    var $formPassword = $('#form-password');
-    var $formVcode = $('#form-vcode');
-    var $formPasskey = $('#form-passkey');
-    var $btnSend = $('#btn-send-vcode');
-    var $btnLogin = $('#btn-vcode-login');
-    var $btnPasskeyLogin = $('#btn-passkey-login');
-    var $vcodeHint = $('#vcode-hint');
-    var countdownTimer = null;
+    let $tabs = $('#tab-password, #tab-vcode, #tab-passkey');
+    let $tabPassword = $('#tab-password');
+    let $tabVcode = $('#tab-vcode');
+    let $tabPasskey = $('#tab-passkey');
+    let $formPassword = $('#form-password');
+    let $formVcode = $('#form-vcode');
+    let $formPasskey = $('#form-passkey');
+    let $btnSend = $('#btn-send-vcode');
+    let $btnLogin = $('#btn-vcode-login');
+    let $btnPasskeyLogin = $('#btn-passkey-login');
+    let $vcodeHint = $('#vcode-hint');
+    let countdownTimer = null;
 
     // Tab 切换
     $('#tab-password a, #tab-vcode a, #tab-passkey a').on('click', function () {
-      var tab = $(this).parent().data('tab');
+      let tab = $(this).parent().data('tab');
       $tabs.removeClass('is-active');
       $formPassword.addClass('is-hidden');
       $formVcode.addClass('is-hidden');
@@ -367,21 +367,21 @@
     // ---- Passkey 登录 ----
 
     function b64urlToBuf(b64) {
-      var bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
-      var len = bin.length, buf = new ArrayBuffer(len), arr = new Uint8Array(buf);
-      for (var i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+      let bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+      let len = bin.length, buf = new ArrayBuffer(len), arr = new Uint8Array(buf);
+      for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
       return buf;
     }
     function bufToB64url(buf) {
-      var arr = new Uint8Array(buf), bin = '';
-      for (var i = 0; i < arr.byteLength; i++) bin += String.fromCharCode(arr[i]);
+      let arr = new Uint8Array(buf), bin = '';
+      for (let i = 0; i < arr.byteLength; i++) bin += String.fromCharCode(arr[i]);
       return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
     // Passkey 登录按钮
     $btnPasskeyLogin.on('click', function () {
-      var $msg = $('#passkey-msg');
-      var $msgText = $('#passkey-msg-text');
+      let $msg = $('#passkey-msg');
+      let $msgText = $('#passkey-msg-text');
       $msg.hide();
       $btnPasskeyLogin.prop('disabled', true).addClass('is-loading');
 
@@ -394,7 +394,7 @@
             showPasskeyErr(res.message || '获取认证选项失败');
             return;
           }
-          var opts = res.data;
+          let opts = res.data;
           opts.challenge = b64urlToBuf(opts.challenge);
           if (opts.allowCredentials) {
             opts.allowCredentials = opts.allowCredentials.map(function (c) {
@@ -403,7 +403,7 @@
             });
           }
           navigator.credentials.get({ publicKey: opts }).then(function (cred) {
-            var json = {
+            let json = {
               id: cred.id,
               rawId: bufToB64url(cred.rawId),
               type: cred.type,
@@ -425,10 +425,10 @@
             });
           }).then(function (res) {
             if (res.success) {
-              var token = res.data && res.data.token;
+              let token = res.data && res.data.token;
               if (token) {
                 showNotification('登录成功，正在跳转…', 'success');
-                var nextUrl = '{{ next }}' || '/';
+                let nextUrl = '{{ next }}' || '/';
                 document.cookie = 'sid=' + token + ';path=/;max-age=7200;SameSite=Lax';
                 setTimeout(function () { window.location.href = nextUrl; }, 500);
               }
@@ -443,8 +443,8 @@
           });
         },
         error: function (xhr) {
-          var msg = '服务请求失败';
-          try { var r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
+          let msg = '服务请求失败';
+          try { let r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
           showPasskeyErr(msg);
         }
       });

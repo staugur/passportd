@@ -15,12 +15,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import secrets
+from time import time as time_ts
+
 from flask import Blueprint, request, abort, g
 from werkzeug.security import check_password_hash
 from functools import wraps
 
 from ..libs.interface import (
     RecordLoginInterface,
+    RecordSessionInterface,
     RegisterInterface,
     UploadInterface,
     VCodeInterface,
@@ -30,12 +34,14 @@ from ..libs.interface import (
 from ..models.user import (
     add_account,
     change_password,
+    create_session,
     delete_account,
     delete_user_data,
     generate_jwt,
     get_account as get_auth,
     has_account,
     list_accounts,
+    list_active_sessions,
     list_login_records,
 )
 from ..models.oidc import (
@@ -184,6 +190,25 @@ def user_audit_log():
     offset = int(request.args.get("offset", 0))
     logs = list_audit_logs(uid=uid, limit=limit, offset=offset)
     return new_res(success=True, data=dict(audit_logs=logs))
+
+
+@bp.get("/user/sessions")
+@apilogin_required
+def user_sessions():
+    """获取当前用户的活跃会话列表。
+
+    返回未过期的活跃会话，包含设备、IP（含地理位置）、浏览器、登录时间。
+
+    :returns: data 中包含 sessions 列表
+    """
+    uid = g.user["uid"]
+    sessions = list_active_sessions(uid=uid)
+    for s in sessions:
+        # 移除前端不需要的字段
+        s.pop("id", None)
+        s.pop("user_agent", None)
+        s.pop("expire_time", None)
+    return new_res(success=True, data=dict(sessions=sessions))
 
 
 @bp.post("/user/change_password")
@@ -837,9 +862,26 @@ def passkey_login_verify():
         raise ApiError("passkey authentication succeeded but no account found")
 
     expire = 7200
-    token = generate_jwt(account, expire)
+    session_key = secrets.token_hex(32)
+    token = generate_jwt(account, expire, session_key)
     if not token:
         raise ApiError("generate token failed")
+
+    # 创建活跃会话记录
+    create_session(
+        uid=uid,
+        session_key=session_key,
+        ip=get_ip(),
+        user_agent=request.headers.get("User-Agent", ""),
+        expire_time=int(time_ts()) + expire,
+    )
+    RecordSessionInterface(
+        uid=uid,
+        session_key=session_key,
+        ip=get_ip(),
+        ua=request.headers.get("User-Agent", ""),
+        accept_lang=request.headers.get("Accept-Language", ""),
+    )
 
     # 记录登录日志
     RecordLoginInterface(

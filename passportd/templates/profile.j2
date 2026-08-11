@@ -175,69 +175,6 @@
             {% endif %}
         </div>
 
-        {# 登录历史 #}
-        <div class="box">
-            <h2 class="title is-5 mb-4">
-                <span class="icon-text">
-                    <span class="icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
-                    <span>最近登录</span>
-                </span>
-            </h2>
-            {% if login_records %}
-            <div class="table-container">
-                <table class="table is-fullwidth is-hoverable">
-                    <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>方式</th>
-                            <th>IP</th>
-                            <th>地点</th>
-                            <th>设备</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for rec in login_records %}
-                        <tr>
-                            <td class="is-size-7 js-timestamp" data-ts="{{ rec.ctime }}"></td>
-                            <td>
-                                {% if rec.method == 'local' %}
-                                <span class="tag is-info is-light">账号密码</span>
-                                {% else %}
-                                <span class="tag is-light">{{ rec.method }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="is-size-7 is-family-monospace">{{ rec.ip or '—' }}</span>
-                            </td>
-                            <td>
-                                <span class="is-size-7">{{ rec.location or '—' }}</span>
-                            </td>
-                            <td>
-                                <span class="is-size-7" title="{{ rec.user_agent or '' }}">
-                                    {{ rec.browser or '' }} {{ rec.os or '' }}
-                                    {% if rec.device == 'Mobile' %}
-                                    <span class="tag is-warning is-light is-small ml-1">手机</span>
-                                    {% elif rec.device == 'Tablet' %}
-                                    <span class="tag is-link is-light is-small ml-1">平板</span>
-                                    {% endif %}
-                                </span>
-                                {% if not rec.browser and not rec.os %}
-                                <span class="has-text-grey-light is-size-7">—</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="has-text-centered has-text-grey py-4">
-                <span class="icon is-large"><i class="fa-solid fa-clock"></i></span>
-                <p>暂无登录记录</p>
-            </div>
-            {% endif %}
-        </div>
-
         {# 绑定第三方登录 #}
         <div class="box">
             <h2 class="title is-5 mb-4">
@@ -1095,25 +1032,25 @@
     // Passkey 管理
     // =========================================================
     {% if g.passkey_enabled %}
-    var $passkeySection = $('#passkey-section');
-    var $passkeyTbody = $('#passkey-tbody');
-    var $passkeyMsg = $('#passkey-msg');
-    var $btnAddPasskey = $('#btn-add-passkey');
+    let $passkeySection = $('#passkey-section');
+    let $passkeyTbody = $('#passkey-tbody');
+    let $passkeyMsg = $('#passkey-msg');
+    let $btnAddPasskey = $('#btn-add-passkey');
 
     function b64urlToBuf(b64) {
-      var bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
-      var len = bin.length, buf = new ArrayBuffer(len), arr = new Uint8Array(buf);
-      for (var i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+      let bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+      let len = bin.length, buf = new ArrayBuffer(len), arr = new Uint8Array(buf);
+      for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
       return buf;
     }
     function bufToB64url(buf) {
-      var arr = new Uint8Array(buf), bin = '';
-      for (var i = 0; i < arr.byteLength; i++) bin += String.fromCharCode(arr[i]);
+      let arr = new Uint8Array(buf), bin = '';
+      for (let i = 0; i < arr.byteLength; i++) bin += String.fromCharCode(arr[i]);
       return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
     function showPasskeyMsg(msg, type) {
-        var cls = 'notification is-light ';
+        let cls = 'notification is-light ';
         if (type === 'success') cls += 'is-success';
         else if (type === 'warning') cls += 'is-warning';
         else cls += 'is-danger';
@@ -1121,7 +1058,7 @@
         setTimeout(function () { $passkeyMsg.fadeOut(); }, 6000);
     }
 
-    var editingCredentialId = null;
+    let editingCredentialId = null;
 
     function renderCredentials(list) {
         $passkeyTbody.empty();
@@ -1129,13 +1066,13 @@
             $passkeyTbody.append('<tr id="passkey-empty-row"><td colspan="4" class="has-text-centered has-text-grey">暂无绑定的 Passkey 设备</td></tr>');
             return;
         }
-        for (var i = 0; i < list.length; i++) {
-            var c = list[i];
-            var name = c.device_name || '未知设备';
-            var escapedName = $('<div>').text(name).html();
-            var ctime = c.ctime ? formatTimestamp(c.ctime) : '—';
-            var lastUsed = c.last_used_at ? formatTimestamp(c.last_used_at) : '—';
-            var row = '<tr data-credential-id="' + c.credential_id + '">' +
+        for (let i = 0; i < list.length; i++) {
+            let c = list[i];
+            let name = c.device_name || '未知设备';
+            let escapedName = $('<div>').text(name).html();
+            let ctime = c.ctime ? formatTimestamp(c.ctime) : '—';
+            let lastUsed = c.last_used_at ? formatTimestamp(c.last_used_at) : '—';
+            let row = '<tr data-credential-id="' + c.credential_id + '">' +
                 '<td><span class="passkey-name-text is-size-7 has-text-weight-medium">' + escapedName + '</span></td>' +
                 '<td class="is-size-7">' + ctime + '</td>' +
                 '<td class="is-size-7">' + lastUsed + '</td>' +
@@ -1176,7 +1113,7 @@
                     $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
                     return;
                 }
-                var opts = res.data;
+                let opts = res.data;
                 opts.challenge = b64urlToBuf(opts.challenge);
                 opts.user.id = b64urlToBuf(opts.user.id);
                 if (opts.excludeCredentials) {
@@ -1187,7 +1124,7 @@
                 }
 
                 navigator.credentials.create({ publicKey: opts }).then(function (cred) {
-                    var json = {
+                    let json = {
                         id: cred.id,
                         rawId: bufToB64url(cred.rawId),
                         type: cred.type,
@@ -1222,8 +1159,8 @@
                 });
             },
             error: function (xhr) {
-                var msg = '服务请求失败';
-                try { var r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
+                let msg = '服务请求失败';
+                try { let r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
                 showPasskeyMsg(msg, 'error');
                 $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
             }
@@ -1232,8 +1169,8 @@
 
     // 删除 Passkey
     $(document).on('click', '.btn-del-passkey', function () {
-        var credId = $(this).data('credential-id');
-        var $btn = $(this);
+        let credId = $(this).data('credential-id');
+        let $btn = $(this);
         if (!confirm('确定要删除这个 Passkey 设备吗？')) return;
         $btn.prop('disabled', true).addClass('is-loading');
 
@@ -1259,17 +1196,17 @@
 
     // Passkey 重命名 - inline 编辑
     $(document).on('click', '.btn-rename-passkey', function () {
-        var credId = $(this).data('credential-id');
+        let credId = $(this).data('credential-id');
         if (editingCredentialId === credId) return;
         // 如果正在编辑其他行，先取消
         if (editingCredentialId) cancelRename(editingCredentialId);
 
-        var $row = $('tr[data-credential-id="' + credId + '"]');
-        var $nameCell = $row.find('.passkey-name-text');
-        var oldName = $nameCell.text();
+        let $row = $('tr[data-credential-id="' + credId + '"]');
+        let $nameCell = $row.find('.passkey-name-text');
+        let oldName = $nameCell.text();
 
         editingCredentialId = credId;
-        var $input = $('<input class="input is-small rename-input" type="text" maxlength="128" style="width:220px;">').val(oldName);
+        let $input = $('<input class="input is-small rename-input" type="text" maxlength="128" style="width:220px;">').val(oldName);
         $nameCell.replaceWith($input);
         $input.focus().select();
 
@@ -1277,7 +1214,7 @@
             if (e.key === 'Enter') { $input.blur(); }
             if (e.key === 'Escape') { cancelRename(credId); }
         }).on('blur', function () {
-            var newName = $input.val().trim();
+            let newName = $input.val().trim();
             if (!newName || newName === oldName) {
                 cancelRename(credId);
                 return;
@@ -1305,8 +1242,8 @@
     });
 
     function cancelRename(credId) {
-        var $row = $('tr[data-credential-id="' + credId + '"]');
-        var $input = $row.find('.rename-input');
+        let $row = $('tr[data-credential-id="' + credId + '"]');
+        let $input = $row.find('.rename-input');
         if ($input.length) {
             $input.replaceWith('<span class="passkey-name-text is-size-7 has-text-weight-medium">' + $('<div>').text($input.val()).html() + '</span>');
         }
@@ -1318,11 +1255,11 @@
     // =========================================================
     // 注销账号
     // =========================================================
-    var $daModal = $('#delete-account-modal');
-    var $daPassword = $('#delete-account-password');
-    var $daConfirm = $('#delete-account-confirm');
-    var $daSubmit = $('#delete-account-submit');
-    var $daMsg = $('#delete-account-msg');
+    let $daModal = $('#delete-account-modal');
+    let $daPassword = $('#delete-account-password');
+    let $daConfirm = $('#delete-account-confirm');
+    let $daSubmit = $('#delete-account-submit');
+    let $daMsg = $('#delete-account-msg');
 
     function toggleDeleteSubmit() {
         $daSubmit.prop('disabled', !($daPassword.val().trim() && $daConfirm.is(':checked')));
@@ -1354,7 +1291,7 @@
 
     // 提交注销
     $daSubmit.on('click', function () {
-        var password = $daPassword.val().trim();
+        let password = $daPassword.val().trim();
         if (!password || !$daConfirm.is(':checked')) return;
 
         $daSubmit.prop('disabled', true).addClass('is-loading');

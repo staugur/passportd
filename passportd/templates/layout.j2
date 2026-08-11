@@ -224,7 +224,7 @@
                     </a>
                     <a class="navbar-item" href="{{ url_for('root.front.oidc_client') }}">
                         <span class="icon"><i class="fa-solid fa-server"></i></span>
-                        <span>OIDC Client</span>
+                        <span>OIDC</span>
                     </a>
                     <a class="navbar-item" href="{{ url_for('root.front.security') }}">
                         <span class="icon"><i class="fa-solid fa-shield-halved"></i></span>
@@ -297,8 +297,8 @@
 
             // 公告栏 — 获取 & 渲染 & 每条单独关闭
             (function () {
-                var $bar = $('#notice-bar');
-                var STORAGE_KEY = 'passport_dismissed_notices';
+                let $bar = $('#notice-bar');
+                let STORAGE_KEY = 'passport_dismissed_notices';
 
                 function getDismissed() {
                     try {
@@ -307,8 +307,8 @@
                 }
 
                 function dismissNotice(ctime) {
-                    var all = getDismissed();
-                    var id = String(ctime);
+                    let all = getDismissed();
+                    let id = String(ctime);
                     if (all.indexOf(id) < 0) {
                         all.push(id);
                         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); } catch (e) { }
@@ -327,16 +327,16 @@
                     if (!notices.length) return;
                     $bar.empty();
                     notices.forEach(function (n) {
-                        var t = new Date(n.ctime * 1000);
-                        var ds = t.getFullYear() + '-' +
+                        let t = new Date(n.ctime * 1000);
+                        let ds = t.getFullYear() + '-' +
                             String(t.getMonth() + 1).padStart(2, '0') + '-' +
                             String(t.getDate()).padStart(2, '0');
-                        var $item = $('<div class="notice-item"></div>');
+                        let $item = $('<div class="notice-item"></div>');
                         $item.append('<span><span style="opacity:0.5">[' + ds + ']</span> ' +
                             n.content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') +
                             '</span>');
                         if (isClosable(n)) {
-                            var $btn = $('<button class="notice-close" title="不再显示此公告">&times;</button>');
+                            let $btn = $('<button class="notice-close" title="不再显示此公告">&times;</button>');
                             $btn.on('click', function () {
                                 dismissNotice(n.ctime);
                                 $item.remove();
@@ -352,7 +352,7 @@
                 // 请求公告
                 $.getJSON('/api/notice', function (res) {
                     if (!res.success || !res.data || !res.data.length) return;
-                    var active = res.data.filter(function (n) { return !isDismissed(n); });
+                    let active = res.data.filter(function (n) { return !isDismissed(n); });
                     if (!active.length) return;
                     render(active);
                 });

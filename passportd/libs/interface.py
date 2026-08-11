@@ -504,6 +504,45 @@ def RecordLoginInterface(
     Thread(target=_run, daemon=True).start()
 
 
+def RecordSessionInterface(
+    uid: str,
+    session_key: str,
+    *,
+    ip: str = "",
+    ua: str = "",
+    accept_lang: str = "",
+) -> None:
+    """在后台线程中解析客户端信息并更新活跃会话记录。
+
+    将 UA 解析、IP 地理位置查询等耗时操作放到独立线程中执行，
+    避免阻塞登录响应。
+
+    :param uid: 用户 uid
+    :param session_key: 会话标识符
+    :param ip: 客户端 IP
+    :param ua: User-Agent 字符串
+    :param accept_lang: Accept-Language 请求头
+    """
+
+    def _run():
+        querier = IPQueryMixIn()
+        location = querier.saintic_ip_query(ip)
+        if not location:
+            location = querier.ip_api_query(ip)
+        browser, os_name, device = parse_user_agent(ua)
+        from ..models.user import update_session_info
+
+        update_session_info(
+            session_key=session_key,
+            location=location,
+            browser=browser,
+            os=os_name,
+            device=device,
+        )
+
+    Thread(target=_run, daemon=True).start()
+
+
 class PasskeyInterface(object):
     """WebAuthn Passkey 接口，管理密码密钥的注册与认证。
 
