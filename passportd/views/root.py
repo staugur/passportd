@@ -17,6 +17,7 @@ limitations under the License.
 
 from flask import Blueprint
 
+from ..libs.metrics import bp as metrics_bp
 from .api import bp as api_bp
 from .front import bp as front_bp
 from .oidc import bp as oidc_bp
@@ -25,3 +26,4 @@ root = Blueprint("root", "root")
 root.register_blueprint(api_bp, url_prefix="/api")
 root.register_blueprint(front_bp, url_prefix="/")
 root.register_blueprint(oidc_bp, url_prefix="/")
+root.register_blueprint(metrics_bp, url_prefix="/")

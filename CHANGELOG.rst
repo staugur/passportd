@@ -1,6 +1,30 @@
 更新日志
 ========
 
+v2.7.0
+------
+
+新特性
+~~~~~~
+
+- 新增 Prometheus 指标采集与导出：默认 ``GET /metrics`` 端点，覆盖以下指标类别：
+
+  - 进程指标：扫描所有 passportd/gunicorn 相关进程的 CPU 累计时间、RSS/VMS 内存、文件描述符数、socket 连接数与启动时间（基于 Linux ``/proc``，非 Linux 环境回退到当前进程）
+  - Python/GC 指标：``python_info``、GC 累计回收对象数（prometheus_client 内置），以及当前各代待回收对象数（``gc.get_count``）与 GC 阈值（``gc.get_threshold``）
+  - Gunicorn 指标：配置的 worker 数、存活 worker 数、master 存活状态、每个 worker 的 socket 连接数
+  - 业务指标：用户总数（按状态）、活跃会话数、认证身份数（按认证方式）、OIDC 客户端数、有效 OAuth token 数、Passkey 凭证数、登录记录数、审计日志数（查询数据库，带 TTL 缓存）
+  - 请求指标：HTTP 请求总数（按 method/status，经 Redis 聚合到全 worker）、当前进程请求耗时直方图与并发请求数
+  - Redis 指标：连接数、已用内存、运行时长、累计处理命令数等（来自 Redis INFO）
+
+- 新增配置项：
+
+  - ``METRICS_ENABLED``（默认 ``True``）：是否启用指标采集，关闭后 ``/metrics`` 返回 503
+  - ``METRICS_PATH``（默认 ``/metrics``）：指标端点路径（相对 ``URI_PREFIX``）
+  - ``METRICS_CACHE_TTL``（默认 30）：进程/业务/Redis 指标缓存秒数
+  - ``METRICS_TOKEN``（默认空）：可选 Bearer Token 鉴权，Prometheus 抓取需携带 ``Authorization: Bearer <token>``
+
+- 新增 Grafana Dashboard 配置示例 ``examples/grafana_dashboard.json``：覆盖进程资源、Gunicorn、Python/GC、业务指标、Redis、HTTP 请求等全部指标面板，导入 Grafana 后选择 Prometheus 数据源即可使用。
+
 v2.6.5
 ------
 

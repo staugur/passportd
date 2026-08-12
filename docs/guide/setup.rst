@@ -74,8 +74,38 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - str
      - ``""``
      - ICP 备案号，显示在页脚，为空则不显示
+   * - ``METRICS_ENABLED``
+     - bool
+     - ``True``
+     - 是否启用 Prometheus 指标采集，关闭后 ``/metrics`` 返回 503
+   * - ``METRICS_PATH``
+     - str
+     - ``/metrics``
+     - Prometheus 指标端点路径（相对 ``URI_PREFIX``）
+   * - ``METRICS_CACHE_TTL``
+     - int
+     - ``30``
+     - 进程/业务/Redis 指标缓存秒数（秒）
+   * - ``METRICS_TOKEN``
+     - str
+     - ``""``
+     - 可选 Bearer Token 鉴权，Prometheus 抓取需携带 ``Authorization: Bearer <token>``
 
-.. tip::
+   Prometheus 抓取配置示例（已启用 ``METRICS_TOKEN`` 时）：
+
+   .. code-block:: yaml
+
+    scrape_configs:
+      - job_name: "passportd"
+        metrics_path: /metrics
+        scheme: https
+        bearer_token: "<METRICS_TOKEN>"
+        static_configs:
+          - targets: ["auth.example.com:10030"]
+
+   Grafana 可视化：项目提供完整监控面板 ``examples/grafana_dashboard.json``，导入 Grafana 后选择 Prometheus 数据源即可查看进程资源、Gunicorn、Python GC、业务指标、Redis 与 HTTP 请求等全部指标。
+
+   .. tip::
 
    ``BASE_DIR`` 是数据管理的核心配置项。设置后，以下路径由 ``PinConfig`` 固定派生，**不可通过环境变量覆盖**：
 

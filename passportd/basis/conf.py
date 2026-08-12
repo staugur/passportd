@@ -134,6 +134,17 @@ class BaseConfig:
     GOOGLE_CLIENT_SECRET = ""
     GOOGLE_CALLBACK_PROXY = None
 
+    # Prometheus Metrics
+    #: 是否启用 Prometheus 指标采集，关闭后 /metrics 返回 503
+    METRICS_ENABLED: bool = True
+    #: 指标端点路径（相对 URI_PREFIX）
+    METRICS_PATH: str = "/metrics"
+    #: 进程/业务/Redis 指标的缓存时间（秒），避免每次抓取都全量扫描
+    METRICS_CACHE_TTL: int = 30
+    #: 可选 Bearer Token 鉴权，为空则不鉴权；Prometheus 抓取时需携带
+    #: Authorization: Bearer <token>
+    METRICS_TOKEN: str = ""
+
 
 class DevConfig(BaseConfig):
     """默认开发环境配置。"""

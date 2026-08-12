@@ -144,4 +144,8 @@ def create_app():
         response.status_code = e.status_code
         return response
 
+    from .libs.metrics import init_metrics
+
+    init_metrics(app)
+
     return app
