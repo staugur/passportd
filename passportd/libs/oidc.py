@@ -15,30 +15,31 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from flask import request
 from authlib.oauth2 import OAuth2Error
-from authlib.oauth2.rfc6749.grants import AuthorizationCodeGrant
 from authlib.oauth2.rfc6749 import (
-    ClientMixin,
-    scope_to_list,
-    list_to_scope,
     AuthorizationCodeMixin,
-    TokenMixin,
+    ClientMixin,
     OAuth2Request,
+    TokenMixin,
+    list_to_scope,
+    scope_to_list,
 )
+from authlib.oauth2.rfc6749.grants import AuthorizationCodeGrant
 from authlib.oauth2.rfc6750 import BearerTokenValidator
-from authlib.oidc.core import UserInfo, OpenIDCode
+from authlib.oidc.core import OpenIDCode, UserInfo
+from flask import g, request
 
+from ..basis.conf import config
 from ..basis.vars import (
-    PROC_NAME,
     OIDC_CODE_EXP,
     OIDC_EXP,
     OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
+    PROC_NAME,
 )
-from ..utils.common import now, rdb, read_rsa_private_key, compute_kid
-from ..utils.web import absolute_url, get_ip
 from ..models.oidc import get_oauth_client, get_oauth_token, save_oauth_token
 from ..models.user import get_user_by_uid, get_user_email
+from ..utils.common import compute_kid, now, rdb, read_rsa_private_key
+from ..utils.web import absolute_url, get_ip
 
 
 def oidc_save_token(token_data: dict, request: OAuth2Request) -> bool:
@@ -63,6 +64,38 @@ def oidc_save_token(token_data: dict, request: OAuth2Request) -> bool:
         ua=request.headers.get("User-Agent", ""),
         ip=get_ip() or "",
     )
+
+
+def _is_internal_client(client_name: str) -> bool:
+    """判断客户端是否为内部（自家）应用。
+
+    内部应用列表来自配置 ``OIDC_INTERNAL_CLIENTS``，为英文逗号分隔的
+    客户端 name 列表。仅内部应用可获得用户平台角色。
+
+    :param client_name: 客户端名称
+    :returns: 是内部应用返回 True，否则 False
+    """
+    internal = config.get("OIDC_INTERNAL_CLIENTS") or ""
+    if not isinstance(internal, str):
+        return False
+    names = {x.strip() for x in internal.split(",") if x.strip()}
+    return client_name in names
+
+
+def _platform_roles(role: str) -> str:
+    """从用户 role 字段中提取内置平台角色，过滤客户端角色。
+
+    用户角色以空格分隔，内置角色（小写 admin / superadmin / user）与
+    客户端角色（``ClientName:Role``）混合存储。这里仅保留不含 ``:``
+    的内置角色；若没有内置角色则回退为 ``user``。
+
+    :param role: 用户角色字符串
+    :returns: 平台角色字符串
+    """
+    roles = [r for r in (role or "").split() if ":" not in r]
+    if not roles:
+        return "user"
+    return " ".join(roles)
 
 
 # 定义符合Authlib要求的Client类
@@ -163,24 +196,39 @@ class OIDCAuthorizationCodeObject(AuthorizationCodeMixin):
 
     @property
     def code(self) -> str:
-        """授权码字符串。"""
+        """授权码字符串。
+
+        :returns: 授权码字符串
+        """
         return self.code_data["code"]
 
     @property
     def user_id(self) -> str:
-        """授权用户的 uid。"""
+        """授权用户的 uid。
+
+        :returns: 授权用户的 uid 字符串
+        """
         return self.code_data["uid"]
 
     def get_redirect_uri(self) -> str:
-        """获取关联的回调 URI。"""
+        """获取关联的回调 URI。
+
+        :returns: 回调 URI 字符串
+        """
         return self.code_data["redirect_uri"]  # type: ignore
 
     def get_scope(self) -> str:
-        """获取授权的 scope 范围。"""
+        """获取授权的 scope 范围。
+
+        :returns: scope 范围字符串
+        """
         return self.code_data["scope"]  # type: ignore
 
     def get_auth_time(self) -> int:
-        """获取授权时间戳。"""
+        """获取授权时间戳。
+
+        :returns: 授权时间戳（秒）
+        """
         return int(self.code_data["ctime"])
 
     def is_expired(self) -> bool:
@@ -194,15 +242,24 @@ class OIDCAuthorizationCodeObject(AuthorizationCodeMixin):
         return (self.get_auth_time() + OIDC_CODE_EXP) < now()
 
     def get_nonce(self) -> str:
-        """获取 OIDC nonce 值。"""
+        """获取 OIDC nonce 值。
+
+        :returns: nonce 字符串
+        """
         return self.code_data["nonce"]
 
     def get_acr(self) -> str | None:
-        """获取认证上下文类引用（ACR）。"""
+        """获取认证上下文类引用（ACR）。
+
+        :returns: ACR 字符串，未设置时返回 None
+        """
         return self.code_data.get("acr")
 
     def get_amr(self) -> str | None:
-        """获取认证方法引用（AMR）。"""
+        """获取认证方法引用（AMR）。
+
+        :returns: AMR 字符串，未设置时返回 None
+        """
         return self.code_data.get("amr")
 
 
@@ -377,6 +434,22 @@ class OIDCOpenIDCode(OpenIDCode):
         """
         return read_rsa_private_key()
 
+    def encode_id_token(self, token, request):
+        """重写以在签发 ID Token 前记录当前客户端信息。
+
+        authlib 的 ``generate_user_info(user, scope)`` 签名固定、不携带
+        client，这里将 client_name 存入请求上下文 ``g``，供
+        ``generate_user_info`` 判断是否为内部客户端以决定角色输出。
+
+        :param token: token 字典（含 scope）
+        :param request: OAuth2 请求对象
+        :returns: 签名后的 ID Token 字符串
+        """
+        g._oidc_client_name = (
+            request.client.client_name if request.client else ""
+        )
+        return super().encode_id_token(token, request)
+
     def get_client_algorithm(self, client):
         """获取 ID Token 签名算法。
 
@@ -404,7 +477,7 @@ class OIDCOpenIDCode(OpenIDCode):
         - openid: 仅 sub
         - profile: + nickname, gender, picture, location, bio, status
         - email: + email
-        - role: + role
+        - role: + role（仅内部客户端，见 ``OIDC_INTERNAL_CLIENTS`` 配置）
 
         :param user: 用户标识（uid）
         :param scope: 授权范围字符串，以空格分隔
@@ -431,6 +504,8 @@ class OIDCOpenIDCode(OpenIDCode):
                 user_info["email"] = email
 
         if "role" in scopes:
-            user_info["role"] = profile.get("role", "User")
+            client_name = getattr(g, "_oidc_client_name", "")
+            if _is_internal_client(client_name):
+                user_info["role"] = _platform_roles(profile.get("role", "user"))
 
         return user_info

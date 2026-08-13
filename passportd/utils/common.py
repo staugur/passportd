@@ -196,17 +196,20 @@ def is_valid_ipv4(ip):
 def is_valid_user_role(role: str) -> bool:
     """校验用户角色格式是否合法。
 
-    支持三种格式：
-    - 内置角色：``SuperAdmin``、``Admin``、``User``
-    - 客户端角色：``ClientName:Role`` 格式（如 ``MyApp:Admin``）
+    支持两种格式：
+    - 内置角色（小写）：``superadmin``、``admin``、``user``
+    - 客户端角色：``client_name:Role`` 格式，其中 ``client_name`` 需通过
+      ``appname_check`` 校验（如 ``myapp:Admin``）
 
     :param role: 角色字符串
     :returns: 合法返回 True，否则 False
     """
-    if role in ("SuperAdmin", "Admin", "User"):
+    if role in ("superadmin", "admin", "user"):
         return True
-    elif isinstance(role, str) and len(role.strip().split(":")) == 2:
-        return True
+    if isinstance(role, str):
+        parts = role.split(":")
+        if len(parts) == 2 and appname_check(parts[0]) and parts[1]:
+            return True
     return False
 
 
@@ -406,6 +409,7 @@ def auto_init_rsa_key():
     pubkey = config["OIDC_RSA_PUBLIC_KEY"]
     prikey = config["OIDC_RSA_PRIVATE_KEY"]
     from ..basis.vars import OIDC_RSA_KEY_SIZE as _rsa_keysize
+
     keysize = _rsa_keysize
     if not isinstance(keysize, int) or keysize < 1024:
         raise ParamError("Invalid RSA key size: {}".format(keysize))
@@ -619,6 +623,7 @@ def base64url_decode(s: str) -> bytes:
 def generate_passkey_challenge() -> bytes:
     """生成 WebAuthn 随机 challenge（32 字节）。"""
     from os import urandom
+
     return urandom(32)
 
 
@@ -644,5 +649,7 @@ def get_passkey_challenge(key: str) -> Optional[bytes]:
     encoded = rdb.get(redis_key)
     if encoded:
         rdb.delete(redis_key)
-        return base64url_decode(encoded.decode("utf-8") if isinstance(encoded, bytes) else encoded)
+        return base64url_decode(
+            encoded.decode("utf-8") if isinstance(encoded, bytes) else encoded
+        )
     return None

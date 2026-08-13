@@ -16,27 +16,33 @@ limitations under the License.
 """
 
 import secrets
-from ipaddress import ip_address, ip_network
-from typing import Any, Optional, Tuple, Dict, Union
 from functools import wraps
+from ipaddress import ip_address, ip_network
 from time import strftime, time
+from typing import Any, Dict, Optional, Tuple, Union
 from urllib.parse import parse_qs, urljoin, urlparse
+
 from flask import (
-    g,
-    request,
-    make_response,
-    jsonify,
-    redirect,
-    url_for,
     Response,
     current_app,
+    g,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    url_for,
 )
 
-from ..basis.vars import USR_STATE_KEY, PROC_NAME
-from ..basis.mixin import GetItemMixIn
 from ..basis.errors import ApiError, ErrorCode
-from ..models.user import verify_jwt, generate_jwt, create_session, delete_session
-from .common import rdb, parse_account_classify
+from ..basis.mixin import GetItemMixIn
+from ..basis.vars import PROC_NAME, USR_STATE_KEY
+from ..models.user import (
+    create_session,
+    delete_session,
+    generate_jwt,
+    verify_jwt,
+)
+from .common import parse_account_classify, rdb
 
 signin_ep = "root.front.signin"
 no_jump_ep = (signin_ep, "root.front.signout", "root.front.signup")
@@ -219,7 +225,9 @@ def auto_set_user_state(
                     source=source,
                 )
                 # 后台线程异步更新 IP 位置和 UA 解析
-                from ..libs.interface import RecordSessionInterface  # 延迟导入避免循环引用
+                from ..libs.interface import (
+                    RecordSessionInterface,  # 延迟导入避免循环引用
+                )
                 RecordSessionInterface(
                     uid=uid,
                     session_key=session_key,
@@ -386,6 +394,97 @@ def check_sms_rate_limit(account: str) -> None:
     pipe.execute()
 
 
+def check_ip_rate_limit(ip: str) -> None:
+    """同一 IP 短时间大量登录/验证码请求限流。
+
+    计数器按 ``LOGIN_IP_WINDOW`` 秒窗口统计，窗口内请求数超过
+    ``LOGIN_IP_LIMIT`` 时抛出 ApiError。
+
+    :param ip: 客户端 IP
+    :raises ApiError: 超过限制时抛出
+    """
+    from ..basis.conf import config
+
+    limit = int(config.get("LOGIN_IP_LIMIT") or 20)
+    window = int(config.get("LOGIN_IP_WINDOW") or 60)
+    key = f"{PROC_NAME}:login_ip:{ip}"
+    count = int(rdb.incr(key))
+    if count == 1:
+        rdb.expire(key, window)
+    if count > limit:
+        raise ApiError(
+            "too many login attempts, please try again later",
+            code=ErrorCode.RATE_LIMITED,
+        )
+
+
+def check_account_locked(account: str) -> None:
+    """检查账号是否处于临时锁定状态。
+
+    锁定由 ``record_login_fail`` 在连续失败达到阈值时写入，
+    到期后 Redis key 自动过期即自动解锁。
+
+    :param account: 登录账号
+    :raises ApiError: 账号被锁定时抛出
+    """
+    from ..basis.conf import config
+
+    lock_key = f"{PROC_NAME}:login_lock:{account}"
+    if not rdb.exists(lock_key):
+        return
+    lock_time = int(config.get("LOGIN_LOCK_TIME") or 900)
+    remain = max(1, int(rdb.ttl(lock_key) or lock_time) // 60 + 1)
+    raise ApiError(
+        "account is temporarily locked, please try again "
+        f"in about {remain} minutes",
+        code=ErrorCode.ACCOUNT_LOCKED,
+    )
+
+
+def record_login_fail(account: str) -> None:
+    """记录一次登录失败，连续失败累计达到阈值后锁定账号。
+
+    失败计数与锁定共用 ``LOGIN_LOCK_TIME`` 秒过期窗口，
+    锁定写入后立即清除失败计数，保证解锁后从头统计。
+
+    :param account: 登录账号
+    """
+    from ..basis.conf import config
+
+    fail_max = int(config.get("LOGIN_FAIL_MAX") or 5)
+    lock_time = int(config.get("LOGIN_LOCK_TIME") or 900)
+    fail_key = f"{PROC_NAME}:login_fail:{account}"
+    count = int(rdb.incr(fail_key))
+    if count == 1:
+        rdb.expire(fail_key, lock_time)
+    if count >= fail_max:
+        rdb.setex(f"{PROC_NAME}:login_lock:{account}", lock_time, "1")
+        rdb.delete(fail_key)
+
+
+def clear_login_fail(account: str) -> None:
+    """登录成功后清除失败计数与锁定状态。
+
+    :param account: 登录账号
+    """
+    rdb.delete(f"{PROC_NAME}:login_fail:{account}")
+    rdb.delete(f"{PROC_NAME}:login_lock:{account}")
+
+
+def ip_rate_limit(f):
+    """装饰器：按客户端 IP 对登录相关接口限流。
+
+    :param f: 视图函数
+    :returns: 包装后的视图函数
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        check_ip_rate_limit(get_ip())
+        return f(*args, **kwargs)
+
+    return decorated
+
+
 #: OAuth2 提供商图标/颜色配置，key 为 plugin_name 中 oauth2_ 之后的部分
 _OAUTH2_PROVIDER_CONFIG: dict[str, dict[str, str]] = {
     "github": {"icon": "fa-brands fa-github", "color": "is-dark", "bg": "#24292e"},
@@ -445,8 +544,8 @@ def get_rp_id() -> str:
     优先使用配置 ``PASSKEY_RP_ID``，为空时自动从请求 Host 中提取（去掉端口）。
     配置值或自动推导的值无效时抛出 PasskeyError。
     """
-    from ..basis.conf import config
     from ..basis.common import is_passkey_enabled
+    from ..basis.conf import config
     from ..basis.errors import PasskeyError
 
     rp_id = (config.get("PASSKEY_RP_ID") or "").strip()

@@ -20,13 +20,15 @@ import signal
 import sys
 import time
 import tempfile
+from contextlib import contextmanager
 
 import click
 from json import JSONEncoder, dumps
 from types import FunctionType
 
-from .basis.vars import PROC_NAME
+from .basis.common import now
 from .basis.conf import config as passportd_config
+from .basis.vars import PROC_NAME
 
 
 def _get_pidfile():
@@ -98,8 +100,8 @@ class ConfigEncoder(JSONEncoder):
 def cli():
     """Passportd 命令行管理工具。
 
-    提供初始化、运行开发服务器、启动生产服务器、
-    查看状态、停止、重启、查看配置等子命令。
+    提供初始化、运行开发服务器、启动生产服务器、查看状态、停止、重启、
+    查看配置、用户角色管理等子命令。
     """
     pass
 
@@ -217,6 +219,166 @@ def restart():
 def config():
     """打印当前服务端完整配置（JSON 格式，函数类型转为字符串显示）。"""
     click.echo(dumps(passportd_config, cls=ConfigEncoder, indent=4))
+
+
+@cli.group()
+def role():
+    """管理用户角色（admin / superadmin），支持列出与设置。"""
+    pass
+
+
+def _get_user_or_exit(uid):
+    """按 uid 查找用户，不存在则抛出异常退出。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: User 模型实例
+    :raises click.ClickException: 用户不存在时抛出
+    """
+    from .models.model import User
+
+    user = User.get_or_none(User.uid == uid)
+    if user is None:
+        raise click.ClickException(f"user {uid} not found")
+    return user
+
+
+def _normalize_roles(role_args):
+    """归一化并校验角色参数。
+
+    内置角色统一为小写（admin / superadmin / user），客户端角色
+    （``ClientName:Role``）原样保留。
+
+    :param role_args: 角色参数元组（可包含多个角色）
+    :returns: 规范化后的角色列表
+    :raises click.ClickException: 含非法角色时抛出
+    """
+    # 延迟导入避免 CLI 帮助信息加载时引入重依赖
+    from .utils.common import is_valid_user_role
+
+    roles = []
+    for raw in role_args:
+        # 内置角色统一小写，客户端角色（ClientName:Role）原样保留
+        norm = raw.lower() if ":" not in raw else raw
+        if not is_valid_user_role(norm):
+            raise click.ClickException(f"invalid role: {raw}")
+        roles.append(norm)
+    return roles
+
+
+@contextmanager
+def _db_conn():
+    """打开数据库连接，命令执行结束后关闭（CLI 场景使用）。"""
+    from .models.model import db
+
+    db.connect(reuse_if_open=True)
+    try:
+        yield
+    finally:
+        db.close()
+
+
+@role.command("list")
+@click.option(
+    "--role",
+    "role_filter",
+    type=click.Choice(["admin", "superadmin"]),
+    default=None,
+    help="仅列出指定角色（默认同时列出 admin 与 superadmin）",
+)
+def role_list(role_filter):
+    """列出所有管理员（admin / superadmin）。"""
+    from .models.model import User
+
+    with _db_conn():
+        admins = [
+            u
+            for u in User.select()
+            if any(r in ("admin", "superadmin") for r in (u.role or "").split())
+        ]
+        if role_filter:
+            admins = [u for u in admins if role_filter in (u.role or "").split()]
+        if not admins:
+            click.echo("No admin user found")
+            return
+        click.echo(
+            "{:<24} {:<24} {:<40} {}".format("UID", "NICKNAME", "ROLE", "STATUS")
+        )
+        for u in admins:
+            click.echo(
+                "{:<24} {:<24} {:<40} {}".format(u.uid, u.nickname, u.role, u.status)
+            )
+
+
+@role.command("set")
+@click.argument("uid")
+@click.argument("roles", nargs=-1, required=True)
+def role_set(uid, roles):
+    """将用户角色替换为指定角色。
+
+    多个角色用空格分隔，如 ``passportd role set <uid> superadmin admin``。
+    """
+    from .models.audit import record_audit_log
+
+    norm_roles = _normalize_roles(roles)
+    with _db_conn():
+        u = _get_user_or_exit(uid)
+        u.role = " ".join(norm_roles)
+        u.mtime = now()
+        u.save()
+        record_audit_log(
+            uid=u.uid, action="role_set", detail={"roles": u.role}
+        )
+    click.secho(f"set {uid} role -> {u.role}", fg="green")
+
+
+@role.command("add")
+@click.argument("uid")
+@click.argument("roles", nargs=-1, required=True)
+def role_add(uid, roles):
+    """向用户追加角色（已存在的角色自动去重）。"""
+    from .models.audit import record_audit_log
+
+    norm_roles = _normalize_roles(roles)
+    with _db_conn():
+        u = _get_user_or_exit(uid)
+        current = (u.role or "").split()
+        for r in norm_roles:
+            if r not in current:
+                current.append(r)
+        u.role = " ".join(current)
+        u.mtime = now()
+        u.save()
+        record_audit_log(
+            uid=u.uid,
+            action="role_add",
+            detail={"added": norm_roles, "roles": u.role},
+        )
+    click.secho(f"add {uid} role -> {u.role}", fg="green")
+
+
+@role.command("remove")
+@click.argument("uid")
+@click.argument("roles", nargs=-1, required=True)
+def role_remove(uid, roles):
+    """从用户移除指定角色。"""
+    from .models.audit import record_audit_log
+
+    norm_roles = _normalize_roles(roles)
+    with _db_conn():
+        u = _get_user_or_exit(uid)
+        current = (u.role or "").split()
+        for r in norm_roles:
+            if r in current:
+                current.remove(r)
+        u.role = " ".join(current)
+        u.mtime = now()
+        u.save()
+        record_audit_log(
+            uid=u.uid,
+            action="role_remove",
+            detail={"removed": norm_roles, "roles": u.role},
+        )
+    click.secho(f"remove {uid} role -> {u.role}", fg="green")
 
 
 if __name__ == "__main__":

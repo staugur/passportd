@@ -180,11 +180,16 @@ class UtilsTest(unittest.TestCase):
         self.assertFalse(appname_check(None))
 
     def test_is_valid_user_role(self):
-        self.assertTrue(is_valid_user_role("SuperAdmin"))
-        self.assertTrue(is_valid_user_role("Admin"))
-        self.assertTrue(is_valid_user_role("User"))
-        self.assertTrue(is_valid_user_role("custom:role"))
-        self.assertTrue(is_valid_user_role("a:b"))
+        self.assertTrue(is_valid_user_role("superadmin"))
+        self.assertTrue(is_valid_user_role("admin"))
+        self.assertTrue(is_valid_user_role("user"))
+        self.assertTrue(is_valid_user_role("myapp:Admin"))
+        self.assertTrue(is_valid_user_role("my-app:editor"))
+        self.assertFalse(is_valid_user_role("SuperAdmin"))
+        self.assertFalse(is_valid_user_role("Admin"))
+        self.assertFalse(is_valid_user_role("User"))
+        self.assertFalse(is_valid_user_role("a:b"))  # 客户端名太短
+        self.assertFalse(is_valid_user_role("MyApp:Admin"))  # 客户端名大写开头
         self.assertFalse(is_valid_user_role("invalid"))
         self.assertFalse(is_valid_user_role(""))
         self.assertFalse(is_valid_user_role("too:many:parts"))

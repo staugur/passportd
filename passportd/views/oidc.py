@@ -28,6 +28,8 @@ from ..libs.oidc import (
     OIDCBearerTokenValidator,
     OIDCAuthorizationCodeGrant,
     OIDCOpenIDCode,
+    _is_internal_client,
+    _platform_roles,
 )
 from ..basis.conf import config
 from ..basis.vars import (
@@ -36,7 +38,7 @@ from ..basis.vars import (
 )
 from ..utils.web import absolute_url, login_required, get_ip
 from ..utils.common import compute_kid
-from ..models.oidc import save_oauth_authorization
+from ..models.oidc import get_oauth_client, save_oauth_authorization
 from ..models.user import get_user_by_uid, get_user_email
 
 
@@ -171,7 +173,7 @@ def userinfo():
     - ``openid``: 仅 sub(uid)
     - ``+ profile``: + nickname, bio, gender, picture, location, status
     - ``+ email``: + email
-    - ``+ role``: + role
+    - ``+ role``: + role（仅内部客户端，见 ``OIDC_INTERNAL_CLIENTS`` 配置）
 
     :returns: 用户信息 JSON
     """
@@ -203,6 +205,10 @@ def userinfo():
             result["email"] = email
 
     if "role" in scopes:
-        result["role"] = profile["role"]
+        client_id = current_token.token_data.get("client_id", "")
+        client_info = get_oauth_client(client_id) if client_id else None
+        client_name = client_info.get("name", "") if client_info else ""
+        if _is_internal_client(client_name):
+            result["role"] = _platform_roles(profile["role"])
 
     return result

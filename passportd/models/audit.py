@@ -37,6 +37,9 @@ ACTION_LABELS: Dict[str, str] = {
     "oidc_auth_revoke": "撤销 OIDC 授权",
     "change_password": "修改密码",
     "account_delete": "注销账号",
+    "role_set": "设置角色",
+    "role_add": "添加角色",
+    "role_remove": "移除角色",
 }
 
 

@@ -7,28 +7,20 @@ v2.7.0
 新特性
 ~~~~~~
 
-- 新增 Prometheus 指标采集与导出：默认 ``GET /metrics`` 端点，覆盖以下指标类别：
-
-  - 进程指标：扫描所有 passportd/gunicorn 相关进程的 CPU 累计时间、RSS/VMS 内存、文件描述符数、socket 连接数与启动时间（基于 Linux ``/proc``，非 Linux 环境回退到当前进程）
-  - Python/GC 指标：``python_info``、GC 累计回收对象数（prometheus_client 内置），以及当前各代待回收对象数（``gc.get_count``）与 GC 阈值（``gc.get_threshold``）
-  - Gunicorn 指标：配置的 worker 数、存活 worker 数、master 存活状态、每个 worker 的 socket 连接数
-  - 业务指标：用户总数（按状态）、活跃会话数、认证身份数（按认证方式）、OIDC 客户端数、有效 OAuth token 数、Passkey 凭证数、登录记录数、审计日志数（查询数据库，带 TTL 缓存）
-  - 请求指标：HTTP 请求总数（按 method/status，经 Redis 聚合到全 worker）、当前进程请求耗时直方图与并发请求数
-  - Redis 指标：连接数、已用内存、运行时长、累计处理命令数等（来自 Redis INFO）
-
-- 新增配置项：
-
-  - ``METRICS_ENABLED``（默认 ``True``）：是否启用指标采集，关闭后 ``/metrics`` 返回 503
-  - ``METRICS_PATH``（默认 ``/metrics``）：指标端点路径（相对 ``URI_PREFIX``）
-  - ``METRICS_CACHE_TTL``（默认 30）：进程/业务/Redis 指标缓存秒数
-  - ``METRICS_TOKEN``（默认空）：可选 Bearer Token 鉴权，Prometheus 抓取需携带 ``Authorization: Bearer <token>``
-
+- 新增站点配置：``SITE_TITLE``（站点标题）、``SITE_DESC``（meta description）、``SITE_KEYWORDS``（meta keywords）、``SITE_FAVICON``（favicon 地址）、``SITE_LOGO``（导航栏 logo 图片）。站点标题用于浏览器标题、导航栏品牌、页脚版权等（为空回退 ``"Passport"``），favicon/logo 为空时分别回退默认静态图标与文字品牌。新增 Prometheus 指标采集与导出：默认 ``GET /metrics`` 端点，覆盖以下指标类别：
 - 新增 Grafana Dashboard 配置示例 ``examples/grafana_dashboard.json``：覆盖进程资源、Gunicorn、Python/GC、业务指标、Redis、HTTP 请求等全部指标面板，导入 Grafana 后选择 Prometheus 数据源即可使用。
+- 新增 CLI ``role`` 子命令组，用于管理用户角色：
+- 登录安全：新增暴力破解防护。同一账号连续密码错误 ``LOGIN_FAIL_MAX`` 次（默认 5）后锁定 ``LOGIN_LOCK_TIME`` 秒（默认 900），锁定期间拒绝密码登录并提示剩余锁定时间；同一 IP 在 ``LOGIN_IP_WINDOW`` 秒（默认 60）内超过 ``LOGIN_IP_LIMIT`` 次（默认 20）登录/注册/验证码请求时全局限流。空账号/空密码不计入失败统计，登录成功自动清除失败计数并解除锁定。新增错误码 ``ACCOUNT_LOCKED``（前端 ``ERROR_ZH`` 已映射中文），覆盖密码登录、验证码登录、注册及验证码发送接口。
+- 配置校验：``_check_config_value`` 启动校验范围扩展到 ``LOGIN_*``（正整数）、``METRICS_ENABLED``（布尔，避免环境变量字符串 ``"false"`` 被当作真值）、``METRICS_PATH``（以 ``/`` 开头）、``METRICS_CACHE_TTL``（正整数）、``LOG_LEVEL``（合法日志级别）、``NOTICE``（list 或 URL 字符串）及 ``SITE_*``/``HOST``/``OIDC_INTERNAL_CLIENTS``/``METRICS_TOKEN``（字符串），非法配置在启动时直接报错。
 
 变更
 ~~~~
 
 - API 错误响应统一语言与本地化：``ApiError`` 新增 ``code`` 错误码字段，``to_dict()`` 返回 ``{"success": false, "code": "...", "message": "..."}``；所有 API 抛错消息统一为英文，前端通过 ``ERROR_ZH`` 映射表将错误码翻译为中文文案（未映射时回退显示英文 ``message``）。涉及注册、登录、验证码、绑定/解绑、改密、注销、OIDC 客户端、Passkey 等全部接口。
+- 前端创建/编辑 OIDC 客户端表单不再展示 ``role`` 授权范围选项（第三方不可见）。后端逻辑不变：内部客户端仍可通过 API / 数据库配置 ``role`` scope，ID Token 与 ``/oidc/userinfo`` 按内部客户端判断照常返回平台角色；编辑已带 ``role`` scope 的内部客户端时前端自动保留该 scope，避免误删。
+- OIDC 平台角色按客户端隔离输出：新增配置 ``OIDC_INTERNAL_CLIENTS``（默认 ``""``），为内部（自家）客户端 name 列表，英文逗号分隔（容忍逗号两侧空格）。仅列表内的应用在申请 ``role`` scope 时可获得用户平台角色（小写 ``admin``/``superadmin``/``user``），并自动过滤 ``ClientName:Role`` 格式的客户端角色；第三方客户端一律不再输出平台角色，避免全局角色泄露给非可信应用。ID Token 与 ``/oidc/userinfo`` 均生效。环境变量示例 ``PASSPORT_OIDC_INTERNAL_CLIENTS="my-app, your-app"``。
+- 内置角色统一为小写存储（``admin``/``superadmin``/``user``），其他格式仅支持客户端角色（``ClientName:Role``），由 ``is_valid_user_role`` 校验，其中 ``ClientName`` 需通过 ``appname_check``（小写字母开头、4-33 位小写字母/数字/下划线/连字符）。CLI 输入内置角色时自动转为小写（大写 ``Admin``/``SuperAdmin`` 输入同样归一为小写）。
+- 页脚 ICP 备案号配置项由 ``ICP`` 更名为 ``SITE_ICP``（站点配置统一命名前缀），环境变量同步为 ``PASSPORT_SITE_ICP``。
 
 v2.6.5
 ------

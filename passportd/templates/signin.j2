@@ -1,12 +1,12 @@
 {% extends "layout.j2" %}
-{% block title %}登录 - Passport{% endblock %}
+{% block title %}登录 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
 
 {% block content %}
 <div class="page-center">
   <div class="auth-card">
     <div class="card">
       <header class="card-header">
-        <p class="card-header-title">登录 Passport</p>
+        <p class="card-header-title">登录 {{ config.get("SITE_TITLE") or "Passport" }}</p>
       </header>
       <div class="card-content">
         {% if msg %}

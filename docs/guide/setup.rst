@@ -70,10 +70,30 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - str
      - ``/``
      - 全局 URL 前缀
-   * - ``ICP``
+   * - ``SITE_ICP``
      - str
      - ``""``
-     - ICP 备案号，显示在页脚，为空则不显示
+     - ICP 备案号，显示在页脚，为空则不显示。环境变量 ``PASSPORT_SITE_ICP``
+   * - ``SITE_TITLE``
+     - str
+     - ``"Passport"``
+     - 站点标题，用于浏览器标题、导航栏品牌、页脚版权等，为空回退 ``"Passport"``
+   * - ``SITE_DESC``
+     - str
+     - ``""``
+     - 站点描述，用于 meta description（SEO），为空不输出
+   * - ``SITE_KEYWORDS``
+     - str
+     - ``""``
+     - 站点关键词，英文逗号分隔，用于 meta keywords（SEO），为空不输出
+   * - ``SITE_FAVICON``
+     - str
+     - ``""``
+     - 站点 favicon 地址（URL 或静态资源路径），为空使用默认静态图标
+   * - ``SITE_LOGO``
+     - str
+     - ``""``
+     - 站点 logo 图片地址（URL），为空导航栏显示 ``SITE_TITLE`` 文字
    * - ``METRICS_ENABLED``
      - bool
      - ``True``
@@ -222,6 +242,22 @@ OIDC 相关的以下值由 ``PinConfig`` 固定管理，不可通过配置或环
      - str
      - ``""``
      - Spug 推送助手短信模板 ID，SMS_PROVIDER 为 ``spug`` 时必填
+   * - ``LOGIN_FAIL_MAX``
+     - int
+     - ``5``
+     - 同一账号连续密码错误达到该次数后临时锁定。环境变量 ``PASSPORT_LOGIN_FAIL_MAX``
+   * - ``LOGIN_LOCK_TIME``
+     - int
+     - ``900``
+     - 账号临时锁定时间（秒），到期自动解锁。环境变量 ``PASSPORT_LOGIN_LOCK_TIME``
+   * - ``LOGIN_IP_LIMIT``
+     - int
+     - ``20``
+     - 同一 IP 在窗口时间内允许的最大登录/注册/验证码请求次数。环境变量 ``PASSPORT_LOGIN_IP_LIMIT``
+   * - ``LOGIN_IP_WINDOW``
+     - int
+     - ``60``
+     - IP 限流统计窗口（秒）。环境变量 ``PASSPORT_LOGIN_IP_WINDOW``
 
 **SPUG_MAIL_TEMPLATE_ID 与 SPUG_SMS_TEMPLATE_ID 获取方法**：
 
@@ -284,6 +320,43 @@ OAuth2 第三方登录配置
      - Google OAuth2 回调时代理地址。
        服务器无法直连 Google API（googleapis.com）时使用，
        如 ``http://proxy:8080``。仅支持 HTTP 代理。
+
+OIDC 内部客户端配置
+--------------------
+
+passportd 作为统一认证中心时，**平台角色（小写 ``admin`` / ``superadmin`` /
+``user``）默认不向任何客户端输出**，第三方应用的角色应由其自身基于 ``sub`` 管理。若自有项目
+（自家应用）需要通过 OIDC 判定用户是否为管理员，可将应用加入内部客户端列表，
+这些应用在申请 ``role`` scope 时可获得平台角色。
+
+.. list-table::
+   :header-rows: 1
+
+   * - 配置项
+     - 类型
+     - 默认值
+     - 说明
+   * - ``OIDC_INTERNAL_CLIENTS``
+     - str
+     - ``""``
+     - 内部（自家）客户端 name 列表，英文逗号分隔（容忍逗号两侧空格）。
+       仅列表内的应用在 ``role`` scope 时返回用户平台角色，
+       第三方客户端一律不返回。环境变量示例
+       ``PASSPORT_OIDC_INTERNAL_CLIENTS="my-app, your-app"``。
+
+.. note::
+
+   内部客户端拿到的 ``role`` 仅为平台内置角色（小写 ``admin`` / ``superadmin`` /
+   ``user``），配置在 ``ClientName:Role`` 格式的客户端角色会被过滤，
+   不会泄露给其他客户端。
+
+.. note::
+
+   前端创建/编辑 OIDC 客户端的表单**不展示 ``role`` 授权范围选项**（对第三方
+   不可见）。内部客户端需要 ``role`` scope 时，通过 OIDC 客户端 API 或数据库
+   直接配置即可；后端在 ID Token 与 ``/oidc/userinfo`` 中仍按 ``OIDC_INTERNAL_CLIENTS``
+   判断是否返回平台角色。编辑已带 ``role`` scope 的内部客户端时，前端会自动
+   保留该 scope，不会因表单不显示而被误删。
 
 Passkey（WebAuthn）配置
 --------------------------

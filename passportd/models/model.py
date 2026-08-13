@@ -70,8 +70,9 @@ class User(Model):
     mtime = IntegerField(default=0)
     #: 用户状态 0是禁用 1是启用
     status = IntegerField(default=1)
-    #: User Roles (split by space), support: Admin/User(Self), [Client]:Admin/User/Other(Third OAuth Client), and SuperAdmin(Admin for All)
-    role = CharField(default="User")
+    #: User Roles (split by space), for internal project;
+    #: Support: admin/user(Self), [client]:admin/user/other, and superadmin(admin for All)
+    role = CharField(default="user")
 
     class Meta:
         database = db
@@ -301,6 +302,16 @@ class UserSession(Model):
 # Create tables if they don't exist
 with db.atomic():
     db.create_tables(
-        [User, Auth, OAuthClient, OAuthToken, OAuthAuthorization, LoginRecord, PasskeyCredential, AuditLog, UserSession],
+        [
+            User,
+            Auth,
+            OAuthClient,
+            OAuthToken,
+            OAuthAuthorization,
+            LoginRecord,
+            PasskeyCredential,
+            AuditLog,
+            UserSession,
+        ],
         safe=True,
     )

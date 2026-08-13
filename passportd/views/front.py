@@ -20,46 +20,46 @@ from urllib.parse import urlencode
 
 from flask import (
     Blueprint,
-    send_from_directory,
     current_app,
-    request,
-    url_for,
-    render_template,
-    redirect,
     g,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
 )
 
+from ..basis.errors import ApiError, ErrorCode, PassportError
+from ..basis.vars import PROC_NAME
+from ..libs.interface import (
+    LoginInterface,
+    RecordLoginInterface,
+    RegisterInterface,
+)
+from ..models.audit import record_audit_log
 from ..models.user import (
-    login,
     add_account,
     add_profile,
     get_account,
-    list_accounts,
-    update_profile,
     get_user_by_uid,
+    list_accounts,
+    login,
+    update_profile,
 )
-from ..models.audit import record_audit_log
-from ..libs.interface import (
-    LoginInterface,
-    RegisterInterface,
-    RecordLoginInterface,
-)
-from ..basis.errors import ApiError, ErrorCode, PassportError
-from ..basis.vars import PROC_NAME
 from ..utils.common import (
-    rdb,
     parse_account_classify,
     parse_encrypted_password,
+    rdb,
     rsa_encrypt,
 )
 from ..utils.web import (
-    login_required,
     anonymous_required,
+    auto_set_user_state,
     clear_user_state,
     get_ip,
     get_redirect_url,
-    auto_set_user_state,
     list_oauth2_providers,
+    login_required,
     resolve_login_source,
 )
 
@@ -221,13 +221,18 @@ def signin():
                 source=resolve_login_source(request.args.get("next", "")),
             )
         else:
+            error = res.get("message", "登录失败")
+            if res.get("code") == ErrorCode.ACCOUNT_LOCKED:
+                error = "账号已被临时锁定，请稍后再试"
+            elif res.get("code") == ErrorCode.RATE_LIMITED:
+                error = "操作过于频繁，请稍后再试"
             return render_template(
                 "signin.j2",
                 url=url_for(".signin", next=next),
                 next=next,
                 oauth2_providers=oauth2_providers,
                 account=account,
-                error=res.get("message", "登录失败"),
+                error=error,
             )
     else:
         msg = request.args.get("msg", "")

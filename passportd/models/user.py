@@ -151,7 +151,7 @@ def add_profile(
     gender: int = 2,
     avatar: str = "",
     location: str = "",
-    role: str = "User",
+    role: str = "user",
 ) -> bool:
     """注册新用户资料（可源于本地和第三方），既无User又无Auth记录。
 
@@ -385,9 +385,9 @@ def update_profile(
     """更新用户资料。
 
     role 支持三种操作：
-    - 替换：直接传角色名，如 ``"Admin"``
-    - 追加：以 ``+`` 开头，如 ``"+Admin"``
-    - 移除：以 ``-`` 开头，如 ``"-Admin"``
+    - 替换：直接传角色名，如 ``"admin"``
+    - 追加：以 ``+`` 开头，如 ``"+admin"``
+    - 移除：以 ``-`` 开头，如 ``"-admin"``
 
     :param uid: 用户唯一标识符
     :param nickname: 新昵称（空字符串表示不修改）

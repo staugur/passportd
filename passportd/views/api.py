@@ -15,49 +15,45 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from flask import Blueprint, request, abort, g
-from werkzeug.security import check_password_hash
 from functools import wraps
 
+from flask import Blueprint, abort, g, request
+from werkzeug.security import check_password_hash
+
+from ..basis.common import is_passkey_enabled, new_res
+from ..basis.errors import ApiError, ErrorCode, PasskeyError, PassportError
+from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..libs.interface import (
+    NoticeClient,
+    PasskeyClient,
     RecordLoginInterface,
     RegisterInterface,
     UploadInterface,
     VCodeInterface,
-    PasskeyClient,
-    NoticeClient,
+)
+from ..models.audit import list_audit_logs, record_audit_log
+from ..models.model import User
+from ..models.oidc import (
+    count_oauth_authorizations,
+    create_oauth_client,
+    delete_oauth_authorization,
+    delete_oauth_client,
+    list_oauth_authorizations_by_user,
+    list_oauth_clients,
+    update_oauth_client,
 )
 from ..models.user import (
     add_account,
     change_password,
     delete_account,
     delete_user_data,
-    get_account as get_auth,
+)
+from ..models.user import get_account as get_auth
+from ..models.user import (
     has_account,
     list_accounts,
     list_active_sessions,
     list_login_records,
-)
-from ..models.oidc import (
-    count_oauth_authorizations,
-    create_oauth_client,
-    delete_oauth_client,
-    delete_oauth_authorization,
-    list_oauth_clients,
-    list_oauth_authorizations_by_user,
-    update_oauth_client,
-)
-from ..models.audit import list_audit_logs, record_audit_log
-from ..models.model import User
-from ..basis.errors import ApiError, ErrorCode, PassportError, PasskeyError
-from ..basis.vars import JWE_HEADER, PROC_NAME
-from ..basis.common import new_res, is_passkey_enabled
-from ..utils.web import (
-    apilogin_required,
-    auto_set_user_state,
-    check_sms_rate_limit,
-    get_ip,
-    resolve_login_source,
 )
 from ..utils.common import (
     generate_digital_verification_code,
@@ -65,6 +61,14 @@ from ..utils.common import (
     parse_encrypted_password,
     rdb,
     read_rsa_public_key,
+)
+from ..utils.web import (
+    apilogin_required,
+    auto_set_user_state,
+    check_sms_rate_limit,
+    get_ip,
+    ip_rate_limit,
+    resolve_login_source,
 )
 
 bp = Blueprint("api", "api")
@@ -88,6 +92,7 @@ def public_key():
 
 
 @bp.post("/user/signup")
+@ip_rate_limit
 def signup():
     """API 用户注册接口（仅返回 JSON）。
 
@@ -431,6 +436,7 @@ def user_oauth_authorizations():
 
 
 @bp.post("/send_signup_vcode")
+@ip_rate_limit
 def send_signup_vcode():
     """发送注册验证码（邮箱或短信）。
 
@@ -475,6 +481,7 @@ def send_signup_vcode():
 
 
 @bp.post("/send_login_vcode")
+@ip_rate_limit
 def send_login_vcode():
     """发送登录验证码（邮箱或短信）。
 
@@ -700,6 +707,7 @@ def user_delete():
 
 
 @bp.post("/vcode_login")
+@ip_rate_limit
 def vcode_login():
     """验证码登录接口。
 

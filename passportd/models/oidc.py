@@ -33,12 +33,20 @@ from ..utils.common import (
 
 
 def has_oauth_client(name: str) -> bool:
-    """判断OAuthClient存在"""
+    """判断指定名称的 OAuth Client 是否已存在。
+
+    :param name: 客户端应用名称
+    :returns: 存在返回 True，否则 False
+    """
     return OAuthClient.select().where(OAuthClient.name == name).exists()
 
 
 def list_oauth_clients(uid: Union[None, str]) -> List[COMMON_DICT_TYPE]:
-    """根据 uid 获取用户所有 OIDC Client 信息"""
+    """根据 uid 获取用户所有 OIDC Client 信息。
+
+    :param uid: 用户唯一标识符；为 None 或非法时返回全部客户端
+    :returns: 客户端信息字典列表
+    """
     if uid and check_uid_rule(uid):
         obj = OAuthClient.select().where(OAuthClient.uid == uid)
     else:
@@ -47,7 +55,11 @@ def list_oauth_clients(uid: Union[None, str]) -> List[COMMON_DICT_TYPE]:
 
 
 def get_oauth_client(client_id: str) -> Union[None, COMMON_DICT_TYPE]:
-    """根据 client_id 获取应用信息"""
+    """根据 client_id 获取应用信息。
+
+    :param client_id: 客户端标识
+    :returns: 客户端信息字典，不存在返回 None
+    """
     try:
         oc = OAuthClient.get(OAuthClient.client_id == client_id)
         return model_to_dict(oc)
@@ -56,7 +68,12 @@ def get_oauth_client(client_id: str) -> Union[None, COMMON_DICT_TYPE]:
 
 
 def list_oauth_tokens(uid: str, client_id: Union[None, str]) -> List[COMMON_DICT_TYPE]:
-    """根据 uid 获取用户所有 OIDC Token 信息"""
+    """根据 uid 获取用户所有 OIDC Token 信息。
+
+    :param uid: 用户唯一标识符
+    :param client_id: 客户端标识，为空或非法时返回该用户全部 Token
+    :returns: Token 信息字典列表
+    """
     if isinstance(client_id, str) and len(client_id) >= 24:
         obj = OAuthToken.select().where(
             (OAuthToken.uid == uid) & (OAuthToken.client_id == client_id)
@@ -67,7 +84,11 @@ def list_oauth_tokens(uid: str, client_id: Union[None, str]) -> List[COMMON_DICT
 
 
 def get_oauth_token(access_token: str) -> Union[None, COMMON_DICT_TYPE]:
-    """根据 access_token 获取 Token 信息"""
+    """根据 access_token 获取 Token 信息。
+
+    :param access_token: 访问令牌字符串
+    :returns: Token 信息字典，不存在返回 None
+    """
     try:
         ot = OAuthToken.get(OAuthToken.access_token == access_token)
         return model_to_dict(ot)
@@ -84,28 +105,20 @@ def create_oauth_client(
     homepage: str = "",
     bio: str = "",
 ) -> COMMON_DICT_TYPE:
-    """
-    注册一个 OIDC (OpenID Connect) 客户端应用。
+    """注册一个 OIDC (OpenID Connect) 客户端应用。
 
-    Args:
-        uid (str): 用户唯一标识符，长度为 22 个字符。
-        name (str): 客户端应用的名称，需通过 `appname_check` 验证。
-        redirect_uri (str): 有效的 HTTP URL，用于 OAuth 回调。
-        scope (str, optional): 授权范围，默认为 "openid"。
-        homepage (str, optional): 客户端应用的主页 URL，需为有效的 HTTP URL。
-        bio (str, optional): 客户端应用的描述信息。
+    客户端 ID 和密钥通过 ``gen_salt`` 生成，默认授权类型为
+    ``authorization_code``，响应类型为 ``code``。
 
-    Returns:
-        COMMON_DICT_TYPE: 包含生成的 `client_id` 和 `client_secret` 的字典。
-
-    Raises:
-        ParamError: 如果参数验证失败（如 `uid` 长度、`name` 格式、`redirect_uri` 或 `homepage` 无效）。
-        DBError: 如果数据库操作失败。
-        ParamError: 如果客户端名称已存在。
-
-    Notes:
-        - 客户端 ID 和密钥通过 `gen_salt` 生成。
-        - 默认授权类型为 "authorization_code"，响应类型为 "code"。
+    :param uid: 用户唯一标识符，长度为 22 个字符
+    :param name: 客户端应用名称，需通过 ``appname_check`` 验证
+    :param redirect_uri: 有效的 HTTP URL，用于 OAuth 回调
+    :param scope: 授权范围，默认为 ``openid``
+    :param homepage: 客户端应用的主页 URL，需为有效的 HTTP URL
+    :param bio: 客户端应用的描述信息
+    :returns: 包含生成的 ``client_id`` 和 ``client_secret`` 的字典
+    :raises ParamError: 参数验证失败或客户端名称已存在
+    :raises DBError: 数据库操作失败
     """
     if (
         len(uid) == 22
@@ -157,25 +170,19 @@ def update_oauth_client(
     redirect_uri: str = "",
     scope: str = "",
 ) -> COMMON_DICT_TYPE:
-    """
-    更新 OIDC 客户端应用信息。
+    """更新 OIDC 客户端应用信息。
 
-    Args:
-        uid (str): 用户唯一标识符，用于校验归属权限。
-        client_id (str): 要更新的客户端标识。
-        name (str, optional): 新的客户端名称。
-        bio (str, optional): 新的描述信息。
-        homepage (str, optional): 新的主页 URL。
-        redirect_uri (str, optional): 新的回调 URL。
-        scope (str, optional): 新的授权范围。
-
-    Returns:
-        COMMON_DICT_TYPE: 更新后的客户端信息字典。
-
-    Raises:
-        ParamError: 参数验证失败或客户端不存在。
-        DBError: 数据库操作失败。
-        PermissionError: 无权更新该客户端。
+    :param uid: 用户唯一标识符，用于校验归属权限
+    :param client_id: 要更新的客户端标识
+    :param name: 新的客户端名称
+    :param bio: 新的描述信息
+    :param homepage: 新的主页 URL
+    :param redirect_uri: 新的回调 URL
+    :param scope: 新的授权范围
+    :returns: 更新后的客户端信息字典
+    :raises ParamError: 参数验证失败
+    :raises PermissionError: 客户端不存在或无权更新
+    :raises DBError: 数据库操作失败
     """
     if not uid or len(uid) != 22 or not client_id or len(client_id) < 24:
         raise ParamError("Invalid params")
@@ -215,19 +222,14 @@ def update_oauth_client(
 
 
 def delete_oauth_client(uid: str, client_id: str) -> bool:
-    """
-    删除 OIDC 客户端应用。
+    """删除 OIDC 客户端应用，同时删除关联的 Token。
 
-    Args:
-        uid (str): 用户唯一标识符，用于校验归属权限。
-        client_id (str): 要删除的客户端标识。
-
-    Returns:
-        bool: 删除成功返回 True。
-
-    Raises:
-        PermissionError: 客户端不存在或无权删除。
-        DBError: 数据库操作失败。
+    :param uid: 用户唯一标识符，用于校验归属权限
+    :param client_id: 要删除的客户端标识
+    :returns: 删除成功返回 True
+    :raises ParamError: 参数校验失败
+    :raises PermissionError: 客户端不存在或无权删除
+    :raises DBError: 数据库操作失败
     """
     if not uid or len(uid) != 22 or not client_id or len(client_id) < 24:
         raise ParamError("Invalid params")
@@ -308,14 +310,10 @@ def delete_oauth_authorization(uid: str, client_id: str) -> int:
 
 
 def count_oauth_authorizations(client_id: str) -> int:
-    """
-    统计某个 OIDC 客户端被多少不同用户授权过（表中仅记录 approved）。
+    """统计某个 OIDC 客户端被多少不同用户授权过（表中仅记录 approved）。
 
-    Args:
-        client_id (str): 客户端标识。
-
-    Returns:
-        int: 授权用户数（去重）。
+    :param client_id: 客户端标识
+    :returns: 授权用户数（去重）
     """
     if not client_id or len(client_id) < 24:
         return 0
@@ -391,22 +389,16 @@ def save_oauth_authorization(
     ip: str = "",
     ua: str = "",
 ) -> bool:
-    """
-    保存 OIDC 用户授权记录（仅 approved）。
+    """保存 OIDC 用户授权记录（仅 approved）。
 
-    Args:
-        uid (str): 授权用户的唯一标识符，长度为 22 个字符。
-        client_id (str): 被授权的 OIDC 客户端标识。
-        scope (str): 授权的 scope 范围（空格分隔）。
-        ip (str, optional): 客户端 IP 地址。
-        ua (str, optional): 客户端 User-Agent。
-
-    Returns:
-        bool: 保存成功返回 True。
-
-    Raises:
-        ParamError: 如果参数验证失败。
-        DBError: 如果数据库操作失败。
+    :param uid: 授权用户的唯一标识符，长度为 22 个字符
+    :param client_id: 被授权的 OIDC 客户端标识
+    :param scope: 授权的 scope 范围（空格分隔）
+    :param ip: 客户端 IP 地址
+    :param ua: 客户端 User-Agent
+    :returns: 保存成功返回 True
+    :raises ParamError: 参数校验失败
+    :raises DBError: 数据库操作失败
     """
     if len(uid) != 22 or len(client_id) < 24 or not scope:
         raise ParamError("Invalid params")

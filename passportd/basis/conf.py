@@ -20,14 +20,14 @@ from typing import Optional
 
 from flask import Config as FlaskConfig
 
+from .common import is_passkey_enabled, is_prod
 from .vars import (
-    PROC_NAME,
     APP_DIR,
-    LOG_LEVEL_TYPE,
-    ENV_PREFIX,
     ENV_NAME,
+    ENV_PREFIX,
+    LOG_LEVEL_TYPE,
+    PROC_NAME,
 )
-from .common import is_prod, is_passkey_enabled
 
 __all__ = ["config"]
 
@@ -64,8 +64,27 @@ class BaseConfig:
     LOG_FILE: Optional[str] = None
     #: 全局URL前缀
     URI_PREFIX: str = "/"
+    #: 公告通知配置。支持两种格式：
+    #: 1. list: [{"content": "公告内容", "ctime": 时间戳, "etime": 0或时间戳, "closable": bool}]
+    #:    ctime 创建时间，etime 过期时间（0=永不过期），closable 是否允许关闭（默认 true）
+    #: 2. str: URL 地址，需返回 JSON: {success, data: [...]}
+    NOTICE = []
+    #: IP 地理位置查询接口
+    IP_API_URL: str = "https://hub.saintic.com/openservice/ip/rest"
+
+    # 站点配置
     #: ICP备案号
-    ICP = ""
+    SITE_ICP: str = ""
+    #: 站点标题，用于浏览器标题、导航栏品牌、页脚版权等，为空回退 "Passport"
+    SITE_TITLE: str = "Passport"
+    #: 站点描述，用于 meta description（SEO）
+    SITE_DESC: str = ""
+    #: 站点关键词，英文逗号分隔，用于 meta keywords（SEO）
+    SITE_KEYWORDS: str = ""
+    #: 站点 favicon 地址（URL 或静态资源路径），为空使用默认静态图标
+    SITE_FAVICON: str = ""
+    #: 站点 logo 图片地址（URL），为空导航栏显示 SITE_TITLE 文字
+    SITE_LOGO: str = ""
 
     # 上传
     #: 上传方式，支持 sapic、local，本地上传固定保存到 BASE_DIR/uploads
@@ -102,15 +121,6 @@ class BaseConfig:
     #: 开发环境可用 localhost；为空或无效值时 Passkey 功能不可用。
     PASSKEY_RP_ID: str = ""
 
-    #: 公告通知配置。支持两种格式：
-    #: 1. list: [{"content": "公告内容", "ctime": 时间戳, "etime": 0或时间戳, "closable": bool}]
-    #:    ctime 创建时间，etime 过期时间（0=永不过期），closable 是否允许关闭（默认 true）
-    #: 2. str: URL 地址，需返回 JSON: {success, data: [...]}
-    NOTICE = []
-
-    #: IP 地理位置查询接口
-    IP_API_URL: str = "https://hub.saintic.com/openservice/ip/rest"
-
     # OAuth2 配置
     #: GitHub OAuth2 配置
     GITHUB_CLIENT_ID = ""
@@ -134,6 +144,13 @@ class BaseConfig:
     GOOGLE_CLIENT_SECRET = ""
     GOOGLE_CALLBACK_PROXY = None
 
+    # OIDC 内部客户端（自家应用）信任配置
+    #: 自家应用 name 列表，英文逗号分隔（容忍逗号两侧空格）。仅列表内的
+    #: 应用在申请 ``role`` scope 时可获得用户平台角色（admin / superadmin /
+    #: user），第三方客户端一律不输出平台角色。环境变量示例
+    #: ``PASSPORT_OIDC_INTERNAL_CLIENTS="my-app, your-app"``。
+    OIDC_INTERNAL_CLIENTS: str = ""
+
     # Prometheus Metrics
     #: 是否启用 Prometheus 指标采集，关闭后 /metrics 返回 503
     METRICS_ENABLED: bool = True
@@ -144,6 +161,16 @@ class BaseConfig:
     #: 可选 Bearer Token 鉴权，为空则不鉴权；Prometheus 抓取时需携带
     #: Authorization: Bearer <token>
     METRICS_TOKEN: str = ""
+
+    # 登录安全（暴力破解防护）
+    #: 同一账号连续密码错误达到该次数后临时锁定
+    LOGIN_FAIL_MAX: int = 5
+    #: 账号临时锁定时间（秒），到期自动解锁
+    LOGIN_LOCK_TIME: int = 900
+    #: 同一 IP 在窗口时间内允许的最大登录/验证码请求次数
+    LOGIN_IP_LIMIT: int = 20
+    #: IP 限流统计窗口（秒）
+    LOGIN_IP_WINDOW: int = 60
 
 
 class DevConfig(BaseConfig):
@@ -206,6 +233,11 @@ def _check_config_value(cfg):
     - URI_PREFIX 以 ``/`` 开头
     - RSA 密钥大小为整数
     - 上传方式、邮件提供商和短信提供商的参数完整性
+    - 登录安全配置（LOGIN_*）为正整数
+    - LOG_LEVEL 为合法日志级别
+    - METRICS_* 类型与取值（ENABLED 为布尔、PATH 以 / 开头、CACHE_TTL 为正整数）
+    - NOTICE 为 list 或 URL 字符串
+    - 站点等字符串配置为 str
 
     :param cfg: Flask Config 实例
     :type cfg: flask.Config
@@ -223,6 +255,13 @@ def _check_config_value(cfg):
     ], "DB_URI must start with sqlite, mysql+pool, or psycopg3+pool"
     assert cfg["REDIS_URI"].startswith("redis://"), "REDIS_URI must start with redis://"
     assert cfg["URI_PREFIX"].startswith("/"), "URI_PREFIX must start with /"
+    assert cfg["LOG_LEVEL"] in [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    ], "LOG_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL"
 
     assert cfg["UPLOAD_METHOD"] in [
         "sapic",
@@ -270,6 +309,56 @@ def _check_config_value(cfg):
             "passkey feature will be disabled. "
             "Set it to 'localhost' (dev) or a real domain like 'example.com'."
         )
+
+    # 登录安全配置校验
+    _fail_max = cfg["LOGIN_FAIL_MAX"]
+    assert isinstance(_fail_max, int) and _fail_max >= 1, (
+        "LOGIN_FAIL_MAX must be a positive integer"
+    )
+    _lock_time = cfg["LOGIN_LOCK_TIME"]
+    assert isinstance(_lock_time, int) and _lock_time >= 1, (
+        "LOGIN_LOCK_TIME must be a positive integer"
+    )
+    _ip_limit = cfg["LOGIN_IP_LIMIT"]
+    assert isinstance(_ip_limit, int) and _ip_limit >= 1, (
+        "LOGIN_IP_LIMIT must be a positive integer"
+    )
+    _ip_window = cfg["LOGIN_IP_WINDOW"]
+    assert isinstance(_ip_window, int) and _ip_window >= 1, (
+        "LOGIN_IP_WINDOW must be a positive integer"
+    )
+
+    # Prometheus Metrics 配置校验
+    assert isinstance(cfg["METRICS_ENABLED"], bool), (
+        "METRICS_ENABLED must be a boolean"
+    )
+    _metrics_path = cfg["METRICS_PATH"]
+    assert isinstance(_metrics_path, str) and _metrics_path.startswith("/"), (
+        "METRICS_PATH must be a string starting with /"
+    )
+    _cache_ttl = cfg["METRICS_CACHE_TTL"]
+    assert isinstance(_cache_ttl, int) and _cache_ttl >= 1, (
+        "METRICS_CACHE_TTL must be a positive integer"
+    )
+
+    # NOTICE 校验：list（公告列表）或 str（接口 URL）
+    assert isinstance(cfg["NOTICE"], (list, str)), (
+        "NOTICE must be a list or a URL string"
+    )
+
+    # 字符串类配置校验
+    for _key in (
+        "SITE_ICP",
+        "SITE_TITLE",
+        "SITE_DESC",
+        "SITE_KEYWORDS",
+        "SITE_FAVICON",
+        "SITE_LOGO",
+        "HOST",
+        "OIDC_INTERNAL_CLIENTS",
+        "METRICS_TOKEN",
+    ):
+        assert isinstance(cfg[_key], str), f"{_key} must be a string"
 
 
 config = FlaskConfig(APP_DIR)

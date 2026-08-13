@@ -16,58 +16,61 @@ limitations under the License.
 """
 
 import json
-from typing import Union, Dict, Any
 from os.path import join
 from secrets import token_urlsafe
-from urllib.parse import urlencode
 from threading import Thread
+from typing import Any, Dict, Union
+from urllib.parse import urlencode
 
-from flask import url_for, g, redirect, request
-from jinja2 import Environment, FileSystemLoader
 from authlib.integrations.flask_client import OAuth
+from flask import g, redirect, request, url_for
+from jinja2 import Environment, FileSystemLoader
 
+from ..basis.common import new_res
+from ..basis.conf import config
+from ..basis.errors import ApiError, ParamError, PasskeyError, PassportError
 from ..basis.mixin import (
-    SapicUploadMixIn,
+    IPQueryMixIn,
     LocalUploadMixIn,
+    RequestMixIn,
+    SapicUploadMixIn,
     SMTPMixIn,
     SpugMixIn,
-    IPQueryMixIn,
-    RequestMixIn,
 )
-from ..basis.conf import config
 from ..basis.vars import (
-    ApiRespType,
-    PROC_NAME,
     APP_DIR,
-    OAuthUserInfoType,
     PASSKEY_RP_NAME,
-)
-from ..basis.common import new_res
-from ..basis.errors import PassportError, ParamError, ApiError, PasskeyError
-from ..utils.common import (
-    logger,
-    rdb,
-    rsa_decrypt,
-    is_valid_http_url,
-    parse_user_agent,
-    generate_fingerprint,
-)
-from ..utils.web import (
-    auto_set_user_state,
-    set_user_state,
-    is_safe_url,
-    get_ip,
-    resolve_login_source,
+    PROC_NAME,
+    ApiRespType,
+    OAuthUserInfoType,
 )
 from ..models.audit import record_audit_log
 from ..models.user import (
-    login,
-    list_users,
-    list_accounts,
-    get_account,
     add_account,
     add_profile,
+    get_account,
+    list_accounts,
+    list_users,
+    login,
     record_login,
+)
+from ..utils.common import (
+    generate_fingerprint,
+    is_valid_http_url,
+    logger,
+    parse_user_agent,
+    rdb,
+    rsa_decrypt,
+)
+from ..utils.web import (
+    auto_set_user_state,
+    check_account_locked,
+    check_ip_rate_limit,
+    clear_login_fail,
+    get_ip,
+    is_safe_url,
+    record_login_fail,
+    resolve_login_source,
 )
 
 
@@ -100,19 +103,35 @@ def RegisterInterface(
 def LoginInterface(account: str, password: str) -> ApiRespType:
     """用户登录接口。
 
+    内置暴力破解防护：IP 限流、账号失败计数与临时锁定。
+    空账号/空密码不计入失败统计。
+
     :param account: 用户账号（username / email / mobile 或 OAuthName.tpid 格式）
     :param password: 密码凭证
     :returns: 标准 API 响应
     """
     res = new_res()
+    if not account or not password:
+        res.update(message="Invalid account or credential")
+        return res
+    # 暴力破解防护：IP 限流与账号锁定在密码校验前执行
+    try:
+        check_ip_rate_limit(get_ip())
+        check_account_locked(account)
+    except ApiError as e:
+        res.update(code=e.code, message=e.message)
+        return res
     try:
         ret = login(account, password)
     except PassportError as e:
+        record_login_fail(account)
         res.update(message=str(e))
     else:
         if ret is True:
+            clear_login_fail(account)
             res.update(success=True)
         else:
+            record_login_fail(account)
             res.update(message="Verification failed")
     return res
 
@@ -583,7 +602,7 @@ class PasskeyInterface(object):
             return
         from urllib.parse import urlparse
 
-        from ..utils.web import get_rp_id, get_origin
+        from ..utils.web import get_origin, get_rp_id
 
         self._rp_id = get_rp_id()
         self._rp_name = config.get("PASSKEY_RP_NAME", PASSKEY_RP_NAME)
@@ -628,14 +647,15 @@ class PasskeyInterface(object):
         :raises PasskeyError: 配置或生成失败时抛出
         """
         from webauthn import generate_registration_options
-        from webauthn.helpers.structs import AuthenticatorSelectionCriteria
         from webauthn.helpers import bytes_to_base64url
+        from webauthn.helpers.structs import AuthenticatorSelectionCriteria
+
+        from ..models.model import PasskeyCredential
         from ..utils.common import (
             base64url_encode,
             generate_passkey_challenge,
             save_passkey_challenge,
         )
-        from ..models.model import PasskeyCredential
 
         try:
             # 获取已注册的凭证 ID（用于排除已有设备）
@@ -715,12 +735,13 @@ class PasskeyInterface(object):
         """
         from webauthn import verify_registration_response
         from webauthn.helpers import bytes_to_base64url
+
+        from ..basis.common import now
+        from ..models.model import PasskeyCredential
         from ..utils.common import (
             base64url_decode,
             get_passkey_challenge,
         )
-        from ..models.model import PasskeyCredential
-        from ..basis.common import now
 
         try:
             # 读取并清除 challenge（一次性使用）
@@ -781,11 +802,12 @@ class PasskeyInterface(object):
         """
         from webauthn import generate_authentication_options
         from webauthn.helpers import bytes_to_base64url
+
+        from ..models.model import PasskeyCredential
         from ..utils.common import (
             generate_passkey_challenge,
             save_passkey_challenge,
         )
-        from ..models.model import PasskeyCredential
 
         try:
             # 如果指定了用户，限定该用户的凭证
@@ -840,8 +862,9 @@ class PasskeyInterface(object):
         """
         from webauthn import verify_authentication_response
         from webauthn.helpers import bytes_to_base64url
-        from ..utils.common import base64url_decode, get_passkey_challenge
+
         from ..models.model import PasskeyCredential
+        from ..utils.common import base64url_decode, get_passkey_challenge
 
         try:
             # 根据 credential_id 查找凭证
@@ -995,8 +1018,7 @@ class PasskeyInterface(object):
         优先解析 User-Agent → AAGUID 精确匹配 → authenticatorAttachment
         → credential_device_type，逐步降级。
         """
-        from ..utils.common import base64url_decode
-        from ..utils.common import parse_user_agent
+        from ..utils.common import base64url_decode, parse_user_agent
 
         try:
             data = base64url_decode(client_data_json_base64url)

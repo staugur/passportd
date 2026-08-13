@@ -24,6 +24,9 @@ _mock_redis.setex.return_value = True
 _mock_redis.exists.return_value = False
 _mock_redis.delete.return_value = True
 _mock_redis.ping.return_value = True
+_mock_redis.incr.return_value = 0
+_mock_redis.ttl.return_value = 900
+_mock_redis.expire.return_value = True
 
 _mock_redis_module = MagicMock()
 _mock_redis_module.Redis = MagicMock(return_value=_mock_redis)
