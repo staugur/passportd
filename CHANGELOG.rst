@@ -20,6 +20,7 @@ v2.7.0
 - 前端创建/编辑 OIDC 客户端表单不再展示 ``role`` 授权范围选项（第三方不可见）。后端逻辑不变：内部客户端仍可通过 API / 数据库配置 ``role`` scope，ID Token 与 ``/oidc/userinfo`` 按内部客户端判断照常返回平台角色；编辑已带 ``role`` scope 的内部客户端时前端自动保留该 scope，避免误删。
 - OIDC 平台角色按客户端隔离输出：新增配置 ``OIDC_INTERNAL_CLIENTS``（默认 ``""``），为内部（自家）客户端 name 列表，英文逗号分隔（容忍逗号两侧空格）。仅列表内的应用在申请 ``role`` scope 时可获得用户平台角色（小写 ``admin``/``superadmin``/``user``），并自动过滤 ``ClientName:Role`` 格式的客户端角色；第三方客户端一律不再输出平台角色，避免全局角色泄露给非可信应用。ID Token 与 ``/oidc/userinfo`` 均生效。环境变量示例 ``PASSPORT_OIDC_INTERNAL_CLIENTS="my-app, your-app"``。
 - 内置角色统一为小写存储（``admin``/``superadmin``/``user``），其他格式仅支持客户端角色（``ClientName:Role``），由 ``is_valid_user_role`` 校验，其中 ``ClientName`` 需通过 ``appname_check``（小写字母开头、4-33 位小写字母/数字/下划线/连字符）。CLI 输入内置角色时自动转为小写（大写 ``Admin``/``SuperAdmin`` 输入同样归一为小写）。
+- 登录/注册按钮颜色反转：导航栏「登录」改为主题绿实心按钮（``is-primary``）、「注册」改为浅色按钮（``is-light``）；注册页提交按钮由主题绿改为浅色，登录页提交按钮保持主题绿，突出登录主操作。
 - 页脚 ICP 备案号配置项由 ``ICP`` 更名为 ``SITE_ICP``（站点配置统一命名前缀），环境变量同步为 ``PASSPORT_SITE_ICP``。
 
 v2.6.5
@@ -30,6 +31,7 @@ v2.6.5
 
 - 修复 Google OAuth2 回调报 ``Failed to parse userinfo: 'sub'``：``userinfo_endpoint`` 配置为 v1 端点（``oauth2/v1/userinfo``），返回字段为 ``id``，但 ``parse_userinfo`` 取 ``userinfo["sub"]`` 导致 ``KeyError``。已将 ``userinfo_endpoint`` 和 ``api_base_url`` 升级到 v3 端点（``oauth2/v3/userinfo``），返回 ``sub`` 字段。同时 ``parse_userinfo`` 增加回退逻辑：优先取 ``sub``，兼容取 ``id``。
 - 修复 OAuth2 首次登录选择「直接创建账号」报 ``Invalid account or credential``：``add_profile`` 中 ``check_credential_rule`` 校验密码长度 6~32 字符，但 OAuth2 回调传入的 ``credential`` 是 ``access_token``（通常远超 32 字符），导致校验失败。改为仅对本地账号校验密码规则，第三方账号跳过该检查。
+- 修复 CI 中 ``tests/test_login_security.py`` 因 ``import pytest`` 导致 ``ModuleNotFoundError``：测试统一改用 unittest（``unittest.mock.patch`` + ``TestCase``），与项目其他测试及 ``make test``（``python -m unittest discover``）保持一致，不再依赖 pytest。
 
 v2.6.4
 ------

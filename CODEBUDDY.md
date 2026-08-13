@@ -21,7 +21,7 @@ passportd/
 ├── modules/            ← OAuth2 第三方插件
 ├── templates/          ← Jinja2 模板 (.j2)
 ├── static/             ← 静态资源
-├── tests/              ← pytest 测试
+├── tests/              ← unittest 测试
 ├── docs/               ← Sphinx 文档
 └── requirements/       ← pip 依赖 (base/dev/prod/docs)
 ```
@@ -202,5 +202,5 @@ v2.7.0
 ## 持续集成 / 质量
 
 - 代码格式化：`make lint`（flake8 + isort）
-- 测试：`make test`（pytest，Python 3.10/3.11/3.12）
+- 测试：`make test`（unittest：`python -m unittest discover`，Python 3.10/3.11/3.12，不依赖 pytest）
 - 修改代码后需保持零 lint 错误，保证导入不失败

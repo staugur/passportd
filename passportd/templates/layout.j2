@@ -248,10 +248,14 @@
                         <a class="button is-light" href="{{ url_for('root.front.signout') }}">登出</a>
                     </div>
                     {% else %}
-                    <a class="navbar-item" href="{{ url_for('root.front.signin') }}">登录</a>
                     <div class="navbar-item">
-                        <a class="button is-primary" href="{{ url_for('root.front.signup') }}">
-                            <strong>注册</strong>
+                        <a class="button is-primary" href="{{ url_for('root.front.signin') }}">
+                            <strong>登录</strong>
+                        </a>
+                    </div>
+                    <div class="navbar-item">
+                        <a class="button is-light" href="{{ url_for('root.front.signup') }}">
+                            注册
                         </a>
                     </div>
                     {% endif %}
