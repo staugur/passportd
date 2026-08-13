@@ -170,7 +170,7 @@ $(function () {
                     $btnSendVcode.removeClass('is-loading');
                     startCountdown();
                 } else {
-                    $vcodeHint.text(res.message || '发送失败').addClass('has-text-danger').removeClass('has-text-success');
+                    $vcodeHint.text(apiMessage(res, '发送失败')).addClass('has-text-danger').removeClass('has-text-success');
                     $btnSendVcode.prop('disabled', false).removeClass('is-loading');
                 }
             },

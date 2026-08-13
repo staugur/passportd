@@ -110,6 +110,22 @@ def login(account: str, credential: str) -> dict:
 - 不允许裸 `except:`，至少 `except Exception:`
 - 外部调用（Redis、HTTP）需捕获特定异常并转换为项目异常
 
+### API 错误规范
+
+**后端英文 + 错误码，前端映射中文**（v2.7.0 起强制）：
+
+- `ApiError` 构造签名：`ApiError(message, code, success=False, status_code=200)`，抛错时**必须**携带英文 `message` 和合适的 `code`
+- 错误码从 `basis/errors.py` 的 `ErrorCode` 常量类中选取（如 `PARAM_ERROR` / `LOGIN_FAILED` / `VCODE_INVALID`），禁止硬编码新字符串
+- 响应格式统一为 `{"success": false, "code": "VCODE_INVALID", "message": "invalid verification code"}`，前端通过 `res.code` 判断而非 `res.message`
+- 将 `str(e)` 转换为 `ApiError` 时，按异常类型映射对应的错误码
+- 存量 `ApiError("msg")` 不传 code 时 `code=""`，前端回退显示 `message`，保持兼容
+
+前端联动：
+
+- 新增/修改错误码时，必须同步更新 `templates/layout.j2` 中的 `ERROR_ZH` 映射表和 `apiMessage(res, fallback)` 兜底文案
+- 模板中提示错误统一用 `apiMessage(res, '兜底文案')` 取中文提示，不直接使用 `res.message`
+- 浏览器原生错误（如 WebAuthn `err.message`，非 API 响应）保持原样
+
 ### 数据库操作
 
 - 使用 Peewee ORM，模型定义在 `models/model.py`

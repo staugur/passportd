@@ -634,7 +634,7 @@
                     setAvatarPreview(res.data.url);
                     closeCropModal();
                 } else {
-                    alert(res.message || '上传失败');
+                    alert(apiMessage(res, '上传失败'));
                 }
             },
             error: function () {
@@ -741,7 +741,7 @@
             },
             success: function (res) {
                 if (!res.success) {
-                    showPwdMsg(res.message || '修改失败', 'error');
+                    showPwdMsg(apiMessage(res, '修改失败'), 'error');
                     $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
                     return;
                 }
@@ -891,7 +891,7 @@
                 data: { account: account, password: password },
                 success: function (res) {
                     if (!res.success) {
-                        showVcMsg(res.message || '解绑失败', 'error');
+                        showVcMsg(apiMessage(res, '解绑失败'), 'error');
                         $vcSendBtn.prop('disabled', false).find('span').text('确认解绑');
                         return;
                     }
@@ -917,7 +917,7 @@
             data: { account: account },
             success: function (res) {
                 if (!res.success) {
-                    showVcMsg(res.message || '发送失败', 'error');
+                    showVcMsg(apiMessage(res, '发送失败'), 'error');
                     $vcSendBtn.prop('disabled', false).find('span').text('获取验证码');
                     return;
                 }
@@ -964,7 +964,7 @@
             data: { account: vcAccount },
             success: function (res) {
                 if (!res.success) {
-                    showVcMsg(res.message || '发送失败', 'error');
+                    showVcMsg(apiMessage(res, '发送失败'), 'error');
                     return;
                 }
                 showVcMsg('验证码已重新发送', 'success');
@@ -998,7 +998,7 @@
             data: { account: vcAccount, code: code },
             success: function (res) {
                 if (!res.success) {
-                    showVcMsg(res.message || '验证失败', 'error');
+                    showVcMsg(apiMessage(res, '验证失败'), 'error');
                     $vcConfirmBtn.prop('disabled', false).find('span').text('确认');
                     return;
                 }
@@ -1109,7 +1109,7 @@
             dataType: 'json',
             success: function (res) {
                 if (!res.success || !res.data) {
-                    showPasskeyMsg(res.message || '获取注册选项失败', 'error');
+                    showPasskeyMsg(apiMessage(res, '获取注册选项失败'), 'error');
                     $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
                     return;
                 }
@@ -1147,7 +1147,7 @@
                         showPasskeyMsg('Passkey 绑定成功', 'success');
                         loadCredentials();
                     } else {
-                        showPasskeyMsg(vres.message || '验证失败', 'error');
+                        showPasskeyMsg(apiMessage(vres, '验证失败'), 'error');
                     }
                 }).catch(function (err) {
                     $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
@@ -1160,7 +1160,7 @@
             },
             error: function (xhr) {
                 let msg = '服务请求失败';
-                try { let r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
+                try { let r = JSON.parse(xhr.responseText); msg = apiMessage(r, msg); } catch (e) {}
                 showPasskeyMsg(msg, 'error');
                 $btnAddPasskey.prop('disabled', false).removeClass('is-loading');
             }
@@ -1183,7 +1183,7 @@
                     showPasskeyMsg('已删除', 'success');
                     loadCredentials();
                 } else {
-                    showPasskeyMsg(res.message || '删除失败', 'error');
+                    showPasskeyMsg(apiMessage(res, '删除失败'), 'error');
                     $btn.prop('disabled', false).removeClass('is-loading');
                 }
             },
@@ -1229,7 +1229,7 @@
                         showPasskeyMsg('设备名称已更新', 'success');
                         loadCredentials();
                     } else {
-                        showPasskeyMsg(res.message || '重命名失败', 'error');
+                        showPasskeyMsg(apiMessage(res, '重命名失败'), 'error');
                         cancelRename(credId);
                     }
                 },
@@ -1303,7 +1303,7 @@
             data: { password: password },
             success: function (res) {
                 if (!res.success) {
-                    $daMsg.text(res.message || '注销失败，请重试').show();
+                    $daMsg.text(apiMessage(res, '注销失败，请重试')).show();
                     $daSubmit.prop('disabled', false).removeClass('is-loading');
                     return;
                 }

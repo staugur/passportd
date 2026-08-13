@@ -34,7 +34,7 @@ from flask import (
 
 from ..basis.vars import USR_STATE_KEY, PROC_NAME
 from ..basis.mixin import GetItemMixIn
-from ..basis.errors import ApiError
+from ..basis.errors import ApiError, ErrorCode
 from ..models.user import verify_jwt, generate_jwt, create_session, delete_session
 from .common import rdb, parse_account_classify
 
@@ -198,7 +198,7 @@ def auto_set_user_state(
         session_key = secrets.token_hex(32)
         token = generate_jwt(account, expire, session_key)
         if not token:
-            raise ApiError("generate cookie failed")
+            raise ApiError("generate cookie failed", code=ErrorCode.COOKIE_FAILED)
         ret = set_user_state(token, data, expire)
         if ret and isinstance(ret, Response):
             # 同步创建活跃会话记录（基本信息）
@@ -229,9 +229,9 @@ def auto_set_user_state(
                 )
             return ret
         else:
-            raise ApiError("set cookie failed")
+            raise ApiError("set cookie failed", code=ErrorCode.COOKIE_FAILED)
     else:
-        raise ApiError("param error")
+        raise ApiError("param error", code=ErrorCode.PARAM_ERROR)
 
 
 def clear_user_state():
@@ -295,7 +295,7 @@ def apilogin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not g.signin:
-            raise ApiError("no permission to access", status_code=403)
+            raise ApiError("no permission to access", code=ErrorCode.NO_PERMISSION, status_code=403)
         return f(*args, **kwargs)
 
     return decorated_function
@@ -363,12 +363,20 @@ def check_sms_rate_limit(account: str) -> None:
     phone_key = f"{PROC_NAME}:sms_rl:phone:{today}:{account}"
     phone_count = int(rdb.get(phone_key) or 0)
     if phone_count >= 10:
-        raise ApiError("该手机号今日发送验证码次数已达上限（10次），请明天再试")
+        raise ApiError(
+            "this phone number has reached the daily verification code limit (10), "
+            "please try again tomorrow",
+            code=ErrorCode.SMS_RATE_LIMIT,
+        )
 
     global_key = f"{PROC_NAME}:sms_rl:global:{today}"
     global_count = int(rdb.get(global_key) or 0)
     if global_count >= 100:
-        raise ApiError("今日短信验证码发送次数已达全局上限，请明天再试")
+        raise ApiError(
+            "the global daily SMS verification code limit has been reached, "
+            "please try again tomorrow",
+            code=ErrorCode.SMS_GLOBAL_LIMIT,
+        )
 
     pipe = rdb.pipeline()
     pipe.incr(phone_key)

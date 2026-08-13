@@ -175,7 +175,7 @@
                     } else {
                         $sessionsList.html(
                             '<div class="has-text-centered has-text-grey py-4">' +
-                            '<p class="is-size-7">' + (res.message || '加载失败') + '</p></div>'
+                            '<p class="is-size-7">' + apiMessage(res, '加载失败') + '</p></div>'
                         );
                     }
                 },
@@ -464,7 +464,7 @@
                         }
                         renderPagination();
                     } else {
-                        showMsg(res.message || '加载审计日志失败', 'error');
+                        showMsg(apiMessage(res, '加载审计日志失败'), 'error');
                         $tbody.html('<tr><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-exclamation"></i></span><p class="mt-2">加载失败</p></td></tr>');
                         $pagination.hide();
                     }

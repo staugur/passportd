@@ -49,7 +49,7 @@ from ..models.oidc import (
 )
 from ..models.audit import list_audit_logs, record_audit_log
 from ..models.model import User
-from ..basis.errors import ApiError, PassportError, PasskeyError
+from ..basis.errors import ApiError, ErrorCode, PassportError, PasskeyError
 from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..basis.common import new_res, is_passkey_enabled
 from ..utils.web import (
@@ -79,7 +79,7 @@ def public_key():
     try:
         key = read_rsa_public_key()
     except Exception as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
     else:
         return new_res(
             success=True,
@@ -127,22 +127,27 @@ def signup():
     location = data.get("location", "Unknown")
 
     if not account or not decrypted_password:
-        raise ApiError("account and password is required")
+        raise ApiError(
+            "account and password is required", code=ErrorCode.ACCOUNT_OR_PASSWORD_REQUIRED
+        )
     if decrypted_password != decrypted_repassword:
-        raise ApiError("password and repassword not match")
+        raise ApiError("password and repassword not match", code=ErrorCode.PASSWORD_MISMATCH)
 
     # 邮箱/手机号注册需要验证码
     classify = parse_account_classify(account)
     if classify in ("email", "mobile"):
         if not vcode:
-            raise ApiError("验证码不能为空")
+            raise ApiError("verification code is required", code=ErrorCode.VCODE_REQUIRED)
         stored = rdb.get(f"{PROC_NAME}:signup_vcode:{account}")
         if isinstance(stored, bytes):
             stored = stored.decode()
         if not stored:
-            raise ApiError("验证码已过期，请重新获取")
+            raise ApiError(
+                "verification code has expired, please request a new one",
+                code=ErrorCode.VCODE_EXPIRED,
+            )
         if stored != vcode:
-            raise ApiError("验证码错误")
+            raise ApiError("invalid verification code", code=ErrorCode.VCODE_INVALID)
         # 验证通过，删除已用验证码
         rdb.delete(f"{PROC_NAME}:signup_vcode:{account}")
 
@@ -232,16 +237,18 @@ def change_pwd():
     ) or data.get("repassword", "")
 
     if not new_pwd:
-        raise ApiError("new_password is required")
+        raise ApiError("new_password is required", code=ErrorCode.PASSWORD_REQUIRED)
     if new_pwd != repassword:
-        raise ApiError("new_password and repassword do not match")
+        raise ApiError("new_password and repassword do not match", code=ErrorCode.PASSWORD_MISMATCH)
     if len(new_pwd) < 6:
-        raise ApiError("new_password must be at least 6 characters")
+        raise ApiError(
+            "new_password must be at least 6 characters", code=ErrorCode.PASSWORD_TOO_SHORT
+        )
 
     try:
         ret = change_password(uid, account, new_pwd)
     except PassportError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PASSWORD_REQUIRED)
     else:
         record_audit_log(
             uid=uid,
@@ -312,11 +319,11 @@ def oidc_client():
     if request.method == "DELETE":
         client_id = request.form.get("client_id", "")
         if not client_id:
-            raise ApiError("client_id is required")
+            raise ApiError("client_id is required", code=ErrorCode.CLIENT_ID_REQUIRED)
         try:
             ret = delete_oauth_client(uid=uid, client_id=client_id)
         except PassportError as e:
-            raise ApiError(str(e))
+            raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
         else:
             record_audit_log(
                 uid=uid,
@@ -330,7 +337,7 @@ def oidc_client():
     if request.method == "PUT":
         client_id = request.form.get("client_id", "")
         if not client_id:
-            raise ApiError("client_id is required")
+            raise ApiError("client_id is required", code=ErrorCode.CLIENT_ID_REQUIRED)
         name = request.form.get("name", "")
         bio = request.form.get("bio", "")
         homepage = request.form.get("homepage", "")
@@ -347,7 +354,7 @@ def oidc_client():
                 scope=scope,
             )
         except PassportError as e:
-            raise ApiError(str(e))
+            raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
         else:
             record_audit_log(
                 uid=uid,
@@ -374,7 +381,7 @@ def oidc_client():
             scope=scope,
         )
     except PassportError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
     else:
         record_audit_log(
             uid=uid,
@@ -407,11 +414,11 @@ def user_oauth_authorizations():
     # DELETE
     client_id = request.form.get("client_id", "")
     if not client_id:
-        raise ApiError("client_id is required")
+        raise ApiError("client_id is required", code=ErrorCode.CLIENT_ID_REQUIRED)
     try:
         ret = delete_oauth_authorization(uid=uid, client_id=client_id)
     except PassportError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
     else:
         record_audit_log(
             uid=uid,
@@ -435,21 +442,21 @@ def send_signup_vcode():
     """
     account = request.form.get("account", "").strip()
     if not account:
-        raise ApiError("账号不能为空")
+        raise ApiError("account is required", code=ErrorCode.ACCOUNT_REQUIRED)
 
     classify = parse_account_classify(account)
     if classify not in ("email", "mobile"):
-        raise ApiError("请输入有效的邮箱或手机号")
+        raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
 
     if has_account(account):
-        raise ApiError("该账号已注册，请直接登录")
+        raise ApiError("account already exists, please sign in", code=ErrorCode.ACCOUNT_EXISTS)
 
     check_sms_rate_limit(account)
 
     # 60s 内同一账号不可重复发送
     rl_key = f"{PROC_NAME}:signup_vcode_rl:{account}"
     if rdb.exists(rl_key):
-        raise ApiError("操作过于频繁，请 60 秒后重试")
+        raise ApiError("too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED)
 
     code = generate_digital_verification_code()
     vi = VCodeInterface()
@@ -479,21 +486,21 @@ def send_login_vcode():
     """
     account = request.form.get("account", "").strip()
     if not account:
-        raise ApiError("账号不能为空")
+        raise ApiError("account is required", code=ErrorCode.ACCOUNT_REQUIRED)
 
     classify = parse_account_classify(account)
     if classify not in ("email", "mobile"):
-        raise ApiError("请输入有效的邮箱或手机号")
+        raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
 
     if not has_account(account):
-        raise ApiError("该账号不存在，请先注册")
+        raise ApiError("account does not exist, please sign up", code=ErrorCode.ACCOUNT_NOT_FOUND)
 
     check_sms_rate_limit(account)
 
     # 60s 内同一账号不可重复发送
     rl_key = f"{PROC_NAME}:login_vcode_rl:{account}"
     if rdb.exists(rl_key):
-        raise ApiError("操作过于频繁，请 60 秒后重试")
+        raise ApiError("too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED)
 
     code = generate_digital_verification_code()
     vi = VCodeInterface()
@@ -524,20 +531,20 @@ def user_send_bind_vcode():
     """
     account = request.form.get("account", "").strip()
     if not account:
-        raise ApiError("账号不能为空")
+        raise ApiError("account is required", code=ErrorCode.ACCOUNT_REQUIRED)
 
     classify = parse_account_classify(account)
     if classify not in ("email", "mobile"):
-        raise ApiError("请输入有效的邮箱或手机号")
+        raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
 
     if has_account(account):
-        raise ApiError("该账号已被绑定，请使用其他账号")
+        raise ApiError("account already bound, please use another one", code=ErrorCode.ACCOUNT_BOUND)
 
     check_sms_rate_limit(account)
 
     rl_key = f"{PROC_NAME}:bind_vcode_rl:{account}"
     if rdb.exists(rl_key):
-        raise ApiError("操作过于频繁，请 60 秒后重试")
+        raise ApiError("too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED)
 
     code = generate_digital_verification_code()
     vi = VCodeInterface()
@@ -570,25 +577,28 @@ def user_bind_account():
     code = request.form.get("code", "").strip()
 
     if not account or not code:
-        raise ApiError("账号和验证码不能为空")
+        raise ApiError("account and verification code are required",
+                       code=ErrorCode.ACCOUNT_OR_VCODE_REQUIRED)
 
     classify = parse_account_classify(account)
     if classify not in ("email", "mobile"):
-        raise ApiError("仅支持绑定邮箱或手机号")
+        raise ApiError("only email or mobile number can be bound",
+                       code=ErrorCode.INVALID_ACCOUNT)
 
     if has_account(account):
-        raise ApiError("该账号已被绑定，请使用其他账号")
+        raise ApiError("account already bound, please use another one",
+                       code=ErrorCode.ACCOUNT_BOUND)
 
     stored = rdb.get(f"{PROC_NAME}:bind_vcode:{account}")
     if isinstance(stored, bytes):
         stored = stored.decode()
     if not stored or stored != code:
-        raise ApiError("验证码错误或已过期")
+        raise ApiError("invalid or expired verification code", code=ErrorCode.VCODE_INVALID)
 
     try:
         add_account(uid=uid, account=account)
     except PassportError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.ACCOUNT_BOUND)
     else:
         rdb.delete(f"{PROC_NAME}:bind_vcode:{account}")
         record_audit_log(
@@ -617,18 +627,20 @@ def user_unbind_account():
     password = request.form.get("password", "").strip()
 
     if not account or not password:
-        raise ApiError("账号和密码不能为空")
+        raise ApiError("account and password are required",
+                       code=ErrorCode.ACCOUNT_OR_PASSWORD_REQUIRED)
 
     u = User.get_or_none(User.uid == uid)
     if not u or not u.password_hash:
-        raise ApiError("当前账号未设置密码")
+        raise ApiError("no password has been set for this account",
+                       code=ErrorCode.PASSWORD_NOT_SET)
     if not check_password_hash(u.password_hash, password):
-        raise ApiError("密码错误")
+        raise ApiError("incorrect password", code=ErrorCode.INVALID_PASSWORD)
 
     try:
         ret = delete_account(uid=uid, account=account)
     except PassportError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
     else:
         rdb.delete(f"{PROC_NAME}:unbind_vcode:{account}")
         record_audit_log(
@@ -658,17 +670,20 @@ def user_delete():
     password = request.form.get("password", "")
 
     if not password:
-        raise ApiError("请输入密码确认注销")
+        raise ApiError("password is required to confirm account deletion",
+                       code=ErrorCode.PASSWORD_REQUIRED)
 
     u = User.get_or_none(User.uid == uid)
     if not u or not u.password_hash:
-        raise ApiError("当前账号未设置密码，无法验证身份")
+        raise ApiError("no password has been set, unable to verify identity",
+                       code=ErrorCode.PASSWORD_NOT_SET)
     if not check_password_hash(u.password_hash, password):
-        raise ApiError("密码错误")
+        raise ApiError("incorrect password", code=ErrorCode.INVALID_PASSWORD)
 
     # 检查是否有 OIDC 客户端
     if list_oauth_clients(uid):
-        raise ApiError("请先删除名下的所有 OIDC 应用客户端后再注销账号")
+        raise ApiError("please delete all your OIDC clients before deleting the account",
+                       code=ErrorCode.OIDC_CLIENTS_EXIST)
 
     try:
         ret = delete_user_data(
@@ -677,7 +692,7 @@ def user_delete():
             user_agent=request.user_agent.string or "",
         )
     except PassportError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
     else:
         resp = jsonify(new_res(success=True, data=dict(deleted=ret)))
         resp.set_cookie("sid", "", expires=0, httponly=True, samesite="Lax")
@@ -701,15 +716,17 @@ def vcode_login():
     code = request.form.get("code", "").strip()
 
     if not account or not code:
-        raise ApiError("账号和验证码不能为空")
+        raise ApiError("account and verification code are required",
+                       code=ErrorCode.ACCOUNT_OR_VCODE_REQUIRED)
 
     stored = rdb.get(f"{PROC_NAME}:login_vcode:{account}")
     if isinstance(stored, bytes):
         stored = stored.decode()
     if not stored:
-        raise ApiError("验证码已过期，请重新获取")
+        raise ApiError("verification code has expired, please request a new one",
+                       code=ErrorCode.VCODE_EXPIRED)
     if stored != code:
-        raise ApiError("验证码错误")
+        raise ApiError("invalid verification code", code=ErrorCode.VCODE_INVALID)
 
     # 验证通过，删除已用验证码
     rdb.delete(f"{PROC_NAME}:login_vcode:{account}")
@@ -717,7 +734,7 @@ def vcode_login():
     expire = 604800 if request.form.get("remember") else 7200
     auth = get_auth(account)
     if not auth:
-        raise ApiError("登录失败，账号异常")
+        raise ApiError("login failed, account is abnormal", code=ErrorCode.LOGIN_FAILED)
 
     # 记录登录日志（异步，含 IP 地理位置、设备指纹）
     uid = auth["uid"]
@@ -750,7 +767,10 @@ def passkey_required(f):
 
         rp_id = (config.get("PASSKEY_RP_ID") or "").strip()
         if not is_passkey_enabled(rp_id):
-            raise ApiError("Passkey 功能未开启，请配置 PASSKEY_RP_ID 为有效域名")
+            raise ApiError(
+                "Passkey feature is disabled, please configure PASSKEY_RP_ID to a valid domain",
+                code=ErrorCode.PASSKEY_DISABLED,
+            )
         return f(*args, **kwargs)
 
     return decorated
@@ -776,7 +796,7 @@ def passkey_register_options():
             display_name=account,
         )
     except PasskeyError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PASSKEY_ERROR)
     return new_res(success=True, data=options)
 
 
@@ -795,11 +815,11 @@ def passkey_register_verify():
     uid = g.user["uid"]
     credential_json = request.get_json(silent=True)
     if not credential_json:
-        raise ApiError("credential data is required")
+        raise ApiError("credential data is required", code=ErrorCode.CREDENTIAL_REQUIRED)
     try:
         result = PasskeyClient.verify_registration_response(uid, credential_json)
     except PasskeyError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PASSKEY_ERROR)
     record_audit_log(
         uid=uid,
         action="passkey_add",
@@ -825,7 +845,7 @@ def passkey_login_options():
     try:
         options = PasskeyClient.generate_authentication_options(uid=uid)
     except PasskeyError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PASSKEY_ERROR)
     return new_res(success=True, data=options)
 
 
@@ -842,11 +862,11 @@ def passkey_login_verify():
     """
     credential_json = request.get_json(silent=True)
     if not credential_json:
-        raise ApiError("credential data is required")
+        raise ApiError("credential data is required", code=ErrorCode.CREDENTIAL_REQUIRED)
     try:
         result = PasskeyClient.verify_authentication_response(credential_json)
     except PasskeyError as e:
-        raise ApiError(str(e))
+        raise ApiError(str(e), code=ErrorCode.PASSKEY_ERROR)
 
     uid = result["uid"]
     # 查找用户的本地账号（优先使用 username 类型账号）
@@ -859,7 +879,10 @@ def passkey_login_verify():
     if not account and accounts:
         account = accounts[0]["account"]
     if not account:
-        raise ApiError("passkey authentication succeeded but no account found")
+        raise ApiError(
+            "passkey authentication succeeded but no account found",
+            code=ErrorCode.ACCOUNT_NOT_FOUND,
+        )
 
     expire = 7200
     ret = auto_set_user_state(
@@ -877,7 +900,7 @@ def passkey_login_verify():
         source="self",
     )
     if not ret:
-        raise ApiError("generate token failed")
+        raise ApiError("generate token failed", code=ErrorCode.TOKEN_GENERATE_FAILED)
 
     # 记录登录日志
     RecordLoginInterface(

@@ -28,21 +28,29 @@ class ApiError(PassportError):
 
         @app.route("/test")
         def test():
-            raise ApiError("Some message")
+            raise ApiError("Some message", code="PARAM_ERROR")
 
     应用自动捕获ApiError异常并返回JSON类型响应::
 
-        {"success": False, "message": "Some message"}
+        {"success": False, "code": "PARAM_ERROR", "message": "Some message"}
 
-    :param str message: 错误信息
+    :param str message: 错误信息（统一英文，面向 API 消费者）
+    :param str code: 错误码（可选，供前端映射为本地语言文案）
     :param bool success: 请求成功状态
     :param int status_code: 请求响应码，如200、403、404
     """
 
-    def __init__(self, message: str, success: bool = False, status_code: int = 200):
+    def __init__(
+        self,
+        message: str,
+        code: str = "",
+        success: bool = False,
+        status_code: int = 200,
+    ):
         super(ApiError, self).__init__()
         self.success = success
         self.message = message
+        self.code = code
         self.status_code = status_code
         if isinstance(self.message, Exception):
             self.message = str(self.message)
@@ -50,11 +58,58 @@ class ApiError(PassportError):
     def to_dict(self):
         """将异常转为字典格式，用于 JSON 响应。
 
-        :returns: 包含 ``success`` 和 ``message`` 的字典
+        :returns: 包含 ``success``、``code`` 和 ``message`` 的字典
         :rtype: dict
         """
-        rv = dict(success=self.success, message=self.message)
-        return rv
+        return dict(success=self.success, code=self.code, message=self.message)
+
+
+class ErrorCode:
+    """API 统一错误码（与 ``ErrorCode`` 一一对应，供前端映射为中文文案）。
+
+    规则：message 为英文，code 为稳定标识；前端通过 code 查询本地化文案，
+    未映射时回退显示 message。
+    """
+
+    #: 通用
+    PARAM_ERROR = "PARAM_ERROR"
+    NO_PERMISSION = "NO_PERMISSION"
+    RATE_LIMITED = "RATE_LIMITED"
+    LOGIN_FAILED = "LOGIN_FAILED"
+    ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND"
+
+    #: 账号 / 密码
+    ACCOUNT_REQUIRED = "ACCOUNT_REQUIRED"
+    INVALID_ACCOUNT = "INVALID_ACCOUNT"
+    ACCOUNT_EXISTS = "ACCOUNT_EXISTS"
+    ACCOUNT_BOUND = "ACCOUNT_BOUND"
+    ACCOUNT_OR_PASSWORD_REQUIRED = "ACCOUNT_OR_PASSWORD_REQUIRED"
+    ACCOUNT_OR_VCODE_REQUIRED = "ACCOUNT_OR_VCODE_REQUIRED"
+    INVALID_PASSWORD = "INVALID_PASSWORD"
+    PASSWORD_REQUIRED = "PASSWORD_REQUIRED"
+    PASSWORD_NOT_SET = "PASSWORD_NOT_SET"
+    PASSWORD_MISMATCH = "PASSWORD_MISMATCH"
+    PASSWORD_TOO_SHORT = "PASSWORD_TOO_SHORT"
+
+    #: 验证码
+    VCODE_REQUIRED = "VCODE_REQUIRED"
+    VCODE_EXPIRED = "VCODE_EXPIRED"
+    VCODE_INVALID = "VCODE_INVALID"
+    SMS_RATE_LIMIT = "SMS_RATE_LIMIT"
+    SMS_GLOBAL_LIMIT = "SMS_GLOBAL_LIMIT"
+
+    #: OIDC 客户端
+    CLIENT_ID_REQUIRED = "CLIENT_ID_REQUIRED"
+    OIDC_CLIENTS_EXIST = "OIDC_CLIENTS_EXIST"
+
+    #: Passkey
+    PASSKEY_DISABLED = "PASSKEY_DISABLED"
+    CREDENTIAL_REQUIRED = "CREDENTIAL_REQUIRED"
+    PASSKEY_ERROR = "PASSKEY_ERROR"
+
+    #: 其他
+    TOKEN_GENERATE_FAILED = "TOKEN_GENERATE_FAILED"
+    COOKIE_FAILED = "COOKIE_FAILED"
 
 
 class AuthError(PassportError):

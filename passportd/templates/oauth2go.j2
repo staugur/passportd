@@ -157,7 +157,7 @@
                         window.location.href = (result.data && result.data.next) || '/';
                     }, 800);
                 } else {
-                    showMsg(result.message || '操作失败', 'error');
+                    showMsg(apiMessage(result, '操作失败'), 'error');
                 }
             },
             error: function () {

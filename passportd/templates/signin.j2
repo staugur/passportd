@@ -273,7 +273,7 @@
             $btnSend.removeClass('is-loading');
             startCountdown(60);
           } else {
-            showNotification(res.message || '发送失败', 'danger');
+            showNotification(apiMessage(res, '发送失败'), 'danger');
             $btnSend.prop('disabled', false).removeClass('is-loading');
           }
         },
@@ -318,7 +318,7 @@
               window.location.href = nextUrl;
             }, 500);
           } else {
-            showNotification(res.message || '登录失败', 'danger');
+            showNotification(apiMessage(res, '登录失败'), 'danger');
             $btnLogin.prop('disabled', false).removeClass('is-loading');
           }
         },
@@ -392,7 +392,7 @@
         dataType: 'json',
         success: function (res) {
           if (!res.success || !res.data) {
-            showPasskeyErr(res.message || '获取认证选项失败');
+            showPasskeyErr(apiMessage(res, '获取认证选项失败'));
             return;
           }
           let opts = res.data;
@@ -430,7 +430,7 @@
               let nextUrl = {{ next|tojson }} || '/';
               setTimeout(function () { window.location.href = nextUrl; }, 500);
             } else {
-              showPasskeyErr(res.message || 'Passkey 验证失败');
+              showPasskeyErr(apiMessage(res, 'Passkey 验证失败'));
             }
           }).catch(function (err) {
             if (err.name !== 'NotAllowedError') {
@@ -441,7 +441,7 @@
         },
         error: function (xhr) {
           let msg = '服务请求失败';
-          try { let r = JSON.parse(xhr.responseText); msg = r.message || msg; } catch (e) {}
+          try { let r = JSON.parse(xhr.responseText); msg = apiMessage(r, msg); } catch (e) {}
           showPasskeyErr(msg);
         }
       });

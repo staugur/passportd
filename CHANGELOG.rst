@@ -25,6 +25,11 @@ v2.7.0
 
 - 新增 Grafana Dashboard 配置示例 ``examples/grafana_dashboard.json``：覆盖进程资源、Gunicorn、Python/GC、业务指标、Redis、HTTP 请求等全部指标面板，导入 Grafana 后选择 Prometheus 数据源即可使用。
 
+变更
+~~~~
+
+- API 错误响应统一语言与本地化：``ApiError`` 新增 ``code`` 错误码字段，``to_dict()`` 返回 ``{"success": false, "code": "...", "message": "..."}``；所有 API 抛错消息统一为英文，前端通过 ``ERROR_ZH`` 映射表将错误码翻译为中文文案（未映射时回退显示英文 ``message``）。涉及注册、登录、验证码、绑定/解绑、改密、注销、OIDC 客户端、Passkey 等全部接口。
+
 v2.6.5
 ------
 

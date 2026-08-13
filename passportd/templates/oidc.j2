@@ -313,7 +313,7 @@ $(function () {
           }
           loadClients();
         } else {
-          alert('操作失败: ' + (data.message || '未知错误'));
+          alert('操作失败: ' + apiMessage(data, '未知错误'));
         }
       },
       error: function (xhr) {
@@ -340,7 +340,7 @@ $(function () {
           deleteClientId = null;
           loadClients();
         } else {
-          alert('删除失败: ' + (data.message || '未知错误'));
+          alert('删除失败: ' + apiMessage(data, '未知错误'));
         }
       },
       error: function (xhr) {
@@ -388,7 +388,7 @@ $(function () {
       success: function (data) {
         $loadingEl.addClass('is-hidden');
         if (!data.success) {
-          showError(data.message || '加载失败');
+          showError(apiMessage(data, '加载失败'));
           return;
         }
         clientsCache = data.data || [];
@@ -496,7 +496,7 @@ $(function () {
       success: function (data) {
         $authLoadingEl.addClass('is-hidden');
         if (!data.success) {
-          showAuthError(data.message || '加载失败');
+          showAuthError(apiMessage(data, '加载失败'));
           return;
         }
         let auths = data.data || [];
@@ -568,7 +568,7 @@ $(function () {
           revokeClientId = null;
           loadAuthorizations();
         } else {
-          alert('撤销失败: ' + (data.message || '未知错误'));
+          alert('撤销失败: ' + apiMessage(data, '未知错误'));
         }
       },
       error: function (xhr) {

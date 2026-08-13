@@ -44,7 +44,7 @@ from ..libs.interface import (
     RegisterInterface,
     RecordLoginInterface,
 )
-from ..basis.errors import ApiError, PassportError
+from ..basis.errors import ApiError, ErrorCode, PassportError
 from ..basis.vars import PROC_NAME
 from ..utils.common import (
     rdb,
@@ -287,19 +287,22 @@ def oauth2go():
             local_account = request.form.get("local_account", "").strip()
             local_password = request.form.get("local_password", "").strip()
             if not local_account or not local_password:
-                raise ApiError("请输入本地账号和密码")
+                raise ApiError(
+                    "local account and password are required",
+                    code=ErrorCode.ACCOUNT_OR_PASSWORD_REQUIRED,
+                )
 
             # 验证本地账号密码
             try:
                 if not login(local_account, local_password):
-                    raise ApiError("账号或密码错误")
+                    raise ApiError("incorrect account or password", code=ErrorCode.LOGIN_FAILED)
             except PassportError as e:
-                raise ApiError(str(e))
+                raise ApiError(str(e), code=ErrorCode.LOGIN_FAILED)
 
             # 获取本地账号的 uid
             local_auth = get_account(local_account)
             if not local_auth:
-                raise ApiError("本地账号不存在")
+                raise ApiError("local account does not exist", code=ErrorCode.ACCOUNT_NOT_FOUND)
             uid: str = local_auth["uid"]  # type: ignore
 
             # 绑定 OAuth 账号到已有用户
@@ -310,7 +313,7 @@ def oauth2go():
                     tpid=userinfo.get("tpid", ""),
                 )
             except PassportError as e:
-                raise ApiError(f"绑定失败: {e}")
+                raise ApiError(f"bind account failed: {e}", code=ErrorCode.PARAM_ERROR)
 
             # 记录绑定审计日志
             record_audit_log(
@@ -362,7 +365,7 @@ def oauth2go():
                     location=userinfo.get("location", ""),
                 )
             except PassportError as e:
-                raise ApiError(f"创建账号失败: {e}")
+                raise ApiError(f"create account failed: {e}", code=ErrorCode.PARAM_ERROR)
 
             # 记录注册审计日志（通过 OAuth2 注册）
             new_auth = get_account(userinfo["account"])
@@ -400,10 +403,10 @@ def oauth2go():
                     source=resolve_login_source(target_next),
                 )
             except ApiError as e:
-                raise ApiError(f"设置登录态失败: {e}")
+                raise ApiError(f"set login state failed: {e}", code=ErrorCode.COOKIE_FAILED)
 
         else:
-            raise ApiError("无效操作")
+            raise ApiError("invalid action", code=ErrorCode.PARAM_ERROR)
 
     # GET: 展示页面
     return render_template(
