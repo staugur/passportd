@@ -31,6 +31,8 @@
                 </div>
 
                 <form method="post" action="{{ url_for('root.front.signup') }}" id="signup-form">
+                    <input type="hidden" name="encrypted_password" id="encrypted-password">
+                    <input type="hidden" name="encrypted_repassword" id="encrypted-repassword">
                     <div class="field">
                         <label class="label">账号</label>
                         <div class="control has-icons-left">
@@ -104,6 +106,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/password-encrypt.js') }}"></script>
 <script>
 $(function () {
     let $tabUsername = $('#tab-username');
@@ -208,9 +211,13 @@ $(function () {
         $btnSendVcode.find('span').text(sendCountdown + '秒后重试');
     }
 
-    // 表单提交前校验
-    $('#signup-form').on('submit', function () {
+    // 表单提交：加密密码后传输（JWE），避免明文密码暴露
+    $('#signup-form').on('submit', function (e) {
         let account = $accountInput.val().trim();
+        let $pwd = $(this).find('input[name="password"]');
+        let $rePwd = $(this).find('input[name="repassword"]');
+        let password = $pwd.val();
+        let repassword = $rePwd.val();
 
         if (currentTab === 'vcode') {
             let vcode = $vcodeInput.val().trim();
@@ -218,9 +225,30 @@ $(function () {
                 return true; // 交给后端校验
             }
         }
-
+        if (!password || !repassword) {
+            return true; // 空密码交给后端校验
+        }
+        // 浏览器不支持 WebCrypto（非 HTTPS / 老浏览器）时降级为明文提交
+        if (!window.crypto || !window.crypto.subtle) {
+            return true;
+        }
+        e.preventDefault();
         $btnSubmit.prop('disabled', true).addClass('is-loading').find('strong').text('注册中...');
-        return true;
+
+        let $form = $(this);
+        Promise.all([
+            PassportEncrypt.encryptPassword(password),
+            PassportEncrypt.encryptPassword(repassword)
+        ]).then(function (results) {
+            $form.find('input[name="encrypted_password"]').val(results[0]);
+            $form.find('input[name="encrypted_repassword"]').val(results[1]);
+            $pwd.val('');
+            $rePwd.val('');
+            $form[0].submit(); // 原生提交，不再触发本处理器
+        }).catch(function () {
+            $btnSubmit.prop('disabled', false).removeClass('is-loading').find('strong').text('注 册');
+            alert('密码加密失败，请重试');
+        });
     });
 });
 </script>

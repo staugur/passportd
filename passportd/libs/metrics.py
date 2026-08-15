@@ -148,7 +148,8 @@ def _parse_proc_stat(pid: int) -> Optional[Dict[str, Any]]:
     """解析 ``/proc/<pid>/stat`` 中进程的 CPU/内存相关字段。
 
     :param pid: 进程号
-    :returns: 包含 comm/utime/stime/starttime/vsize/rss 的字典，失败返回 None
+    :returns: 包含 comm/ppid/utime/stime/starttime/vsize/rss 的字典，
+        失败返回 None
     """
     content = _read_proc(pid, "stat")
     if not content:
@@ -163,6 +164,7 @@ def _parse_proc_stat(pid: int) -> Optional[Dict[str, Any]]:
         fields = content[rpar + 2:].split()
         return {
             "comm": comm,
+            "ppid": int(fields[1]),
             "utime": int(fields[11]),
             "stime": int(fields[12]),
             "starttime": int(fields[19]),
@@ -173,19 +175,34 @@ def _parse_proc_stat(pid: int) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _detect_role(comm: str, cmdline: str) -> str:
-    """根据进程名与命令行判断进程角色。
+def _detect_role(proc: Dict[str, Any], related_pids: set) -> str:
+    """根据进程信息与进程间父子关系判断进程角色。
 
-    :param comm: 进程名
-    :param cmdline: 命令行（空格分隔）
+    gunicorn 加载应用时会调用 ``setproctitle(PROC_NAME)``（见 app.py）
+    把进程标题改为 ``passportd``，导致 ``/proc/<pid>/comm`` 不再等于
+    ``gunicorn``，且 ``/proc/<pid>/cmdline``（原始启动命令）也不含
+    master/worker 字样，因此不能仅依赖这两个字段判断；worker 是
+    master fork 出的子进程，通过 ppid 父子关系可可靠区分两者。
+
+    :param proc: 进程信息（含 comm/cmdline/ppid 字段）
+    :type proc: dict
+    :param related_pids: 所有相关进程的 pid 集合
+    :type related_pids: set
     :returns: gunicorn_master / gunicorn_worker / app
+    :rtype: str
     """
-    if comm == "gunicorn":
-        if "master" in cmdline:
-            return "gunicorn_master"
-        if "worker" in cmdline:
-            return "gunicorn_worker"
-    return "app"
+    comm = proc["comm"]
+    cmdline = proc["cmdline"]
+    ppid = proc["ppid"]
+    if "gunicorn" not in comm and "gunicorn" not in cmdline:
+        return "app"
+    if "master" in comm:
+        return "gunicorn_master"
+    if ppid in related_pids:
+        return "gunicorn_worker"
+    if "worker" in comm:
+        return "gunicorn_worker"
+    return "gunicorn_master"
 
 
 def _is_related_process(comm: str, cmdline: str) -> bool:
@@ -255,8 +272,10 @@ def scan_processes() -> List[Dict[str, Any]]:
         start_time = time.time() - max(0.0, uptime - start_relative)
         result.append({
             "pid": pid,
-            "role": _detect_role(stat["comm"], cmdline),
+            "ppid": stat["ppid"],
+            "comm": stat["comm"],
             "cmdline": cmdline,
+            "role": "app",
             "cpu_seconds": cpu_seconds,
             "rss_bytes": stat["rss"] * _PAGE_SIZE,
             "vms_bytes": stat["vsize"],
@@ -264,6 +283,10 @@ def scan_processes() -> List[Dict[str, Any]]:
             "socket_fds": socket_fds,
             "start_time": start_time,
         })
+    # 角色判定依赖进程间的父子关系，收集齐全后统一计算
+    related_pids = {p["pid"] for p in result}
+    for p in result:
+        p["role"] = _detect_role(p, related_pids)
     result.sort(key=lambda p: p["pid"])
     return result
 
@@ -291,6 +314,7 @@ def _current_process_metrics() -> Dict[str, Any]:
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return {
         "pid": os.getpid(),
+        "ppid": os.getppid(),
         "role": "app",
         "cpu_seconds": usage.ru_utime + usage.ru_stime,
         # macOS ru_maxrss 单位是字节，Linux 是 KB；此处仅开发环境参考
@@ -644,7 +668,9 @@ class _RedisCollector:
 
 
 def _inc_http_requests(method: str, status: int) -> None:
-    """累加请求计数：Redis Hash 聚合（全 worker）+ 本地兜底。
+    """累加请求计数：Redis Hash 聚合（全 worker）+ 当前进程本地计数。
+
+    本地计数用于 Redis 不可用时兜底，也反映当前 worker 的实际处理量。
 
     :param method: HTTP 方法
     :param status: HTTP 状态码
@@ -673,11 +699,12 @@ class _HttpRequestCollector:
         except Exception as e:
             logger.debug("metrics: redis hgetall failed: %s", e)
             data = {}
+        samples: Dict[str, float] = {}
         if isinstance(data, dict) and data:
             for key, count in data.items():
                 method, _, status = key.rpartition(":")
                 try:
-                    family.add_metric([method, status], float(count))
+                    samples["{}:{}".format(method, status)] = float(count)
                 except (TypeError, ValueError):
                     continue
         else:
@@ -685,9 +712,13 @@ class _HttpRequestCollector:
                 for (method, status), count in sorted(
                     _local_req_counter.items()
                 ):
-                    family.add_metric(
-                        [method, str(status)], float(count)
-                    )
+                    samples["{}:{}".format(method, status)] = float(count)
+        if not samples:
+            # 完全无计数时输出零值系列，避免 Grafana 面板出现 no data
+            samples["GET:200"] = 0.0
+        for key, count in samples.items():
+            method, _, status = key.rpartition(":")
+            family.add_metric([method, status], count)
         yield family
 
 

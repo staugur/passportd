@@ -15,23 +15,32 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import secrets
 from typing import Union, List
 from binascii import Error as BinasciiError
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from playhouse.shortcuts import model_to_dict
 
-from .model import User, Auth, AuditLog, LoginRecord, OAuthToken, OAuthAuthorization, PasskeyCredential, UserSession, db
+from .model import (
+    User,
+    Auth,
+    LoginRecord,
+    OAuthAuthorization,
+    OAuthToken,
+    PasskeyCredential,
+    UserSession,
+    db,
+)
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import AuthError, JWTError, ParamError
-from ..basis.vars import COMMON_DICT_TYPE
+from ..basis.vars import COMMON_DICT_TYPE, USERNAME_CHANGE_INTERVAL
 from ..basis.common import now
 from ..basis.conf import config
 from ..utils.common import parse_user_agent
 from ..utils.common import (
     is_local_account,
     parse_account_classify,
+    username_check,
     gen_uid,
     jwt_encode,
     jwt_decode,
@@ -297,6 +306,49 @@ def delete_account(uid: str, account: str) -> int:
         .execute()
     )
     return result
+
+
+def set_username(uid: str, username: str) -> dict:
+    """设置或修改用户名（classify == "username"）。
+
+    每个用户最多一条 username 类型 Auth 记录；通过 Auth.mtime 记录
+    上次修改时间，修改后 3 个月（90 天）内仅可再次修改一次。
+
+    :param uid: 用户唯一标识符
+    :param username: 新用户名（需通过 username_check 校验）
+    :returns: 字典，changed 为 True 表示修改，False 表示首次设置
+    :raises ParamError: uid/username 参数非法
+    :raises AuthError: uid 不存在 / 用户名已存在 / 修改过于频繁
+    """
+    if not uid or len(uid) != 22:
+        raise ParamError("Invalid uid")
+    if not username or not username_check(username):
+        raise ParamError("Invalid username")
+    if not has_uid(uid):
+        raise AuthError("Not found uid")
+    if has_account(username):
+        raise AuthError("The username already exists")
+    current_ts = now()
+    existing = Auth.get_or_none(
+        (Auth.uid == uid) & (Auth.classify == "username")
+    )
+    if existing is not None:
+        # 修改场景：距上次修改不足 90 天时拒绝
+        if existing.mtime and current_ts - existing.mtime < (
+            USERNAME_CHANGE_INTERVAL
+        ):
+            raise AuthError(
+                "username can only be changed every 3 months"
+            )
+        with db.atomic():
+            Auth.update(account=username, mtime=current_ts).where(
+                (Auth.uid == uid) & (Auth.classify == "username")
+            ).execute()
+        return dict(changed=True)
+    Auth.create(
+        uid=uid, account=username, classify="username", ctime=current_ts
+    )
+    return dict(changed=False)
 
 
 def delete_user_data(

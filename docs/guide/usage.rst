@@ -230,3 +230,59 @@ Passkey 管理区域会列出所有已绑定的设备，包含：
 ^^^^^^^^^^^^^
 
 如果尝试在同一个设备上重复绑定 Passkey，系统会显示提示「此设备已绑定 Passkey，无需重复绑定」，避免重复添加相同的设备凭据。
+
+命令行工具
+---------------------
+
+passportd 提供一套命令行管理工具，用于启动/停止服务、查看配置、创建超级管理员与用户角色管理等。执行 ``passportd --help`` 可查看全部子命令，每个子命令支持 ``-h``/``--help`` 查看详细参数。
+
+服务管理
+^^^^^^^^^
+
+.. code-block:: shell
+
+    passportd run        # 启动 Flask 内置开发服务器（本地调试）
+    passportd start      # 启动生产服务器（Gunicorn + gevent）
+    passportd status     # 查看服务运行状态（运行中 / 未运行 / 残留 pid）
+    passportd stop       # 优雅停止服务（SIGTERM，超时后强制结束）
+    passportd restart    # 重启服务（先停止再启动）
+    passportd config     # 打印当前完整配置（JSON 格式）
+
+创建超级管理员
+^^^^^^^^^^^^^^^
+
+系统初始化时可通过 ``create-superadmin`` 命令创建第一个超级管理员（角色为 ``superadmin``），**仅支持 username 格式账号**，相当于注册一个用户名账号并赋予超级管理员角色：
+
+.. code-block:: shell
+
+    passportd create-superadmin rootadmin
+
+命令会交互式提示输入密码（隐藏输入并二次确认），也可以直接指定：
+
+.. code-block:: shell
+
+    passportd create-superadmin rootadmin \
+        --password "Root@123456" \
+        --nickname "超级管理员"
+
+- 账号必须是合法用户名：小写字母开头，3-32 位小写字母/数字/下划线
+- 密码 6-32 位
+- 创建成功后自动写入 ``role_set`` 审计日志
+- 该命令仅用于**创建**新用户，不修改现有用户；如需调整现有用户角色请使用 ``role`` 子命令
+
+角色管理
+^^^^^^^^^
+
+通过 ``role`` 子命令组管理已有用户的角色。内置角色统一小写存储（``admin`` / ``superadmin`` / ``user``），客户端角色使用 ``ClientName:Role`` 格式（原样保留）。
+
+.. code-block:: shell
+
+    passportd role list                  # 列出所有管理员（admin + superadmin）
+    passportd role list --role admin     # 仅列出 admin 角色用户
+    passportd role set <uid> superadmin  # 将用户角色替换为 superadmin
+    passportd role add <uid> admin       # 向用户追加 admin 角色
+    passportd role remove <uid> admin    # 从用户移除 admin 角色
+
+- 多个角色用空格分隔，如 ``passportd role set <uid> superadmin admin``
+- ``add`` 自动去重，``remove`` 仅移除已存在的角色
+- 每次角色变更都会写入审计日志

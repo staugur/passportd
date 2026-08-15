@@ -51,8 +51,9 @@
 
         <!-- 密码登录表单 -->
         <div id="form-password" class="tab-content">
-          <form method="post" action="{{ url }}">
+          <form method="post" action="{{ url }}" id="form-password-submit">
             <input type="hidden" name="next" value="{{ next }}">
+            <input type="hidden" name="encrypted_password" id="encrypted-password">
 
             <div class="field">
               <label class="label">账号</label>
@@ -203,6 +204,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/password-encrypt.js') }}"></script>
 <script>
   $(function () {
     let $tabs = $('#tab-password, #tab-vcode, #tab-passkey');
@@ -217,6 +219,31 @@
     let $btnPasskeyLogin = $('#btn-passkey-login');
     let $vcodeHint = $('#vcode-hint');
     let countdownTimer = null;
+
+    // 密码登录：提交前使用后端公钥加密密码（JWE），避免明文传输
+    $('#form-password form').on('submit', function (e) {
+      let $form = $(this);
+      let $pwd = $form.find('input[name="password"]');
+      let password = $pwd.val();
+      if (!password) {
+        return true; // 空密码交给后端校验
+      }
+      // 浏览器不支持 WebCrypto（非 HTTPS / 老浏览器）时降级为明文提交
+      if (!window.crypto || !window.crypto.subtle) {
+        return true;
+      }
+      e.preventDefault();
+      let $btn = $form.find('button[type="submit"]');
+      $btn.prop('disabled', true).addClass('is-loading');
+      PassportEncrypt.encryptPassword(password).then(function (jwe) {
+        $form.find('input[name="encrypted_password"]').val(jwe);
+        $pwd.val(''); // 清空明文密码
+        $form[0].submit(); // 原生提交，不再触发本处理器
+      }).catch(function () {
+        $btn.prop('disabled', false).removeClass('is-loading');
+        alert('密码加密失败，请重试');
+      });
+    });
 
     // Tab 切换
     $('#tab-password a, #tab-vcode a, #tab-passkey a').on('click', function () {

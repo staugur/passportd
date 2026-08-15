@@ -21,13 +21,19 @@ from flask import Blueprint, abort, g, request
 from werkzeug.security import check_password_hash
 
 from ..basis.common import is_passkey_enabled, new_res
-from ..basis.errors import ApiError, ErrorCode, PasskeyError, PassportError
+from ..basis.errors import (
+    ApiError,
+    AuthError,
+    ErrorCode,
+    ParamError,
+    PasskeyError,
+    PassportError,
+)
 from ..basis.vars import JWE_HEADER, PROC_NAME
 from ..libs.interface import (
     NoticeClient,
     PasskeyClient,
     RecordLoginInterface,
-    RegisterInterface,
     UploadInterface,
     VCodeInterface,
 )
@@ -54,6 +60,7 @@ from ..models.user import (
     list_accounts,
     list_active_sessions,
     list_login_records,
+    set_username,
 )
 from ..utils.common import (
     generate_digital_verification_code,
@@ -61,6 +68,7 @@ from ..utils.common import (
     parse_encrypted_password,
     rdb,
     read_rsa_public_key,
+    username_check,
 )
 from ..utils.web import (
     apilogin_required,
@@ -89,93 +97,6 @@ def public_key():
             success=True,
             data=dict(header=JWE_HEADER, key=key),  # type: ignore
         )
-
-
-@bp.post("/user/signup")
-@ip_rate_limit
-def signup():
-    """API 用户注册接口（仅返回 JSON）。
-
-    用户名注册：account + password 即可。
-    邮箱/手机号注册：account + password + vcode（需先通过 send_signup_vcode 获取验证码）。
-
-    :form account: 用户账号（必填）
-    :form password: 密码（必填，明文或 RSA 加密）
-    :form repassword: 确认密码
-    :form encrypted_password: 加密后的密码（JWE 格式，优先使用）
-    :form encrypted_repassword: 加密后的确认密码
-    :form vcode: 验证码（邮箱/手机号注册时必填）
-    :form nickname: 昵称
-    :form bio: 个人简介
-    :form gender: 性别
-    :form avatar: 头像 URL
-    :form location: 地区
-    :returns: 注册结果 JSON
-    """
-    # post signup for http api response only.
-    #: account, password(encrypted) is required, other fields as profile
-    data = request.form.to_dict()
-    account = data.get("account", "")
-    password = data.get("password", "")
-    repassword = data.get("repassword", "")
-    decrypted_password = (
-        parse_encrypted_password(data.get("encrypted_password", "")) or password
-    )
-    decrypted_repassword = (
-        parse_encrypted_password(data.get("encrypted_repassword", "")) or repassword
-    )
-    vcode = data.get("vcode", "").strip()
-    nickname = data.get("nickname", "")
-    bio = data.get("bio", "")
-    gender = data.get("gender", 2)
-    avatar = data.get("avatar", "")
-    location = data.get("location", "Unknown")
-
-    if not account or not decrypted_password:
-        raise ApiError(
-            "account and password is required", code=ErrorCode.ACCOUNT_OR_PASSWORD_REQUIRED
-        )
-    if decrypted_password != decrypted_repassword:
-        raise ApiError("password and repassword not match", code=ErrorCode.PASSWORD_MISMATCH)
-
-    # 邮箱/手机号注册需要验证码
-    classify = parse_account_classify(account)
-    if classify in ("email", "mobile"):
-        if not vcode:
-            raise ApiError("verification code is required", code=ErrorCode.VCODE_REQUIRED)
-        stored = rdb.get(f"{PROC_NAME}:signup_vcode:{account}")
-        if isinstance(stored, bytes):
-            stored = stored.decode()
-        if not stored:
-            raise ApiError(
-                "verification code has expired, please request a new one",
-                code=ErrorCode.VCODE_EXPIRED,
-            )
-        if stored != vcode:
-            raise ApiError("invalid verification code", code=ErrorCode.VCODE_INVALID)
-        # 验证通过，删除已用验证码
-        rdb.delete(f"{PROC_NAME}:signup_vcode:{account}")
-
-    result = RegisterInterface(
-        account,
-        decrypted_password,
-        nickname=nickname,
-        bio=bio,
-        gender=gender,
-        avatar=avatar,
-        location=location,
-    )
-    # 记录注册审计日志
-    auth = get_auth(account)
-    if auth:
-        record_audit_log(
-            uid=auth["uid"],
-            action="register",
-            detail={"account": account},
-            ip=get_ip(),
-            user_agent=request.headers.get("User-Agent", ""),
-        )
-    return result
 
 
 @bp.get("/user/audit_log")
@@ -252,7 +173,16 @@ def change_pwd():
 
     try:
         ret = change_password(uid, account, new_pwd)
-    except PassportError as e:
+    except ParamError as e:
+        # 依据 models.change_password 的校验点映射错误码，
+        # 避免所有场景都提示“请输入密码”造成误导
+        msg = str(e)
+        if "different from current password" in msg:
+            raise ApiError(msg, code=ErrorCode.PASSWORD_SAME_AS_OLD)
+        if "6-32 characters" in msg:
+            raise ApiError(msg, code=ErrorCode.PASSWORD_TOO_SHORT)
+        raise ApiError(msg, code=ErrorCode.PASSWORD_REQUIRED)
+    except AuthError as e:
         raise ApiError(str(e), code=ErrorCode.PASSWORD_REQUIRED)
     else:
         record_audit_log(
@@ -616,6 +546,43 @@ def user_bind_account():
             user_agent=request.headers.get("User-Agent", ""),
         )
         return new_res(success=True, data=dict(account=account))
+
+
+@bp.post("/user/set_username")
+@apilogin_required
+def user_set_username():
+    """设置或修改用户名接口。
+
+    每个用户仅保留一条 username 类型的 Auth 记录；修改后 3 个月内
+    仅可再次修改一次（通过 Auth.mtime 校验）。
+
+    :form username: 用户名（必填，小写字母开头，3-32 位小写字母/数字/下划线）
+    :returns: 设置结果 JSON
+    """
+    uid = g.user["uid"]
+    username = request.form.get("username", "").strip()
+    if not username:
+        raise ApiError("username is required",
+                       code=ErrorCode.USERNAME_REQUIRED)
+    if not username_check(username):
+        raise ApiError("invalid username format",
+                       code=ErrorCode.USERNAME_INVALID)
+    if has_account(username):
+        raise ApiError("username already exists",
+                       code=ErrorCode.USERNAME_TAKEN)
+    try:
+        ret = set_username(uid=uid, username=username)
+    except PassportError as e:
+        raise ApiError(str(e), code=ErrorCode.USERNAME_CHANGE_LIMIT)
+    else:
+        record_audit_log(
+            uid=uid,
+            action="set_username",
+            detail={"username": username, "changed": ret["changed"]},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
+        return new_res(success=True, data=ret)
 
 
 @bp.post("/user/unbind_account")

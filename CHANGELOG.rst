@@ -1,6 +1,29 @@
 更新日志
 ========
 
+v2.8.0
+------
+
+新特性
+~~~~~~
+
+- 个人中心新增「设置用户名」：非用户名注册的用户可为账号设置一个用户名（每个用户最多一条 ``classify == "username"`` 的 Auth 记录，全局唯一，格式与注册用户名一致），设置后即可使用用户名登录；已设置用户名的用户可修改用户名，修改后 3 个月内仅可再次修改一次（通过 ``Auth.mtime`` 记录上次修改时间，前端在弹窗中提示剩余天数）。新增接口 ``POST /api/user/set_username`` 及错误码 ``USERNAME_REQUIRED``/``USERNAME_INVALID``/``USERNAME_TAKEN``/``USERNAME_CHANGE_LIMIT``（前端 ``ERROR_ZH`` 已映射中文）。
+- 新增 CLI 命令 ``create-superadmin``：一键创建角色为 ``superadmin`` 的新用户，仅支持 **username** 格式账号（小写字母开头，3-32 位小写字母/数字/下划线），用于创建初始超级管理员（如 ``passportd create-superadmin rootadmin``，密码交互式输入并二次确认），创建成功后自动写入 ``role_set`` 审计日志。
+- 文档补充：``docs/guide/usage.rst`` 新增「命令行工具」章节，完整收录服务管理（``run``/``start``/``status``/``stop``/``restart``/``config``）、创建超级管理员（``create-superadmin``）与角色管理（``role list``/``set``/``add``/``remove``）等全部 CLI 命令的用法。
+- 新增隐私政策页面（``/privacy``）：提供可定制模板 ``templates/privacy.j2``，正文覆盖信息收集（账号资料/第三方身份/Passkey 公钥/登录日志/OIDC 授权）、信息使用、存储保留、Cookies、共享披露、用户权利、未成年人保护等章节，含 ``<...>`` 占位符供部署者替换实际运营信息。新增 bool 配置项 ``SITE_PRIVACY``（默认 ``False``，环境变量 ``PASSPORT_SITE_PRIVACY``），设为 ``True`` 时页脚才显示「隐私政策」链接。
+
+变更
+~~~~
+
+- 登录/注册密码改为 RSA 加密传输：前端新增 ``static/js/password-encrypt.js``，使用浏览器 WebCrypto（``RSA-OAEP`` + ``A256GCM``）基于 ``GET /api/key`` 返回的公钥生成 JWE 紧凑密文，密码登录表单提交 ``encrypted_password``（``/user/signin``），注册表单提交 ``encrypted_password``/``encrypted_repassword``（``/user/signup``），不再明文传输密码。后端 ``front.signup`` 新增 ``parse_encrypted_password`` 解密逻辑；浏览器不支持 WebCrypto 时（非 HTTPS/老浏览器）自动降级为明文提交，后端保持兼容。
+- 移除仅供测试使用的 ``POST /api/user/signup`` 注册接口（``api.py``）：注册仅通过页面路由 ``/user/signup`` 完成，API 注册接口无实际调用方，同步删除对应测试用例与文档/示例中的 curl 示例。
+
+修复
+~~~~
+
+- 修复 Prometheus 指标中 Gunicorn 存活 Worker 数为 0、Master 判定宕机、Worker 连接数及 HTTP 请求计数在 Grafana 显示 no data 的问题：应用启动时 ``setproctitle(PROC_NAME)`` 会把 gunicorn 进程标题改为 ``passportd``，而原 ``_detect_role`` 仅凭 ``comm == "gunicorn"`` 且从 ``cmdline`` 中查找 master/worker 字样判断角色，实际全部判定为 ``app``，导致 ``passportd_gunicorn_workers_alive``/``master_alive``/``worker_connections`` 无有效数据；现改为解析 ``/proc/<pid>/stat`` 的 ppid，通过进程父子关系识别 worker（ppid 为相关进程）与 master（无 gunicorn 父进程），兼容进程标题被覆盖的场景。HTTP 请求计数在 Redis 与本地均无数据时输出零值系列，避免 Grafana 面板出现 no data。
+- 修复修改密码提示误导：修改密码本就不需要输入旧密码（仅需新密码与确认），但 ``POST /api/user/change_password`` 将后端抛出的所有 ``PassportError`` 一律映射为 ``PASSWORD_REQUIRED``（前端文案「请输入密码」），当新密码与当前密码相同时用户会看到「请输入密码」的错误提示。现新增错误码 ``PASSWORD_SAME_AS_OLD``（前端映射「新密码不能与当前密码相同」），按校验点精确区分映射，密码规则类错误归入 ``PASSWORD_TOO_SHORT``。
+
 v2.7.0
 ------
 

@@ -112,6 +112,7 @@
 
         {# 绑定账号列表 #}
         <div class="box">
+            {% set username_acct = (accounts | selectattr('classify', 'equalto', 'username') | list | first) %}
             <h2 class="title is-5 mb-4">
                 <span class="icon-text">
                     <span class="icon"><i class="fa-solid fa-link"></i></span>
@@ -122,6 +123,21 @@
                         <span class="icon is-small"><i class="fa-solid fa-plus"></i></span>
                         <span>绑定</span>
                     </button>
+                </span>
+                <span class="ml-2">
+                    {% if username_acct %}
+                    <button class="button is-small is-info is-light js-open-username"
+                            data-mode="change" data-username="{{ username_acct.account }}"
+                            data-mtime="{{ username_acct.mtime }}">
+                        <span class="icon is-small"><i class="fa-solid fa-user-pen"></i></span>
+                        <span>修改用户名</span>
+                    </button>
+                    {% else %}
+                    <button class="button is-small is-info is-light js-open-username" data-mode="set">
+                        <span class="icon is-small"><i class="fa-solid fa-user-pen"></i></span>
+                        <span>设置用户名</span>
+                    </button>
+                    {% endif %}
                 </span>
             </h2>
             {% if accounts %}
@@ -255,6 +271,37 @@
 
     </div>
 </section>
+
+{# 设置 / 修改用户名模态框 #}
+<div class="modal" id="username-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title" id="username-modal-title">设置用户名</p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body">
+            <div class="field">
+                <label class="label" for="username-modal-input">用户名</label>
+                <div class="control">
+                    <input class="input" type="text" id="username-modal-input"
+                           placeholder="小写字母开头，3-32 位小写字母/数字/下划线"
+                           maxlength="32">
+                </div>
+                <p class="help">小写字母开头，3-32 位小写字母/数字/下划线</p>
+                <p class="help" id="username-modal-msg" style="display:none;"></p>
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div class="buttons">
+                <button type="button" class="button is-success" id="username-confirm-btn">
+                    <span>确认</span>
+                </button>
+                <button type="button" class="button js-close-username-modal">取消</button>
+            </div>
+        </footer>
+    </div>
+</div>
 
 {# 注销账号确认模态框 #}
 <div class="modal" id="delete-account-modal">
@@ -1026,6 +1073,117 @@
         if (e.key === 'Enter' && vcMode === 'unbind') {
             $vcSendBtn.trigger('click');
         }
+    });
+
+    // =========================================================
+    // 设置 / 修改用户名
+    // =========================================================
+    const USERNAME_CHANGE_INTERVAL = 90 * 24 * 3600;  // 3 个月（秒）
+    let $uNameModal = $('#username-modal');
+    let $uNameInput = $('#username-modal-input');
+    let $uNameMsg = $('#username-modal-msg');
+    let usernameMode = 'set';
+    let usernameOld = '';
+    let usernameMtime = 0;
+
+    function showUNameMsg(msg, type) {
+        let cls = 'is-danger';
+        if (type === 'success') cls = 'is-success';
+        $uNameMsg.removeClass('is-success is-danger').addClass(cls).text(msg).show();
+    }
+
+    function clearUNameMsg() {
+        $uNameMsg.hide();
+    }
+
+    function closeUNameModal() {
+        $uNameModal.removeClass('is-active');
+    }
+
+    function openUNameModal(mode, oldName, mtime) {
+        usernameMode = mode;
+        usernameOld = oldName || '';
+        usernameMtime = parseInt(mtime || 0, 10);
+        $uNameInput.val(usernameOld);
+        clearUNameMsg();
+        $('#username-modal-title').text(mode === 'change' ? '修改用户名' : '设置用户名');
+        // 修改频率限制提示
+        let nowTs = Math.floor(Date.now() / 1000);
+        let daysLeft = 0;
+        if (usernameMtime > 0) {
+            daysLeft = Math.ceil((usernameMtime + USERNAME_CHANGE_INTERVAL - nowTs) / 86400);
+        }
+        let $btn = $('#username-confirm-btn');
+        if (daysLeft > 0) {
+            showUNameMsg('距上次修改用户名不足 3 个月，' + daysLeft + ' 天后才可再次修改', 'error');
+            $btn.prop('disabled', true).find('span').text('确认');
+        } else {
+            $btn.prop('disabled', false).find('span').text('确认');
+        }
+        $uNameModal.addClass('is-active');
+    }
+
+    // 打开设置 / 修改弹窗
+    $(document).on('click', '.js-open-username', function () {
+        openUNameModal(
+            $(this).data('mode'),
+            $(this).data('username'),
+            $(this).data('mtime')
+        );
+    });
+
+    // 关闭弹窗
+    $('.js-close-username-modal, #username-modal .delete, #username-modal .modal-background').on('click', function () {
+        closeUNameModal();
+    });
+
+    // ESC 关闭
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $uNameModal.hasClass('is-active')) {
+            closeUNameModal();
+        }
+    });
+
+    // 输入框 Enter 提交
+    $('#username-modal-input').on('keydown', function (e) {
+        if (e.key === 'Enter') {
+            $('#username-confirm-btn').trigger('click');
+        }
+    });
+
+    // 确认提交
+    $('#username-confirm-btn').on('click', function () {
+        clearUNameMsg();
+        let username = $uNameInput.val().trim();
+        if (!username) {
+            showUNameMsg('请输入用户名', 'error');
+            return;
+        }
+        if (username === usernameOld) {
+            showUNameMsg('新用户名与当前用户名相同', 'error');
+            return;
+        }
+        let $btn = $(this);
+        $btn.prop('disabled', true).find('span').text('提交中...');
+        $.ajax({
+            url: '{{ url_for("root.api.user_set_username") }}',
+            method: 'POST',
+            data: { username: username },
+            success: function (res) {
+                if (!res.success) {
+                    showUNameMsg(apiMessage(res, '设置失败'), 'error');
+                    $btn.prop('disabled', false).find('span').text('确认');
+                    return;
+                }
+                showUNameMsg('设置成功', 'success');
+                // 刷新页面
+                setTimeout(function () { window.location.reload(); }, 1000);
+            },
+            error: function () {
+                showUNameMsg('网络异常，请重试', 'error');
+                $btn.prop('disabled', false).find('span').text('确认');
+            }
+        });
     });
 
     // =========================================================

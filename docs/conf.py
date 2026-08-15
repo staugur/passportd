@@ -54,6 +54,7 @@ autodoc_mock_imports = [
     "flask_pluginkit",
     "authlib",
     "joserfc",
+    "prometheus_client",
 ]
 
 project = "passportd"

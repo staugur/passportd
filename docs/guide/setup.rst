@@ -94,6 +94,10 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - str
      - ``""``
      - 站点 logo 图片地址（URL），为空导航栏显示 ``SITE_TITLE`` 文字
+   * - ``SITE_PRIVACY``
+     - bool
+     - ``False``
+     - 是否启用隐私政策页面（``/privacy``），为 ``True`` 时页脚显示「隐私政策」链接。环境变量 ``PASSPORT_SITE_PRIVACY``（布尔，取值 ``true``/``false``）
    * - ``METRICS_ENABLED``
      - bool
      - ``True``
@@ -291,6 +295,11 @@ OAuth2 第三方登录配置
    * - ``GITHUB_CLIENT_SECRET``
      - str
      - GitHub OAuth App Client Secret
+   * - ``GITHUB_CALLBACK_PROXY`` (可选)
+     - str
+     - Github OAuth2 回调时代理地址。
+       服务器无法直连 Github API时使用，
+       如 ``http://proxy:8080``。仅支持 HTTP 代理。
    * - ``GITEE_CLIENT_ID``
      - str
      - Gitee OAuth App Client ID
@@ -324,8 +333,8 @@ OAuth2 第三方登录配置
 OIDC 内部客户端配置
 --------------------
 
-passportd 作为统一认证中心时，**平台角色（小写 ``admin`` / ``superadmin`` /
-``user``）默认不向任何客户端输出**，第三方应用的角色应由其自身基于 ``sub`` 管理。若自有项目
+passportd 作为统一认证中心时，平台角色（小写 ``admin`` / ``superadmin`` /
+``user`` ）默认 **不向任何客户端输出** ，第三方应用的角色应由其自身基于 ``sub`` 管理。若自有项目
 （自家应用）需要通过 OIDC 判定用户是否为管理员，可将应用加入内部客户端列表，
 这些应用在申请 ``role`` scope 时可获得平台角色。
 
@@ -352,7 +361,7 @@ passportd 作为统一认证中心时，**平台角色（小写 ``admin`` / ``su
 
 .. note::
 
-   前端创建/编辑 OIDC 客户端的表单**不展示 ``role`` 授权范围选项**（对第三方
+   前端创建/编辑 OIDC 客户端的表单 **不展示** ``role`` 授权范围选项（对第三方
    不可见）。内部客户端需要 ``role`` scope 时，通过 OIDC 客户端 API 或数据库
    直接配置即可；后端在 ID Token 与 ``/oidc/userinfo`` 中仍按 ``OIDC_INTERNAL_CLIENTS``
    判断是否返回平台角色。编辑已带 ``role`` scope 的内部客户端时，前端会自动

@@ -85,6 +85,8 @@ class BaseConfig:
     SITE_FAVICON: str = ""
     #: 站点 logo 图片地址（URL），为空导航栏显示 SITE_TITLE 文字
     SITE_LOGO: str = ""
+    #: 是否启用隐私政策页面（/privacy），true 时页脚显示「隐私政策」链接
+    SITE_PRIVACY: bool = False
 
     # 上传
     #: 上传方式，支持 sapic、local，本地上传固定保存到 BASE_DIR/uploads
@@ -179,6 +181,7 @@ class DevConfig(BaseConfig):
     ENV = "development"
     DEBUG = True
     PASSKEY_RP_ID: str = "localhost"
+    SITE_PRIVACY = True
     # Flask-PluginKit 配置
     PLUGINKIT_AUTH_METHOD = "FUNC"
     PLUGINKIT_AUTH_FUNC = lambda: True
@@ -312,39 +315,37 @@ def _check_config_value(cfg):
 
     # 登录安全配置校验
     _fail_max = cfg["LOGIN_FAIL_MAX"]
-    assert isinstance(_fail_max, int) and _fail_max >= 1, (
-        "LOGIN_FAIL_MAX must be a positive integer"
-    )
+    assert (
+        isinstance(_fail_max, int) and _fail_max >= 1
+    ), "LOGIN_FAIL_MAX must be a positive integer"
     _lock_time = cfg["LOGIN_LOCK_TIME"]
-    assert isinstance(_lock_time, int) and _lock_time >= 1, (
-        "LOGIN_LOCK_TIME must be a positive integer"
-    )
+    assert (
+        isinstance(_lock_time, int) and _lock_time >= 1
+    ), "LOGIN_LOCK_TIME must be a positive integer"
     _ip_limit = cfg["LOGIN_IP_LIMIT"]
-    assert isinstance(_ip_limit, int) and _ip_limit >= 1, (
-        "LOGIN_IP_LIMIT must be a positive integer"
-    )
+    assert (
+        isinstance(_ip_limit, int) and _ip_limit >= 1
+    ), "LOGIN_IP_LIMIT must be a positive integer"
     _ip_window = cfg["LOGIN_IP_WINDOW"]
-    assert isinstance(_ip_window, int) and _ip_window >= 1, (
-        "LOGIN_IP_WINDOW must be a positive integer"
-    )
+    assert (
+        isinstance(_ip_window, int) and _ip_window >= 1
+    ), "LOGIN_IP_WINDOW must be a positive integer"
 
     # Prometheus Metrics 配置校验
-    assert isinstance(cfg["METRICS_ENABLED"], bool), (
-        "METRICS_ENABLED must be a boolean"
-    )
+    assert isinstance(cfg["METRICS_ENABLED"], bool), "METRICS_ENABLED must be a boolean"
     _metrics_path = cfg["METRICS_PATH"]
-    assert isinstance(_metrics_path, str) and _metrics_path.startswith("/"), (
-        "METRICS_PATH must be a string starting with /"
-    )
+    assert isinstance(_metrics_path, str) and _metrics_path.startswith(
+        "/"
+    ), "METRICS_PATH must be a string starting with /"
     _cache_ttl = cfg["METRICS_CACHE_TTL"]
-    assert isinstance(_cache_ttl, int) and _cache_ttl >= 1, (
-        "METRICS_CACHE_TTL must be a positive integer"
-    )
+    assert (
+        isinstance(_cache_ttl, int) and _cache_ttl >= 1
+    ), "METRICS_CACHE_TTL must be a positive integer"
 
     # NOTICE 校验：list（公告列表）或 str（接口 URL）
-    assert isinstance(cfg["NOTICE"], (list, str)), (
-        "NOTICE must be a list or a URL string"
-    )
+    assert isinstance(
+        cfg["NOTICE"], (list, str)
+    ), "NOTICE must be a list or a URL string"
 
     # 字符串类配置校验
     for _key in (
@@ -359,6 +360,9 @@ def _check_config_value(cfg):
         "METRICS_TOKEN",
     ):
         assert isinstance(cfg[_key], str), f"{_key} must be a string"
+
+    # 布尔类配置校验
+    assert isinstance(cfg["SITE_PRIVACY"], bool), "SITE_PRIVACY must be a boolean"
 
 
 config = FlaskConfig(APP_DIR)

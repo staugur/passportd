@@ -88,6 +88,8 @@ OIDC_RSA_KEY_SIZE: int = 4096
 
 #: 用户登录状态索引字段
 USR_STATE_KEY: str = "sid"
+#: 用户名修改间隔：3 个月（按 90 天计，秒）
+USERNAME_CHANGE_INTERVAL: int = 90 * 24 * 3600
 
 #: WebAuthn Passkey
 #: Challenge 缓存有效期（秒）

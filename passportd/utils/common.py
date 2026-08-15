@@ -197,6 +197,7 @@ def is_valid_user_role(role: str) -> bool:
     """校验用户角色格式是否合法。
 
     支持两种格式：
+
     - 内置角色（小写）：``superadmin``、``admin``、``user``
     - 客户端角色：``client_name:Role`` 格式，其中 ``client_name`` 需通过
       ``appname_check`` 校验（如 ``myapp:Admin``）

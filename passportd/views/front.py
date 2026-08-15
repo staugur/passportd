@@ -100,8 +100,14 @@ def signup():
     """
     if request.method == "POST":
         account = request.form.get("account", "").strip()
-        password = request.form.get("password", "").strip()
-        repassword = request.form.get("repassword", "").strip()
+        # 优先使用 RSA 加密传输的密码（JWE），解密失败回退明文
+        # （兼容测试 / 老前端）
+        password = parse_encrypted_password(
+            request.form.get("encrypted_password", "")
+        ) or request.form.get("password", "").strip()
+        repassword = parse_encrypted_password(
+            request.form.get("encrypted_repassword", "")
+        ) or request.form.get("repassword", "").strip()
         vcode = request.form.get("vcode", "").strip()
         nickname = request.form.get("nickname", "").strip()
 
@@ -495,6 +501,12 @@ def oidc_client():
 def security():
     """安全页面：展示用户的安全审计日志。"""
     return render_template("security.j2")
+
+
+@bp.get("/privacy")
+def privacy():
+    """隐私政策页面（需配置 SITE_PRIVACY=True 才会在页脚显示入口）。"""
+    return render_template("privacy.j2")
 
 
 

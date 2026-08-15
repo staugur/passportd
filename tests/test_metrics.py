@@ -10,7 +10,7 @@
 
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # ---- Mock Redis（必须在导入 passportd 之前） ----
 _mock_redis = MagicMock()
@@ -193,3 +193,176 @@ class MetricsTest(unittest.TestCase):
             if f.name == "passportd_python_gc_objects_pending"
         ][0]
         self.assertEqual(len(pending.samples), 3)
+
+
+class GunicornRoleDetectionTest(unittest.TestCase):
+    """gunicorn master/worker 角色判定测试"""
+
+    def test_setproctitle_worker_detected_by_ppid(self):
+        """comm 被 setproctitle 改为 passportd 时，ppid 是相关进程 → worker"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "passportd",
+            "cmdline": "/usr/bin/gunicorn -w 4 passportd.app:app",
+            "ppid": 100,
+        }
+        self.assertEqual(
+            _detect_role(proc, {100, 101, 102}), "gunicorn_worker"
+        )
+
+    def test_docker_pid1_master(self):
+        """Docker 下 master 为容器 PID 1（ppid=0，无父进程）→ master"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "passportd",
+            "cmdline": (
+                "/usr/local/bin/python -m gunicorn -c passportd.py "
+                "passportd.app:create_app()"
+            ),
+            "ppid": 0,
+        }
+        self.assertEqual(
+            _detect_role(proc, {1, 2, 3, 4}), "gunicorn_master"
+        )
+
+    def test_docker_worker_ppid_is_pid1_master(self):
+        """Docker 下 worker 的 ppid 是容器 PID 1（master）→ worker"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "passportd",
+            "cmdline": (
+                "/usr/local/bin/python -m gunicorn -c passportd.py "
+                "passportd.app:create_app()"
+            ),
+            "ppid": 1,
+        }
+        self.assertEqual(
+            _detect_role(proc, {1, 2, 3, 4}), "gunicorn_worker"
+        )
+
+    def test_setproctitle_master_detected_by_no_parent(self):
+        """comm 被 setproctitle 改为 passportd 时，无 gunicorn 父进程 → master"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "passportd",
+            "cmdline": "/usr/bin/gunicorn -w 4 passportd.app:app",
+            "ppid": 1,
+        }
+        self.assertEqual(
+            _detect_role(proc, {100, 101}), "gunicorn_master"
+        )
+
+    def test_native_comm_contains_worker(self):
+        """未覆盖标题时 comm 含 worker → worker"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "gunicorn: worker [passportd.app:app]",
+            "cmdline": "/usr/bin/gunicorn passportd.app:app",
+            "ppid": 1,
+        }
+        self.assertEqual(_detect_role(proc, {100}), "gunicorn_worker")
+
+    def test_native_comm_contains_master(self):
+        """未覆盖标题时 comm 含 master → master"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "gunicorn: master [passportd.app:app]",
+            "cmdline": "/usr/bin/gunicorn passportd.app:app",
+            "ppid": 1,
+        }
+        self.assertEqual(_detect_role(proc, {100}), "gunicorn_master")
+
+    def test_worker_class_in_cmdline_not_confused(self):
+        """cmdline 含 --worker-class 不应把 master 误判为 worker"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "passportd",
+            "cmdline": (
+                "/usr/bin/gunicorn --worker-class gevent "
+                "passportd.app:app"
+            ),
+            "ppid": 1,
+        }
+        self.assertEqual(
+            _detect_role(proc, {100, 101}), "gunicorn_master"
+        )
+
+    def test_unrelated_process_is_app(self):
+        """非 gunicorn 进程 → app"""
+        from passportd.libs.metrics import _detect_role
+
+        proc = {
+            "comm": "python3",
+            "cmdline": "python3 worker.py",
+            "ppid": 1,
+        }
+        self.assertEqual(_detect_role(proc, {100}), "app")
+
+    def test_parse_proc_stat_returns_ppid(self):
+        """解析 /proc/<pid>/stat 时正确提取 ppid 字段"""
+        from passportd.libs.metrics import _parse_proc_stat
+
+        # 第 3 字段(state)=S，第 4 字段(ppid)=1，
+        # 后接 utime/stime/starttime/vsize/rss
+        stat_line = (
+            "123 (gunicorn: master [app]) S 1 123 123 0 -1 4194560 0 0 0 "
+            "0 10 5 0 0 20 0 1 0 5555 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 "
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+        )
+        with patch(
+            "passportd.libs.metrics._read_proc", return_value=stat_line
+        ):
+            data = _parse_proc_stat(123)
+        self.assertIsNotNone(data)
+        self.assertEqual(data["ppid"], 1)
+        self.assertEqual(data["comm"], "gunicorn: master [app]")
+
+
+class HttpRequestFallbackTest(unittest.TestCase):
+    """HTTP 请求计数兜底测试"""
+
+    def test_redis_and_local_empty_outputs_zero_series(self):
+        """Redis 与本地均无计数时输出零值系列，避免 Grafana no data"""
+        from passportd.libs.metrics import _HttpRequestCollector
+
+        with patch(
+            "passportd.libs.metrics.rdb.hgetall", return_value={}
+        ), patch("passportd.libs.metrics._local_req_counter", {}):
+            families = list(_HttpRequestCollector().collect())
+        family = [
+            f for f in families
+            if f.name == "passportd_http_requests"
+        ][0]
+        self.assertEqual(len(family.samples), 1)
+        self.assertEqual(
+            family.samples[0].name, "passportd_http_requests_total"
+        )
+        self.assertEqual(family.samples[0].value, 0.0)
+
+    def test_redis_data_merged_output(self):
+        """Redis 有数据时按 method/status 输出计数"""
+        from passportd.libs.metrics import _HttpRequestCollector
+
+        with patch(
+            "passportd.libs.metrics.rdb.hgetall",
+            return_value={"GET:200": "3", "POST:201": "1"},
+        ):
+            families = list(_HttpRequestCollector().collect())
+        family = [
+            f for f in families
+            if f.name == "passportd_http_requests"
+        ][0]
+        self.assertEqual(len(family.samples), 2)
+        values = {
+            (s.labels["method"], s.labels["status"]): s.value
+            for s in family.samples
+        }
+        self.assertEqual(values[("GET", "200")], 3.0)
+        self.assertEqual(values[("POST", "201")], 1.0)

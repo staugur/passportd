@@ -4,10 +4,10 @@ redirect_uri=http://localhost:10030/callback
 
 ### register/login
 
-curl -i "http://localhost:10030/api/user/signup" -d account=test -d password=123456 -d repassword=123456
-> dict result
+curl -iL "http://localhost:10030/user/signup" -d account=test -d encrypted_password=<jwe> -d encrypted_repassword=<jwe>
+> 302 to signin
 
-curl -iL "http://localhost:10030/user/signin" -d account=test -d password=123456
+curl -iL "http://localhost:10030/user/signin" -d account=test -d encrypted_password=<jwe>
 > 302 with cookie(sid)
 
 ### test login state

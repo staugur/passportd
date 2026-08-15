@@ -91,13 +91,7 @@ passportd 支持通过 ``PASSPORT_`` 前缀的环境变量覆盖配置项。例�
 6. 注册并登录
 -------------
 
-访问 http://localhost:10030/ 即可看到注册/登录页面。
-
-你也可以通过 API 注册账号：
-
-.. code-block:: shell
-
-    curl -i "http://localhost:10030/api/user/signup" -d account=test -d password=123456 -d repassword=123456
+访问 http://localhost:10030/ 即可看到注册/登录页面（注册/登录密码通过 RSA 公钥加密后传输）。
 
 7. 注册 OAuth2 客户端（OIDC Provider 模式）
 --------------------------------------------

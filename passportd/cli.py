@@ -18,13 +18,13 @@ limitations under the License.
 import os
 import signal
 import sys
-import time
 import tempfile
+import time
 from contextlib import contextmanager
-
-import click
 from json import JSONEncoder, dumps
 from types import FunctionType
+
+import click
 
 from .basis.common import now
 from .basis.conf import config as passportd_config
@@ -379,6 +379,44 @@ def role_remove(uid, roles):
             detail={"removed": norm_roles, "roles": u.role},
         )
     click.secho(f"remove {uid} role -> {u.role}", fg="green")
+
+
+@cli.command("create-superadmin")
+@click.argument("account")
+@click.option(
+    "--password",
+    prompt=True,
+    hide_input=True,
+    confirmation_prompt=True,
+    help="登录密码（6-32 位）",
+)
+@click.option("--nickname", default="", help="用户昵称（可选）")
+def create_superadmin(account, password, nickname):
+    """创建一个角色为 superadmin 的新用户（仅 username 账号）。
+
+    账号必须是合法用户名（小写字母开头，3-32 位小写字母/数字/下划线），
+    密码 6-32 位，仅用于创建初始超级管理员，不修改现有用户。
+    """
+    from .basis.errors import AuthError, ParamError
+    from .models.audit import record_audit_log
+    from .models.user import add_profile, get_account
+    from .utils.common import username_check
+
+    if not username_check(account):
+        raise click.ClickException("invalid username")
+    try:
+        with _db_conn():
+            add_profile(
+                account, password, nickname=nickname, role="superadmin"
+            )
+            record_audit_log(
+                uid=get_account(account)["uid"],
+                action="role_set",
+                detail={"roles": "superadmin"},
+            )
+    except (ParamError, AuthError) as e:
+        raise click.ClickException(str(e))
+    click.secho(f"created superadmin: {account}", fg="green")
 
 
 if __name__ == "__main__":
