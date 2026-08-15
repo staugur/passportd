@@ -1,19 +1,26 @@
 # -*- coding: utf-8 -*-
 """GeeTest 行为验证（第三代）服务端官方封装 GeeTeam/gt3-server-python-flask-bypass"""
 
-import random
-import json
-import requests
-import hmac
 import hashlib
-
+import hmac
 import json
+import os
+import random
+import threading
 import time
+
 import requests
 
-from ..utils.common import logger, rdb
-from ..basis.vars import PROC_NAME, GEETEST_BYPASS_URL, GEETEST_BYPASS_REDIS_KEY
 from ..basis.conf import config
+from ..basis.vars import (
+    GEETEST_BYPASS_INTERVAL,
+    GEETEST_BYPASS_LOCK_KEY,
+    GEETEST_BYPASS_LOCK_TTL,
+    GEETEST_BYPASS_REDIS_KEY,
+    GEETEST_BYPASS_URL,
+    PROC_NAME,
+)
+from ..utils.common import logger, rdb
 from ..version import __version__
 
 
@@ -262,27 +269,71 @@ class GeetestLib:
         ).hexdigest()
 
 
-# 发送bypass请求，获取bypass状态并进行缓存
-def check_bypass_status():
+def _fetch_bypass_status() -> None:
+    """请求极验 bypass 接口并将状态写入 Redis，单次检测。
+
+    :returns: 写入 Redis 的 bypass 状态（success/fail）
+    :rtype: str
+    """
+    response = ""
+    params = {"gt": config.get("GEETEST_CAPTCHA_ID")}
+    try:
+        response = requests.get(url=GEETEST_BYPASS_URL, params=params)
+    except Exception as e:
+        logger.error("geetest bypass request error: %s", e)
+    if response and response.status_code == 200:
+        bypass_status_str = response.content.decode("utf-8")
+        bypass_status = json.loads(bypass_status_str).get("status")
+    else:
+        bypass_status = "fail"
+    rdb.set(GEETEST_BYPASS_REDIS_KEY, bypass_status)
+    logger.debug("bypass 状态已获取并存入 redis，当前状态为-%s", bypass_status)
+    return bypass_status
+
+
+# 发送bypass请求，获取bypass状态并进行缓存（守护线程常驻运行）
+def check_bypass_status() -> None:
+    """循环检测极验 bypass 状态并写入 Redis，供守护线程调用。
+
+    gunicorn 多 worker 都会执行 create_app 并各自启动该循环，
+    通过 Redis 分布式锁保证同时仅有一个实例实际请求极验，其余
+    实例等待锁释放后接管，避免多进程重复检测。
+
+    :returns: None
+    """
+    token = "{0}-{1}".format(os.getpid(), threading.get_ident())
     while True:
-        response = ""
-        params = {"gt": config.get("GEETEST_CAPTCHA_ID")}
         try:
-            response = requests.get(url=GEETEST_BYPASS_URL, params=params)
+            if rdb.get(GEETEST_BYPASS_LOCK_KEY) == token:
+                # 锁仍归本线程持有，续期并执行检测
+                rdb.expire(GEETEST_BYPASS_LOCK_KEY, GEETEST_BYPASS_LOCK_TTL)
+                _fetch_bypass_status()
+            else:
+                # 尝试抢占分布式锁，成功则执行检测
+                acquired = rdb.set(
+                    GEETEST_BYPASS_LOCK_KEY,
+                    token,
+                    nx=True,
+                    ex=GEETEST_BYPASS_LOCK_TTL,
+                )
+                if acquired:
+                    _fetch_bypass_status()
         except Exception as e:
-            logger.error(e)
-        if response and response.status_code == 200:
-            print(response.content)
-            bypass_status_str = response.content.decode("utf-8")
-            bypass_status = json.loads(bypass_status_str).get("status")
-            rdb.set(GEETEST_BYPASS_REDIS_KEY, bypass_status)
-        else:
-            bypass_status = "fail"
-            rdb.set(GEETEST_BYPASS_REDIS_KEY, bypass_status)
-        logger.debug(
-            "bypass状态已经获取并存入redis，当前状态为-{}".format(bypass_status)
-        )
-        time.sleep(30)
+            logger.error("geetest bypass check loop error: %s", e)
+        time.sleep(GEETEST_BYPASS_INTERVAL)
+
+
+def start_bypass_checker() -> None:
+    """以守护线程方式启动 bypass 状态检测任务。
+
+    供 Flask 应用启动（create_app）时调用；未启用 GeeTest 时不启动。
+
+    :returns: None
+    """
+    if not geetest_enabled():
+        return
+    thread = threading.Thread(target=check_bypass_status, daemon=True)
+    thread.start()
 
 
 # 从缓存中取出当前缓存的bypass状态(success/fail)

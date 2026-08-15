@@ -54,7 +54,7 @@
           <form method="post" action="{{ url }}" id="form-password-submit">
             <input type="hidden" name="next" value="{{ next }}">
             <input type="hidden" name="encrypted_password" id="encrypted-password">
-            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
+            {% if g.geetest_enabled %}
             <input type="hidden" name="geetest_challenge" id="geetest-challenge">
             <input type="hidden" name="geetest_validate" id="geetest-validate">
             <input type="hidden" name="geetest_seccode" id="geetest-seccode">
@@ -90,9 +90,11 @@
               </label>
             </div>
 
-            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
+            {% if g.geetest_enabled %}
             <div class="field" id="geetest-field">
               <div id="geetest-captcha"></div>
+              <p class="help is-success" id="geetest-ok" style="display:none">验证通过，请点击「登 录」</p>
+              <p class="help is-danger" id="geetest-error" style="display:none">请先完成行为验证</p>
             </div>
             {% endif %}
 
@@ -216,7 +218,7 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/password-encrypt.js') }}"></script>
-{% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
+{% if g.geetest_enabled %}
 <script src="{{ url_for('static', filename='js/gt.0.5.0.js') }}"></script>
 {% endif %}
 <script>
@@ -238,12 +240,18 @@
 
     // 密码登录：提交前使用后端公钥加密密码（JWE），避免明文传输
     $('#form-password form').on('submit', function (e) {
-      {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
+      {% if g.geetest_enabled %}
       if (geetestLoading) {
-        return false; // 等待行为验证初始化完成
+        // 验证码仍在初始化，提示并定位到验证码行
+        $('#geetest-error').text('行为验证加载中，请稍候').show();
+        $('#geetest-field').get(0).scrollIntoView({behavior: 'smooth', block: 'center'});
+        return false;
       }
       if (!geetestVerified) {
-        return false; // 未完成行为验证，阻止提交
+        // 未完成行为验证，提示并定位到验证码行
+        $('#geetest-error').text('请先完成行为验证').show();
+        $('#geetest-field').get(0).scrollIntoView({behavior: 'smooth', block: 'center'});
+        return false;
       }
       {% endif %}
       let $form = $(this);
@@ -505,7 +513,7 @@
     }
     {% endif %}
 
-    {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
+    {% if g.geetest_enabled %}
     // GeeTest 行为验证初始化（密码登录，弹窗模式：显示"点击验证"按钮）
     $.ajax({
       url: '{{ url_for("root.api.geetest_register") }}?t=' + (new Date()).getTime(),
@@ -534,7 +542,10 @@
             $('#geetest-validate').val(result.geetest_validate);
             $('#geetest-seccode').val(result.geetest_seccode);
             geetestVerified = true;
-            $('#form-password-submit').trigger('submit'); // 自动继续提交
+            // 无感验证：一点即过，不自动提交表单，由用户点击「登 录」提交
+            $('#geetest-error').hide();
+            $('#geetest-captcha').hide();
+            $('#geetest-ok').show();
           });
         });
       },

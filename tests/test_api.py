@@ -56,6 +56,13 @@ class ApiTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        #: 测试环境强制禁用 GeeTest。须在 create_app 之前 patch，
+        #: app.py 的 before_request 闭包在 create_app 内绑定该函数，
+        #: 仅在测试方法上 patch 无法覆盖闭包引用。
+        cls._geetest_patcher = patch(
+            "passportd.libs.geetest.geetest_enabled", return_value=False
+        )
+        cls._geetest_patcher.start()
         app = create_app()
         app.config["TESTING"] = True
         cls.app = app
@@ -74,6 +81,7 @@ class ApiTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls._geetest_patcher.stop()
         with cls.app.app_context():
             # 删除测试用户及其 Auth 记录
             Auth.delete().where(Auth.account == _AUTH["username"]).execute()
@@ -113,8 +121,7 @@ class ApiTest(unittest.TestCase):
 
     # ---------- 页面路由：/user/signup、/user/signin（加密密码传输） ----------
 
-    @patch("passportd.utils.geetest.geetest_enabled", return_value=False)
-    def test_front_signup_with_encrypted_password(self, m_enabled):
+    def test_front_signup_with_encrypted_password(self):
         """注册页面支持 RSA 加密密码（JWE）提交"""
         resp = self.client.post(
             "/user/signup",
@@ -129,8 +136,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("注册成功", resp.get_data(as_text=True))
 
-    @patch("passportd.utils.geetest.geetest_enabled", return_value=False)
-    def test_front_signin_with_encrypted_password(self, m_enabled):
+    def test_front_signin_with_encrypted_password(self):
         """密码登录支持 RSA 加密密码（JWE）提交"""
         # 注册独立账号，避免受其他测试（改密码）影响
         self.client.post(
@@ -278,6 +284,13 @@ class SetUsernameApiTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        #: 测试环境强制禁用 GeeTest。须在 create_app 之前 patch，
+        #: app.py 的 before_request 闭包在 create_app 内绑定该函数，
+        #: 仅在测试方法上 patch 无法覆盖闭包引用。
+        cls._geetest_patcher = patch(
+            "passportd.libs.geetest.geetest_enabled", return_value=False
+        )
+        cls._geetest_patcher.start()
         app = create_app()
         app.config["TESTING"] = True
         cls.app = app
@@ -293,6 +306,7 @@ class SetUsernameApiTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls._geetest_patcher.stop()
         with cls.app.app_context():
             Auth.delete().where(
                 Auth.uid == cls._SU_AUTH["uid"]

@@ -175,9 +175,9 @@ class BaseConfig:
     LOGIN_IP_WINDOW: int = 60
 
     # GeeTest 行为验证（第三代）
-    #: 极验验证 ID（captcha_id），为空不启用行为验证
+    #: 极验行为验证V3 ID，为空不启用行为验证
     GEETEST_CAPTCHA_ID: str = ""
-    #: 极验私钥（private_key），与验证 ID 配套使用
+    #: 极验行为验证KEY，与验证 ID 配套使用
     GEETEST_CAPTCHA_KEY: str = ""
 
 
@@ -191,8 +191,6 @@ class DevConfig(BaseConfig):
     # Flask-PluginKit 配置
     PLUGINKIT_AUTH_METHOD = "FUNC"
     PLUGINKIT_AUTH_FUNC = lambda: True
-    GEETEST_CAPTCHA_ID = "0ed497e7a94fe6b101981dcf38cd1121"
-    GEETEST_CAPTCHA_KEY = "20232ec44699018400357a20c8e86570"
 
 
 class ProdConfig(BaseConfig):

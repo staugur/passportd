@@ -9,6 +9,7 @@
   ``gc.get_threshold`` 阈值）及 prometheus_client 内置的 GC/平台指标
 - Gunicorn 指标：worker 配置数、存活 worker 数、每个 worker 的 socket 连接数
 - 业务指标：用户数、活跃会话数、OAuth 客户端数等（查询数据库，带缓存）
+- 极验 bypass 指标：极验宕机降级状态（读 Redis 缓存，1=正常 / 0=宕机）
 - 请求指标：请求计数（经 Redis 聚合到全 worker）、当前进程耗时直方图与
   并发请求数
 
@@ -40,7 +41,7 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
 from ..basis.common import now
 from ..basis.conf import config
-from ..basis.vars import PROC_NAME
+from ..basis.vars import GEETEST_BYPASS_REDIS_KEY, PROC_NAME
 from ..models.model import (
     AuditLog,
     Auth,
@@ -685,6 +686,33 @@ def _inc_http_requests(method: str, status: int) -> None:
         )
 
 
+class _GeetestBypassCollector:
+    """采集极验 bypass 状态（1=正常，0=宕机降级）。
+
+    状态值由 libs/geetest.py 的后台检测线程每 GEETEST_BYPASS_INTERVAL 秒
+    请求极验 bypass 接口后写入 Redis（key 见 GEETEST_BYPASS_REDIS_KEY），
+    此处仅读取并暴露为 Prometheus gauge。
+    """
+
+    def collect(self) -> Iterator[GaugeMetricFamily]:
+        family = GaugeMetricFamily(
+            "passportd_geetest_bypass_status",
+            "极验行为验证 bypass 状态（1=正常, 0=宕机降级）",
+            labels=["status"],
+        )
+        try:
+            status = rdb.get(GEETEST_BYPASS_REDIS_KEY) or "fail"
+        except Exception as e:
+            logger.debug("metrics: geetest bypass status query failed: %s", e)
+            status = "fail"
+        if isinstance(status, bytes):
+            status = status.decode("utf-8")
+        family.add_metric(
+            [status], 1.0 if status == "success" else 0.0
+        )
+        yield family
+
+
 class _HttpRequestCollector:
     """采集请求计数（优先 Redis 聚合数据，失败回退本地）。"""
 
@@ -728,6 +756,7 @@ REGISTRY.register(_GunicornCollector())
 REGISTRY.register(_GCStateCollector())
 REGISTRY.register(_BusinessCollector())
 REGISTRY.register(_RedisCollector())
+REGISTRY.register(_GeetestBypassCollector())
 REGISTRY.register(_HttpRequestCollector())
 
 

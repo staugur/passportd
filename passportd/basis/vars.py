@@ -100,3 +100,9 @@ PASSKEY_RP_NAME: str = PROC_NAME
 #: Geetest Bypass URL
 GEETEST_BYPASS_URL: str = "http://bypass.geetest.com/v1/bypass_status.php"
 GEETEST_BYPASS_REDIS_KEY: str = f"{PROC_NAME}:bypass:status"
+#: Bypass 状态检测分布式锁（gunicorn 多进程下仅一个实例执行检测）
+GEETEST_BYPASS_LOCK_KEY: str = f"{PROC_NAME}:bypass:lock"
+#: Bypass 状态检测间隔（秒）
+GEETEST_BYPASS_INTERVAL: int = 100
+#: Bypass 锁有效期（秒），需大于检测间隔，持锁进程崩溃后锁自动释放
+GEETEST_BYPASS_LOCK_TTL: int = 200

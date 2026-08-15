@@ -55,7 +55,7 @@ def create_app():
     from .views.oidc import server as OIDCServer
     from .libs.oidc import OIDCClient, oidc_save_token
     from .libs.interface import OAuthClient
-    from .libs.geetest import geetest_enabled
+    from .libs.geetest import geetest_enabled, start_bypass_checker
 
     try:
         from setproctitle import setproctitle
@@ -149,5 +149,9 @@ def create_app():
     from .libs.metrics import init_metrics
 
     init_metrics(app)
+
+    # 后台守护线程：定时检测极验 bypass 状态并写入 Redis。
+    # gunicorn 多 worker 各自启动，Redis 分布式锁保证仅一个实例实际检测。
+    start_bypass_checker()
 
     return app

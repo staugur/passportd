@@ -1,27 +1,17 @@
 更新日志
 ========
 
-v2.9.0
-------
-
-新特性
-~~~~~~
-
-- 接入极验行为验证（第三代，GeeTest v3）：注册（用户名/邮箱/手机号注册）与密码登录提交前需完成行为验证，防止机器人批量注册与撞库攻击。参照极验官方 Python Flask 示例（``GeeTeam/gt3-server-python-flask-bypass``）重写 ``utils/geetest.py``：register 请求携带 ``sdk``/``json_format``/``digestmod`` 等官方参数，返回 ``success``/``gt``/``challenge``/``new_captcha`` 四字段；二次校验按官方协议以 POST 请求 ``validate.php``，响应 ``seccode`` 非空且不等于 ``"false"`` 判为通过。新增配置项 ``GEETEST_CAPTCHA_ID``（验证 ID）与 ``GEETEST_CAPTCHA_KEY``（私钥，环境变量 ``PASSPORT_GEETEST_CAPTCHA_ID``/``PASSPORT_GEETEST_CAPTCHA_KEY``），两者均为空时不启用行为验证；新增接口 ``GET /api/geetest/register`` 供前端获取初始化参数；新增错误码 ``GEETEST_REQUIRED``/``GEETEST_FAILED``（前端 ``ERROR_ZH`` 已映射中文）。极验前端 SDK 已替换为官方新版 ``gt.js``（约 66KB，支持 ``new_captcha`` 协议，替代不兼容的旧版 ``gt.0.5.0.js``），本地化到 ``static/js/gt.js``，注册/登录页面在未配置极验时自动隐藏验证组件。
-- 按极验官方服务端 API 文档补全接口结构（API1 / API2）：新增 api2 二次校验接口 ``POST /api/geetest/validate`` （对应文档 ``/validate``，接收 ``geetest_challenge``/``geetest_validate``/``geetest_seccode`` 三字段，响应 ``result`` 为 ``success``/``fail`` 并携带 ``version`` 字段），与已有 api1 初始化接口 ``GET /api/geetest/register`` 成对；注册/登录表单提交时的服务端内嵌二次校验保持不变。
-- 文档补充：``docs/guide/setup.rst`` 新增「极验行为验证配置」章节，收录 ``GEETEST_CAPTCHA_ID``/``GEETEST_CAPTCHA_KEY`` 配置项说明（默认均为空，由环境变量注入）与获取方式。
-- 修复：``GEETEST_CAPTCHA_ID``/``GEETEST_CAPTCHA_KEY`` 默认值不再写死为极验 demo 测试账号（此前导致未配置真实账号时也强制启用行为验证），改为默认空字符串，仅当通过环境变量 ``PASSPORT_GEETEST_CAPTCHA_ID``/``PASSPORT_GEETEST_CAPTCHA_KEY`` 配置后启用。
-
 v2.8.0
 ------
 
 新特性
 ~~~~~~
 
-- 个人中心新增「设置用户名」：非用户名注册的用户可为账号设置一个用户名（每个用户最多一条 ``classify == "username"`` 的 Auth 记录，全局唯一，格式与注册用户名一致），设置后即可使用用户名登录；已设置用户名的用户可修改用户名，修改后 3 个月内仅可再次修改一次（通过 ``Auth.mtime`` 记录上次修改时间，前端在弹窗中提示剩余天数）。新增接口 ``POST /api/user/set_username`` 及错误码 ``USERNAME_REQUIRED``/``USERNAME_INVALID``/``USERNAME_TAKEN``/``USERNAME_CHANGE_LIMIT``（前端 ``ERROR_ZH`` 已映射中文）。
-- 新增 CLI 命令 ``create-superadmin``：一键创建角色为 ``superadmin`` 的新用户，仅支持 **username** 格式账号（小写字母开头，3-32 位小写字母/数字/下划线），用于创建初始超级管理员（如 ``passportd create-superadmin rootadmin``，密码交互式输入并二次确认），创建成功后自动写入 ``role_set`` 审计日志。
-- 文档补充：``docs/guide/usage.rst`` 新增「命令行工具」章节，完整收录服务管理（``run``/``start``/``status``/``stop``/``restart``/``config``）、创建超级管理员（``create-superadmin``）与角色管理（``role list``/``set``/``add``/``remove``）等全部 CLI 命令的用法。
-- 新增隐私政策页面（``/privacy``）：提供可定制模板 ``templates/privacy.j2``，正文覆盖信息收集（账号资料/第三方身份/Passkey 公钥/登录日志/OIDC 授权）、信息使用、存储保留、Cookies、共享披露、用户权利、未成年人保护等章节，含 ``<...>`` 占位符供部署者替换实际运营信息。新增 bool 配置项 ``SITE_PRIVACY``（默认 ``False``，环境变量 ``PASSPORT_SITE_PRIVACY``），设为 ``True`` 时页脚才显示「隐私政策」链接。
+- 个人中心新增「设置、修改用户名」
+- 新增 CLI 命令 ``create-superadmin``：一键创建角色为 ``superadmin`` 的新用户
+- 文档更新
+- 新增隐私政策页面
+- 支持 Geetest 行为验证码
 
 变更
 ~~~~
@@ -45,7 +35,7 @@ v2.7.0
 - 新增 Grafana Dashboard 配置示例 ``examples/grafana_dashboard.json``：覆盖进程资源、Gunicorn、Python/GC、业务指标、Redis、HTTP 请求等全部指标面板，导入 Grafana 后选择 Prometheus 数据源即可使用。
 - 新增 CLI ``role`` 子命令组，用于管理用户角色：
 - 登录安全：新增暴力破解防护。同一账号连续密码错误 ``LOGIN_FAIL_MAX`` 次（默认 5）后锁定 ``LOGIN_LOCK_TIME`` 秒（默认 900），锁定期间拒绝密码登录并提示剩余锁定时间；同一 IP 在 ``LOGIN_IP_WINDOW`` 秒（默认 60）内超过 ``LOGIN_IP_LIMIT`` 次（默认 20）登录/注册/验证码请求时全局限流。空账号/空密码不计入失败统计，登录成功自动清除失败计数并解除锁定。新增错误码 ``ACCOUNT_LOCKED``（前端 ``ERROR_ZH`` 已映射中文），覆盖密码登录、验证码登录、注册及验证码发送接口。
-- 配置校验：``_check_config_value`` 启动校验范围扩展到 ``LOGIN_*``（正整数）、``METRICS_ENABLED``（布尔，避免环境变量字符串 ``"false"`` 被当作真值）、``METRICS_PATH``（以 ``/`` 开头）、``METRICS_CACHE_TTL``（正整数）、``LOG_LEVEL``（合法日志级别）、``NOTICE``（list 或 URL 字符串）及 ``SITE_*``/``HOST``/``OIDC_INTERNAL_CLIENTS``/``METRICS_TOKEN``（字符串），非法配置在启动时直接报错。
+- 配置校验：``_check_config_value`` 启动校验范围扩展。
 
 变更
 ~~~~
@@ -64,7 +54,7 @@ v2.6.5
 ~~~~
 
 - 修复 Google OAuth2 回调报 ``Failed to parse userinfo: 'sub'``：``userinfo_endpoint`` 配置为 v1 端点（``oauth2/v1/userinfo``），返回字段为 ``id``，但 ``parse_userinfo`` 取 ``userinfo["sub"]`` 导致 ``KeyError``。已将 ``userinfo_endpoint`` 和 ``api_base_url`` 升级到 v3 端点（``oauth2/v3/userinfo``），返回 ``sub`` 字段。同时 ``parse_userinfo`` 增加回退逻辑：优先取 ``sub``，兼容取 ``id``。
-- 修复 OAuth2 首次登录选择「直接创建账号」报 ``Invalid account or credential``：``add_profile`` 中 ``check_credential_rule`` 校验密码长度 6~32 字符，但 OAuth2 回调传入的 ``credential`` 是 ``access_token``（通常远超 32 字符），导致校验失败。改为仅对本地账号校验密码规则，第三方账号跳过该检查。
+- 修复 OAuth2 首次登录选择「直接创建账号」报 ``Invalid account or credential``
 - 修复 CI 中 ``tests/test_login_security.py`` 因 ``import pytest`` 导致 ``ModuleNotFoundError``：测试统一改用 unittest（``unittest.mock.patch`` + ``TestCase``），与项目其他测试及 ``make test``（``python -m unittest discover``）保持一致，不再依赖 pytest。
 
 v2.6.4
