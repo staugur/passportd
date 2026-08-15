@@ -70,6 +70,7 @@ from ..utils.common import (
     read_rsa_public_key,
     username_check,
 )
+from ..utils.geetest import geetest_enabled, geetest_prepare
 from ..utils.web import (
     apilogin_required,
     auto_set_user_state,
@@ -363,6 +364,20 @@ def user_oauth_authorizations():
             user_agent=request.headers.get("User-Agent", ""),
         )
         return new_res(success=True, data=dict(deleted=ret))
+
+
+@bp.get("/geetest/register")
+def geetest_register():
+    """获取 GeeTest 行为验证初始化参数。
+
+    未配置极验（GEETEST_CAPTCHA_ID / GEETEST_PRIVATE_KEY 为空）时返回
+    ``success=False``，前端不加载验证组件。
+
+    :returns: 含 success / gt / challenge 字段的 JSON
+    """
+    if not geetest_enabled():
+        return new_res(success=False, message="geetest not configured")
+    return new_res(success=True, data=geetest_prepare())
 
 
 @bp.post("/send_signup_vcode")

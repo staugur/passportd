@@ -54,6 +54,11 @@
           <form method="post" action="{{ url }}" id="form-password-submit">
             <input type="hidden" name="next" value="{{ next }}">
             <input type="hidden" name="encrypted_password" id="encrypted-password">
+            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+            <input type="hidden" name="geetest_challenge" id="geetest-challenge">
+            <input type="hidden" name="geetest_validate" id="geetest-validate">
+            <input type="hidden" name="geetest_seccode" id="geetest-seccode">
+            {% endif %}
 
             <div class="field">
               <label class="label">账号</label>
@@ -84,6 +89,12 @@
                 记住登录（7天有效）
               </label>
             </div>
+
+            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+            <div class="field" id="geetest-field">
+              <div id="geetest-captcha"></div>
+            </div>
+            {% endif %}
 
             <div class="field mt-4">
               <button class="button is-primary is-fullwidth" type="submit">
@@ -205,6 +216,9 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/password-encrypt.js') }}"></script>
+{% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+<script src="{{ url_for('static', filename='js/gt.0.5.0.js') }}"></script>
+{% endif %}
 <script>
   $(function () {
     let $tabs = $('#tab-password, #tab-vcode, #tab-passkey');
@@ -219,9 +233,19 @@
     let $btnPasskeyLogin = $('#btn-passkey-login');
     let $vcodeHint = $('#vcode-hint');
     let countdownTimer = null;
+    let geetestLoading = false;
+    let geetestVerified = false;
 
     // 密码登录：提交前使用后端公钥加密密码（JWE），避免明文传输
     $('#form-password form').on('submit', function (e) {
+      {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+      if (geetestLoading) {
+        return false; // 等待行为验证初始化完成
+      }
+      if (!geetestVerified) {
+        return false; // 未完成行为验证，阻止提交
+      }
+      {% endif %}
       let $form = $(this);
       let $pwd = $form.find('input[name="password"]');
       let password = $pwd.val();
@@ -479,6 +503,41 @@
       $('#passkey-msg').show();
       $btnPasskeyLogin.prop('disabled', false).removeClass('is-loading');
     }
+    {% endif %}
+
+    {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+    // GeeTest 行为验证初始化（密码登录）
+    $.ajax({
+      url: '{{ url_for("root.api.geetest_register") }}',
+      method: 'GET',
+      dataType: 'json',
+      success: function (res) {
+        geetestLoading = false;
+        if (!res.success || !res.data) {
+          return;
+        }
+        initGeetest({
+          gt: res.data.gt,
+          challenge: res.data.challenge,
+          offline: res.data.success !== 1,
+          new_captcha: res.data.success === 1,
+          product: 'bind',
+          width: '100%'
+        }, function (captchaObj) {
+          captchaObj.onSuccess(function () {
+            let result = captchaObj.getValidate();
+            $('#geetest-challenge').val(result.geetest_challenge);
+            $('#geetest-validate').val(result.geetest_validate);
+            $('#geetest-seccode').val(result.geetest_seccode);
+            geetestVerified = true;
+            $('#form-password-submit').trigger('submit'); // 自动继续提交
+          });
+        });
+      },
+      error: function () {
+        geetestLoading = false;
+      }
+    });
     {% endif %}
   });
 </script>

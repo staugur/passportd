@@ -174,6 +174,12 @@ class BaseConfig:
     #: IP 限流统计窗口（秒）
     LOGIN_IP_WINDOW: int = 60
 
+    # GeeTest 行为验证（第三代）
+    #: 极验验证 ID（captcha_id），为空不启用行为验证
+    GEETEST_CAPTCHA_ID: str = ""
+    #: 极验私钥（private_key），与验证 ID 配套使用
+    GEETEST_PRIVATE_KEY: str = ""
+
 
 class DevConfig(BaseConfig):
     """默认开发环境配置。"""
@@ -358,6 +364,8 @@ def _check_config_value(cfg):
         "HOST",
         "OIDC_INTERNAL_CLIENTS",
         "METRICS_TOKEN",
+        "GEETEST_CAPTCHA_ID",
+        "GEETEST_PRIVATE_KEY",
     ):
         assert isinstance(cfg[_key], str), f"{_key} must be a string"
 

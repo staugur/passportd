@@ -86,6 +86,15 @@
                         </div>
                     </div>
 
+                    {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+                    <input type="hidden" name="geetest_challenge" id="geetest-challenge">
+                    <input type="hidden" name="geetest_validate" id="geetest-validate">
+                    <input type="hidden" name="geetest_seccode" id="geetest-seccode">
+                    <div class="field" id="geetest-field">
+                        <div id="geetest-captcha"></div>
+                    </div>
+                    {% endif %}
+
                     <div class="field mt-4">
                         <button class="button is-light is-fullwidth" type="submit" id="btn-submit-signup">
                             <strong>注 册</strong>
@@ -107,6 +116,9 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/password-encrypt.js') }}"></script>
+{% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+<script src="{{ url_for('static', filename='js/gt.0.5.0.js') }}"></script>
+{% endif %}
 <script>
 $(function () {
     let $tabUsername = $('#tab-username');
@@ -122,6 +134,8 @@ $(function () {
     let currentTab = 'username';
     let sendTimer = null;
     let sendCountdown = 0;
+    let geetestLoading = false;
+    let geetestVerified = false;
 
     // Tab 切换
     $('#signup-tabs li a').on('click', function (e) {
@@ -213,6 +227,14 @@ $(function () {
 
     // 表单提交：加密密码后传输（JWE），避免明文密码暴露
     $('#signup-form').on('submit', function (e) {
+        {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+        if (geetestLoading) {
+            return false; // 等待行为验证初始化完成
+        }
+        if (!geetestVerified) {
+            return false; // 未完成行为验证，阻止提交
+        }
+        {% endif %}
         let account = $accountInput.val().trim();
         let $pwd = $(this).find('input[name="password"]');
         let $rePwd = $(this).find('input[name="repassword"]');
@@ -250,6 +272,41 @@ $(function () {
             alert('密码加密失败，请重试');
         });
     });
+
+    {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+    // GeeTest 行为验证初始化
+    $.ajax({
+        url: '{{ url_for("root.api.geetest_register") }}',
+        method: 'GET',
+        dataType: 'json',
+        success: function (res) {
+            geetestLoading = false;
+            if (!res.success || !res.data) {
+                return;
+            }
+            initGeetest({
+                gt: res.data.gt,
+                challenge: res.data.challenge,
+                offline: res.data.success !== 1,
+                new_captcha: res.data.success === 1,
+                product: 'bind',
+                width: '100%'
+            }, function (captchaObj) {
+                captchaObj.onSuccess(function () {
+                    let result = captchaObj.getValidate();
+                    $('#geetest-challenge').val(result.geetest_challenge);
+                    $('#geetest-validate').val(result.geetest_validate);
+                    $('#geetest-seccode').val(result.geetest_seccode);
+                    geetestVerified = true;
+                    $('#signup-form').trigger('submit'); // 自动继续提交
+                });
+            });
+        },
+        error: function () {
+            geetestLoading = false;
+        }
+    });
+    {% endif %}
 });
 </script>
 {% endblock %}

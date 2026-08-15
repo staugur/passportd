@@ -52,6 +52,7 @@ from ..utils.common import (
     rdb,
     rsa_encrypt,
 )
+from ..utils.geetest import verify_geetest_form
 from ..utils.web import (
     anonymous_required,
     auto_set_user_state,
@@ -110,6 +111,15 @@ def signup():
         ) or request.form.get("repassword", "").strip()
         vcode = request.form.get("vcode", "").strip()
         nickname = request.form.get("nickname", "").strip()
+
+        # GeeTest 行为验证（未配置极验时自动跳过）
+        if not verify_geetest_form(request.form):
+            return render_template(
+                "signup.j2",
+                error="行为验证未通过，请重试",
+                account=account,
+                nickname=nickname,
+            )
 
         if not account or not password:
             return render_template(
@@ -198,6 +208,17 @@ def signin():
 
     if request.method == "POST":
         account = request.form.get("account", "")
+
+        # GeeTest 行为验证（未配置极验时自动跳过）
+        if not verify_geetest_form(request.form):
+            return render_template(
+                "signin.j2",
+                url=url_for(".signin", next=next),
+                next=next,
+                oauth2_providers=oauth2_providers,
+                account=account,
+                error="行为验证未通过，请重试",
+            )
         expire = 7200
         if request.form.get("remember"):
             expire = 604800  # 7 天
