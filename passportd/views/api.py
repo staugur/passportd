@@ -17,10 +17,11 @@ limitations under the License.
 
 from functools import wraps
 
-from flask import Blueprint, abort, g, request
+from flask import Blueprint, abort, g, request, Response
 from werkzeug.security import check_password_hash
 
 from ..basis.common import is_passkey_enabled, new_res
+from ..basis.conf import config
 from ..basis.errors import (
     ApiError,
     AuthError,
@@ -37,6 +38,7 @@ from ..libs.interface import (
     UploadInterface,
     VCodeInterface,
 )
+from ..libs.geetest import GeetestLib, get_bypass_cache
 from ..models.audit import list_audit_logs, record_audit_log
 from ..models.model import User
 from ..models.oidc import (
@@ -70,7 +72,6 @@ from ..utils.common import (
     read_rsa_public_key,
     username_check,
 )
-from ..utils.geetest import geetest_enabled, geetest_prepare
 from ..utils.web import (
     apilogin_required,
     auto_set_user_state,
@@ -166,10 +167,13 @@ def change_pwd():
     if not new_pwd:
         raise ApiError("new_password is required", code=ErrorCode.PASSWORD_REQUIRED)
     if new_pwd != repassword:
-        raise ApiError("new_password and repassword do not match", code=ErrorCode.PASSWORD_MISMATCH)
+        raise ApiError(
+            "new_password and repassword do not match", code=ErrorCode.PASSWORD_MISMATCH
+        )
     if len(new_pwd) < 6:
         raise ApiError(
-            "new_password must be at least 6 characters", code=ErrorCode.PASSWORD_TOO_SHORT
+            "new_password must be at least 6 characters",
+            code=ErrorCode.PASSWORD_TOO_SHORT,
         )
 
     try:
@@ -366,20 +370,6 @@ def user_oauth_authorizations():
         return new_res(success=True, data=dict(deleted=ret))
 
 
-@bp.get("/geetest/register")
-def geetest_register():
-    """获取 GeeTest 行为验证初始化参数。
-
-    未配置极验（GEETEST_CAPTCHA_ID / GEETEST_PRIVATE_KEY 为空）时返回
-    ``success=False``，前端不加载验证组件。
-
-    :returns: 含 success / gt / challenge 字段的 JSON
-    """
-    if not geetest_enabled():
-        return new_res(success=False, message="geetest not configured")
-    return new_res(success=True, data=geetest_prepare())
-
-
 @bp.post("/send_signup_vcode")
 @ip_rate_limit
 def send_signup_vcode():
@@ -400,14 +390,18 @@ def send_signup_vcode():
         raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
 
     if has_account(account):
-        raise ApiError("account already exists, please sign in", code=ErrorCode.ACCOUNT_EXISTS)
+        raise ApiError(
+            "account already exists, please sign in", code=ErrorCode.ACCOUNT_EXISTS
+        )
 
     check_sms_rate_limit(account)
 
     # 60s 内同一账号不可重复发送
     rl_key = f"{PROC_NAME}:signup_vcode_rl:{account}"
     if rdb.exists(rl_key):
-        raise ApiError("too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED)
+        raise ApiError(
+            "too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED
+        )
 
     code = generate_digital_verification_code()
     vi = VCodeInterface()
@@ -445,14 +439,18 @@ def send_login_vcode():
         raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
 
     if not has_account(account):
-        raise ApiError("account does not exist, please sign up", code=ErrorCode.ACCOUNT_NOT_FOUND)
+        raise ApiError(
+            "account does not exist, please sign up", code=ErrorCode.ACCOUNT_NOT_FOUND
+        )
 
     check_sms_rate_limit(account)
 
     # 60s 内同一账号不可重复发送
     rl_key = f"{PROC_NAME}:login_vcode_rl:{account}"
     if rdb.exists(rl_key):
-        raise ApiError("too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED)
+        raise ApiError(
+            "too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED
+        )
 
     code = generate_digital_verification_code()
     vi = VCodeInterface()
@@ -490,13 +488,18 @@ def user_send_bind_vcode():
         raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
 
     if has_account(account):
-        raise ApiError("account already bound, please use another one", code=ErrorCode.ACCOUNT_BOUND)
+        raise ApiError(
+            "account already bound, please use another one",
+            code=ErrorCode.ACCOUNT_BOUND,
+        )
 
     check_sms_rate_limit(account)
 
     rl_key = f"{PROC_NAME}:bind_vcode_rl:{account}"
     if rdb.exists(rl_key):
-        raise ApiError("too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED)
+        raise ApiError(
+            "too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED
+        )
 
     code = generate_digital_verification_code()
     vi = VCodeInterface()
@@ -529,23 +532,30 @@ def user_bind_account():
     code = request.form.get("code", "").strip()
 
     if not account or not code:
-        raise ApiError("account and verification code are required",
-                       code=ErrorCode.ACCOUNT_OR_VCODE_REQUIRED)
+        raise ApiError(
+            "account and verification code are required",
+            code=ErrorCode.ACCOUNT_OR_VCODE_REQUIRED,
+        )
 
     classify = parse_account_classify(account)
     if classify not in ("email", "mobile"):
-        raise ApiError("only email or mobile number can be bound",
-                       code=ErrorCode.INVALID_ACCOUNT)
+        raise ApiError(
+            "only email or mobile number can be bound", code=ErrorCode.INVALID_ACCOUNT
+        )
 
     if has_account(account):
-        raise ApiError("account already bound, please use another one",
-                       code=ErrorCode.ACCOUNT_BOUND)
+        raise ApiError(
+            "account already bound, please use another one",
+            code=ErrorCode.ACCOUNT_BOUND,
+        )
 
     stored = rdb.get(f"{PROC_NAME}:bind_vcode:{account}")
     if isinstance(stored, bytes):
         stored = stored.decode()
     if not stored or stored != code:
-        raise ApiError("invalid or expired verification code", code=ErrorCode.VCODE_INVALID)
+        raise ApiError(
+            "invalid or expired verification code", code=ErrorCode.VCODE_INVALID
+        )
 
     try:
         add_account(uid=uid, account=account)
@@ -577,14 +587,11 @@ def user_set_username():
     uid = g.user["uid"]
     username = request.form.get("username", "").strip()
     if not username:
-        raise ApiError("username is required",
-                       code=ErrorCode.USERNAME_REQUIRED)
+        raise ApiError("username is required", code=ErrorCode.USERNAME_REQUIRED)
     if not username_check(username):
-        raise ApiError("invalid username format",
-                       code=ErrorCode.USERNAME_INVALID)
+        raise ApiError("invalid username format", code=ErrorCode.USERNAME_INVALID)
     if has_account(username):
-        raise ApiError("username already exists",
-                       code=ErrorCode.USERNAME_TAKEN)
+        raise ApiError("username already exists", code=ErrorCode.USERNAME_TAKEN)
     try:
         ret = set_username(uid=uid, username=username)
     except PassportError as e:
@@ -616,13 +623,16 @@ def user_unbind_account():
     password = request.form.get("password", "").strip()
 
     if not account or not password:
-        raise ApiError("account and password are required",
-                       code=ErrorCode.ACCOUNT_OR_PASSWORD_REQUIRED)
+        raise ApiError(
+            "account and password are required",
+            code=ErrorCode.ACCOUNT_OR_PASSWORD_REQUIRED,
+        )
 
     u = User.get_or_none(User.uid == uid)
     if not u or not u.password_hash:
-        raise ApiError("no password has been set for this account",
-                       code=ErrorCode.PASSWORD_NOT_SET)
+        raise ApiError(
+            "no password has been set for this account", code=ErrorCode.PASSWORD_NOT_SET
+        )
     if not check_password_hash(u.password_hash, password):
         raise ApiError("incorrect password", code=ErrorCode.INVALID_PASSWORD)
 
@@ -659,20 +669,26 @@ def user_delete():
     password = request.form.get("password", "")
 
     if not password:
-        raise ApiError("password is required to confirm account deletion",
-                       code=ErrorCode.PASSWORD_REQUIRED)
+        raise ApiError(
+            "password is required to confirm account deletion",
+            code=ErrorCode.PASSWORD_REQUIRED,
+        )
 
     u = User.get_or_none(User.uid == uid)
     if not u or not u.password_hash:
-        raise ApiError("no password has been set, unable to verify identity",
-                       code=ErrorCode.PASSWORD_NOT_SET)
+        raise ApiError(
+            "no password has been set, unable to verify identity",
+            code=ErrorCode.PASSWORD_NOT_SET,
+        )
     if not check_password_hash(u.password_hash, password):
         raise ApiError("incorrect password", code=ErrorCode.INVALID_PASSWORD)
 
     # 检查是否有 OIDC 客户端
     if list_oauth_clients(uid):
-        raise ApiError("please delete all your OIDC clients before deleting the account",
-                       code=ErrorCode.OIDC_CLIENTS_EXIST)
+        raise ApiError(
+            "please delete all your OIDC clients before deleting the account",
+            code=ErrorCode.OIDC_CLIENTS_EXIST,
+        )
 
     try:
         ret = delete_user_data(
@@ -706,15 +722,19 @@ def vcode_login():
     code = request.form.get("code", "").strip()
 
     if not account or not code:
-        raise ApiError("account and verification code are required",
-                       code=ErrorCode.ACCOUNT_OR_VCODE_REQUIRED)
+        raise ApiError(
+            "account and verification code are required",
+            code=ErrorCode.ACCOUNT_OR_VCODE_REQUIRED,
+        )
 
     stored = rdb.get(f"{PROC_NAME}:login_vcode:{account}")
     if isinstance(stored, bytes):
         stored = stored.decode()
     if not stored:
-        raise ApiError("verification code has expired, please request a new one",
-                       code=ErrorCode.VCODE_EXPIRED)
+        raise ApiError(
+            "verification code has expired, please request a new one",
+            code=ErrorCode.VCODE_EXPIRED,
+        )
     if stored != code:
         raise ApiError("invalid verification code", code=ErrorCode.VCODE_INVALID)
 
@@ -738,7 +758,9 @@ def vcode_login():
     )
 
     return auto_set_user_state(
-        account, expire, new_res(success=True),
+        account,
+        expire,
+        new_res(success=True),
         method="vcode",
         source=resolve_login_source(request.form.get("next", "")),
     )
@@ -805,7 +827,9 @@ def passkey_register_verify():
     uid = g.user["uid"]
     credential_json = request.get_json(silent=True)
     if not credential_json:
-        raise ApiError("credential data is required", code=ErrorCode.CREDENTIAL_REQUIRED)
+        raise ApiError(
+            "credential data is required", code=ErrorCode.CREDENTIAL_REQUIRED
+        )
     try:
         result = PasskeyClient.verify_registration_response(uid, credential_json)
     except PasskeyError as e:
@@ -813,7 +837,10 @@ def passkey_register_verify():
     record_audit_log(
         uid=uid,
         action="passkey_add",
-        detail={"device_name": result.get("device_name", ""), "credential_id": result.get("credential_id", "")},
+        detail={
+            "device_name": result.get("device_name", ""),
+            "credential_id": result.get("credential_id", ""),
+        },
         ip=get_ip(),
         user_agent=request.headers.get("User-Agent", ""),
     )
@@ -852,7 +879,9 @@ def passkey_login_verify():
     """
     credential_json = request.get_json(silent=True)
     if not credential_json:
-        raise ApiError("credential data is required", code=ErrorCode.CREDENTIAL_REQUIRED)
+        raise ApiError(
+            "credential data is required", code=ErrorCode.CREDENTIAL_REQUIRED
+        )
     try:
         result = PasskeyClient.verify_authentication_response(credential_json)
     except PasskeyError as e:
@@ -969,3 +998,47 @@ def notice():
     返回未过期的公告（etime=0 表示永不过期）。
     """
     return new_res(success=True, data=NoticeClient.get_notices())
+
+
+# Geetest 验证初始化接口，GET请求
+@bp.route("/geetest/register", methods=["GET"])
+def geetest_register():
+    # 必传参数
+    #     digestmod 此版本sdk可支持md5、sha256、hmac-sha256，md5之外的算法需特殊配置的账号，联系极验客服
+    # 自定义参数,可选择添加
+    #     client_type 客户端类型，web：电脑上的浏览器；h5：手机上的浏览器，包括移动应用内完全内置的web_view；native：通过原生sdk植入app应用的方式；unknown：未知
+    #     ip_address 客户端请求sdk服务器的ip地址
+    bypass_status = get_bypass_cache()
+    gt_lib = GeetestLib(
+        config.get("GEETEST_CAPTCHA_ID"), config.get("GEETEST_CAPTCHA_KEY")
+    )
+    digestmod = "md5"
+    param_dict = {"digestmod": digestmod, "client_type": "web", "ip_address": get_ip()}
+    if bypass_status == "success":
+        result = gt_lib.register(digestmod, param_dict)
+    else:
+        result = gt_lib.local_init()
+    # 注意，不要更改返回的结构和值类型
+    return Response(result.data, content_type="application/json;charset=UTF-8")
+
+
+# Geetest 二次验证接口，POST请求
+@bp.route("/geetest/validate", methods=["POST"])
+def geetest_validate():
+    challenge = request.form.get(GeetestLib.GEETEST_CHALLENGE, None)
+    validate = request.form.get(GeetestLib.GEETEST_VALIDATE, None)
+    seccode = request.form.get(GeetestLib.GEETEST_SECCODE, None)
+    bypass_status = get_bypass_cache()
+    gt_lib = GeetestLib(
+        config.get("GEETEST_CAPTCHA_ID"), config.get("GEETEST_CAPTCHA_KEY")
+    )
+    if bypass_status == "success":
+        result = gt_lib.successValidate(challenge, validate, seccode)
+    else:
+        result = gt_lib.failValidate(challenge, validate, seccode)
+    # 注意，不要更改返回的结构和值类型
+    if result.status == 1:
+        response = {"result": "success", "version": GeetestLib.VERSION}
+    else:
+        response = {"result": "fail", "version": GeetestLib.VERSION, "msg": result.msg}
+    return response

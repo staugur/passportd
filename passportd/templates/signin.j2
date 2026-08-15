@@ -54,7 +54,7 @@
           <form method="post" action="{{ url }}" id="form-password-submit">
             <input type="hidden" name="next" value="{{ next }}">
             <input type="hidden" name="encrypted_password" id="encrypted-password">
-            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
             <input type="hidden" name="geetest_challenge" id="geetest-challenge">
             <input type="hidden" name="geetest_validate" id="geetest-validate">
             <input type="hidden" name="geetest_seccode" id="geetest-seccode">
@@ -90,7 +90,7 @@
               </label>
             </div>
 
-            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+            {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
             <div class="field" id="geetest-field">
               <div id="geetest-captcha"></div>
             </div>
@@ -216,7 +216,7 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/password-encrypt.js') }}"></script>
-{% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+{% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
 <script src="{{ url_for('static', filename='js/gt.0.5.0.js') }}"></script>
 {% endif %}
 <script>
@@ -238,7 +238,7 @@
 
     // 密码登录：提交前使用后端公钥加密密码（JWE），避免明文传输
     $('#form-password form').on('submit', function (e) {
-      {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
+      {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
       if (geetestLoading) {
         return false; // 等待行为验证初始化完成
       }
@@ -505,25 +505,29 @@
     }
     {% endif %}
 
-    {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_PRIVATE_KEY") %}
-    // GeeTest 行为验证初始化（密码登录）
+    {% if config.get("GEETEST_CAPTCHA_ID") and config.get("GEETEST_CAPTCHA_KEY") %}
+    // GeeTest 行为验证初始化（密码登录，弹窗模式：显示"点击验证"按钮）
     $.ajax({
-      url: '{{ url_for("root.api.geetest_register") }}',
+      url: '{{ url_for("root.api.geetest_register") }}?t=' + (new Date()).getTime(),
       method: 'GET',
       dataType: 'json',
       success: function (res) {
         geetestLoading = false;
-        if (!res.success || !res.data) {
+        // 服务端返回裸 JSON：{success, gt, challenge, new_captcha}
+        if (!res || !res.gt || !res.challenge) {
           return;
         }
+        // 配置参数来自服务端 SDK（参考官方 Web 部署文档）
         initGeetest({
-          gt: res.data.gt,
-          challenge: res.data.challenge,
-          offline: res.data.success !== 1,
-          new_captcha: res.data.success === 1,
-          product: 'bind',
-          width: '100%'
+          gt: res.gt,
+          challenge: res.challenge,
+          offline: res.success !== 1,
+          new_captcha: true,
+          https: true,
+          product: 'popup'
         }, function (captchaObj) {
+          // 在 #geetest-captcha 容器内渲染"点击验证"按钮
+          captchaObj.appendTo('#geetest-captcha');
           captchaObj.onSuccess(function () {
             let result = captchaObj.getValidate();
             $('#geetest-challenge').val(result.geetest_challenge);

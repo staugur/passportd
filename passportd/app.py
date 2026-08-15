@@ -55,6 +55,7 @@ def create_app():
     from .views.oidc import server as OIDCServer
     from .libs.oidc import OIDCClient, oidc_save_token
     from .libs.interface import OAuthClient
+    from .libs.geetest import geetest_enabled
 
     try:
         from setproctitle import setproctitle
@@ -100,6 +101,7 @@ def create_app():
         g.passkey_enabled = is_passkey_enabled(
             (config.get("PASSKEY_RP_ID") or "").strip()
         )
+        g.geetest_enabled = geetest_enabled()
 
     @app.after_request
     def ar(response):

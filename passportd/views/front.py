@@ -52,7 +52,6 @@ from ..utils.common import (
     rdb,
     rsa_encrypt,
 )
-from ..utils.geetest import verify_geetest_form
 from ..utils.web import (
     anonymous_required,
     auto_set_user_state,
@@ -103,23 +102,16 @@ def signup():
         account = request.form.get("account", "").strip()
         # 优先使用 RSA 加密传输的密码（JWE），解密失败回退明文
         # （兼容测试 / 老前端）
-        password = parse_encrypted_password(
-            request.form.get("encrypted_password", "")
-        ) or request.form.get("password", "").strip()
-        repassword = parse_encrypted_password(
-            request.form.get("encrypted_repassword", "")
-        ) or request.form.get("repassword", "").strip()
+        password = (
+            parse_encrypted_password(request.form.get("encrypted_password", ""))
+            or request.form.get("password", "").strip()
+        )
+        repassword = (
+            parse_encrypted_password(request.form.get("encrypted_repassword", ""))
+            or request.form.get("repassword", "").strip()
+        )
         vcode = request.form.get("vcode", "").strip()
         nickname = request.form.get("nickname", "").strip()
-
-        # GeeTest 行为验证（未配置极验时自动跳过）
-        if not verify_geetest_form(request.form):
-            return render_template(
-                "signup.j2",
-                error="行为验证未通过，请重试",
-                account=account,
-                nickname=nickname,
-            )
 
         if not account or not password:
             return render_template(
@@ -208,17 +200,6 @@ def signin():
 
     if request.method == "POST":
         account = request.form.get("account", "")
-
-        # GeeTest 行为验证（未配置极验时自动跳过）
-        if not verify_geetest_form(request.form):
-            return render_template(
-                "signin.j2",
-                url=url_for(".signin", next=next),
-                next=next,
-                oauth2_providers=oauth2_providers,
-                account=account,
-                error="行为验证未通过，请重试",
-            )
         expire = 7200
         if request.form.get("remember"):
             expire = 604800  # 7 天
@@ -243,7 +224,9 @@ def signin():
                     accept_lang=request.headers.get("Accept-Language", ""),
                 )
             return auto_set_user_state(
-                account, expire, get_redirect_url(),
+                account,
+                expire,
+                get_redirect_url(),
                 method="local",
                 source=resolve_login_source(request.args.get("next", "")),
             )
@@ -327,14 +310,18 @@ def oauth2go():
             # 验证本地账号密码
             try:
                 if not login(local_account, local_password):
-                    raise ApiError("incorrect account or password", code=ErrorCode.LOGIN_FAILED)
+                    raise ApiError(
+                        "incorrect account or password", code=ErrorCode.LOGIN_FAILED
+                    )
             except PassportError as e:
                 raise ApiError(str(e), code=ErrorCode.LOGIN_FAILED)
 
             # 获取本地账号的 uid
             local_auth = get_account(local_account)
             if not local_auth:
-                raise ApiError("local account does not exist", code=ErrorCode.ACCOUNT_NOT_FOUND)
+                raise ApiError(
+                    "local account does not exist", code=ErrorCode.ACCOUNT_NOT_FOUND
+                )
             uid: str = local_auth["uid"]  # type: ignore
 
             # 绑定 OAuth 账号到已有用户
@@ -397,7 +384,9 @@ def oauth2go():
                     location=userinfo.get("location", ""),
                 )
             except PassportError as e:
-                raise ApiError(f"create account failed: {e}", code=ErrorCode.PARAM_ERROR)
+                raise ApiError(
+                    f"create account failed: {e}", code=ErrorCode.PARAM_ERROR
+                )
 
             # 记录注册审计日志（通过 OAuth2 注册）
             new_auth = get_account(userinfo["account"])
@@ -435,7 +424,9 @@ def oauth2go():
                     source=resolve_login_source(target_next),
                 )
             except ApiError as e:
-                raise ApiError(f"set login state failed: {e}", code=ErrorCode.COOKIE_FAILED)
+                raise ApiError(
+                    f"set login state failed: {e}", code=ErrorCode.COOKIE_FAILED
+                )
 
         else:
             raise ApiError("invalid action", code=ErrorCode.PARAM_ERROR)
@@ -528,6 +519,3 @@ def security():
 def privacy():
     """隐私政策页面（需配置 SITE_PRIVACY=True 才会在页脚显示入口）。"""
     return render_template("privacy.j2")
-
-
-

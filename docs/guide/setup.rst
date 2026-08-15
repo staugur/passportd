@@ -280,6 +280,39 @@ Spug 推送助手提供官方验证码模板，无需自主创建。获取步骤
 
 4. 复制模板编码（形如 ``Vf7Jp2sD9xL``），即为对应的 ``SPUG_MAIL_TEMPLATE_ID`` 或 ``SPUG_SMS_TEMPLATE_ID``。
 
+极验行为验证配置
+----------------
+
+passportd 接入极验行为验证（第三代，GeeTest v3），注册（用户名/邮箱/手机号注册）与密码登录提交前需完成行为验证，防止机器人批量注册与撞库攻击。服务端实现参照极验官方 Python Flask 示例（``GeeTeam/gt3-server-python-flask-bypass``）的 ``GeetestLib`` 协议：初始化走 ``register.php``，二次校验走 ``validate.php``；前端 SDK 使用官方新版 ``gt.js``（支持 ``new_captcha`` 协议）。配置 ``GEETEST_CAPTCHA_ID`` 与 ``GEETEST_CAPTCHA_KEY`` 后自动启用。
+
+.. list-table::
+   :header-rows: 1
+
+   * - 配置项
+     - 类型
+     - 默认值
+     - 说明
+   * - ``GEETEST_CAPTCHA_ID``
+     - str
+     - ``""``
+     - 极验验证 ID（captcha_id）。两者均为空时不启用行为验证。环境变量 ``PASSPORT_GEETEST_CAPTCHA_ID``
+   * - ``GEETEST_CAPTCHA_KEY``
+     - str
+     - ``""``
+     - 极验私钥（private_key），与验证 ID 配套使用。环境变量 ``PASSPORT_GEETEST_CAPTCHA_KEY``
+
+.. warning::
+
+    两个配置项默认均为空（不启用行为验证）。启用前请先到 `极验官网 <https://www.geetest.com>`_
+    注册并创建行为验证产品，将生成的验证 ID 与私钥通过环境变量注入。
+
+.. note::
+
+   - 未配置极验（两者均为空）时，注册/登录页面自动隐藏验证组件，提交不校验。
+   - 服务端按官方文档（API1 / API2）暴露两个接口：``GET /api/geetest/register`` （验证初始化，返回 ``success``/``gt``/``challenge``/``new_captcha`` 四字段，前端 ``initGeetest`` 据此加载；``success=0`` 表示极验服务不可用，前端自动降级为离线验证模式（``offline``），后端对 ``validate = md5(challenge)`` 做本地校验放行）与 ``POST /api/geetest/validate`` （二次校验，接收 ``geetest_challenge``/``geetest_validate``/``geetest_seccode`` 三字段，响应 ``result`` 为 ``success``/``fail`` 并携带 ``version`` 字段）。
+   - 二次校验按官方协议：POST ``validate.php``，响应 ``seccode`` 非空且不等于 ``"false"`` 判为通过。
+   - 前端 SDK 已本地化到 ``static/js/gt.js`` （官方新版，约 66KB），无需加载极验官方 CDN。
+
 OAuth2 第三方登录配置
 ----------------------
 

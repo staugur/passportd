@@ -7,7 +7,10 @@ v2.9.0
 新特性
 ~~~~~~
 
-- 接入极验行为验证（第三代，GeeTest v3）：注册（用户名/邮箱/手机号注册）与密码登录提交前需完成行为验证，防止机器人批量注册与撞库攻击。新增 ``utils/geetest.py`` 封装极验官方 ``register.php``/``validate.php`` 协议（仅依赖 requests），支持正常模式与降级模式（极验服务不可用时前端走离线验证）。新增配置项 ``GEETEST_CAPTCHA_ID``（验证 ID）与 ``GEETEST_PRIVATE_KEY``（私钥，环境变量 ``PASSPORT_GEETEST_CAPTCHA_ID``/``PASSPORT_GEETEST_PRIVATE_KEY``），两者均为空时不启用行为验证；新增接口 ``GET /api/geetest/register`` 供前端获取初始化参数；新增错误码 ``GEETEST_REQUIRED``/``GEETEST_FAILED``（前端 ``ERROR_ZH`` 已映射中文）。极验前端 SDK ``gt.js`` 已本地化到 ``static/js/gt.js``，注册/登录页面在未配置极验时自动隐藏验证组件。
+- 接入极验行为验证（第三代，GeeTest v3）：注册（用户名/邮箱/手机号注册）与密码登录提交前需完成行为验证，防止机器人批量注册与撞库攻击。参照极验官方 Python Flask 示例（``GeeTeam/gt3-server-python-flask-bypass``）重写 ``utils/geetest.py``：register 请求携带 ``sdk``/``json_format``/``digestmod`` 等官方参数，返回 ``success``/``gt``/``challenge``/``new_captcha`` 四字段；二次校验按官方协议以 POST 请求 ``validate.php``，响应 ``seccode`` 非空且不等于 ``"false"`` 判为通过。新增配置项 ``GEETEST_CAPTCHA_ID``（验证 ID）与 ``GEETEST_CAPTCHA_KEY``（私钥，环境变量 ``PASSPORT_GEETEST_CAPTCHA_ID``/``PASSPORT_GEETEST_CAPTCHA_KEY``），两者均为空时不启用行为验证；新增接口 ``GET /api/geetest/register`` 供前端获取初始化参数；新增错误码 ``GEETEST_REQUIRED``/``GEETEST_FAILED``（前端 ``ERROR_ZH`` 已映射中文）。极验前端 SDK 已替换为官方新版 ``gt.js``（约 66KB，支持 ``new_captcha`` 协议，替代不兼容的旧版 ``gt.0.5.0.js``），本地化到 ``static/js/gt.js``，注册/登录页面在未配置极验时自动隐藏验证组件。
+- 按极验官方服务端 API 文档补全接口结构（API1 / API2）：新增 api2 二次校验接口 ``POST /api/geetest/validate`` （对应文档 ``/validate``，接收 ``geetest_challenge``/``geetest_validate``/``geetest_seccode`` 三字段，响应 ``result`` 为 ``success``/``fail`` 并携带 ``version`` 字段），与已有 api1 初始化接口 ``GET /api/geetest/register`` 成对；注册/登录表单提交时的服务端内嵌二次校验保持不变。
+- 文档补充：``docs/guide/setup.rst`` 新增「极验行为验证配置」章节，收录 ``GEETEST_CAPTCHA_ID``/``GEETEST_CAPTCHA_KEY`` 配置项说明（默认均为空，由环境变量注入）与获取方式。
+- 修复：``GEETEST_CAPTCHA_ID``/``GEETEST_CAPTCHA_KEY`` 默认值不再写死为极验 demo 测试账号（此前导致未配置真实账号时也强制启用行为验证），改为默认空字符串，仅当通过环境变量 ``PASSPORT_GEETEST_CAPTCHA_ID``/``PASSPORT_GEETEST_CAPTCHA_KEY`` 配置后启用。
 
 v2.8.0
 ------

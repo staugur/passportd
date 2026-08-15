@@ -97,3 +97,6 @@ PASSKEY_CHALLENGE_TTL: int = 300
 #: Relying Party 名称，展示给用户的应用名称
 PASSKEY_RP_NAME: str = PROC_NAME
 
+#: Geetest Bypass URL
+GEETEST_BYPASS_URL: str = "http://bypass.geetest.com/v1/bypass_status.php"
+GEETEST_BYPASS_REDIS_KEY: str = f"{PROC_NAME}:bypass:status"

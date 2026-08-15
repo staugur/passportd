@@ -15,7 +15,7 @@ import os
 import shutil
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # ---- Mock Redis（必须在导入 passportd 之前） ----
 _mock_redis = MagicMock()
@@ -113,7 +113,8 @@ class ApiTest(unittest.TestCase):
 
     # ---------- 页面路由：/user/signup、/user/signin（加密密码传输） ----------
 
-    def test_front_signup_with_encrypted_password(self):
+    @patch("passportd.utils.geetest.geetest_enabled", return_value=False)
+    def test_front_signup_with_encrypted_password(self, m_enabled):
         """注册页面支持 RSA 加密密码（JWE）提交"""
         resp = self.client.post(
             "/user/signup",
@@ -128,7 +129,8 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("注册成功", resp.get_data(as_text=True))
 
-    def test_front_signin_with_encrypted_password(self):
+    @patch("passportd.utils.geetest.geetest_enabled", return_value=False)
+    def test_front_signin_with_encrypted_password(self, m_enabled):
         """密码登录支持 RSA 加密密码（JWE）提交"""
         # 注册独立账号，避免受其他测试（改密码）影响
         self.client.post(
