@@ -299,19 +299,26 @@ class UserSession(Model):
         indexes = ((("uid", "ctime"), False),)
 
 
-# Create tables if they don't exist
-with db.atomic():
-    db.create_tables(
-        [
-            User,
-            Auth,
-            OAuthClient,
-            OAuthToken,
-            OAuthAuthorization,
-            LoginRecord,
-            PasskeyCredential,
-            AuditLog,
-            UserSession,
-        ],
-        safe=True,
-    )
+def init_db() -> None:
+    """初始化数据库表结构（幂等），在应用启动时调用。
+
+    模块导入时不建表，避免 import 副作用；仅在真正创建应用时执行。
+    """
+    with db.atomic():
+        db.create_tables(
+            [
+                User,
+                Auth,
+                OAuthClient,
+                OAuthToken,
+                OAuthAuthorization,
+                LoginRecord,
+                PasskeyCredential,
+                AuditLog,
+                UserSession,
+            ],
+            safe=True,
+        )
+
+
+

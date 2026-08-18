@@ -102,14 +102,6 @@
             </div>
         </div>
 
-        {# 分页 #}
-        <nav class="pagination is-centered is-small" role="navigation" aria-label="pagination" id="audit-pagination" style="display:none;">
-            <button class="pagination-previous" id="btn-audit-prev" disabled>上一页</button>
-            <button class="pagination-next" id="btn-audit-next">下一页</button>
-            <ul class="pagination-list" id="audit-page-list">
-            </ul>
-        </nav>
-
     </div>
 </section>
 {% endblock %}
@@ -310,15 +302,9 @@
 
         loadLoginHistory();
 
-        // ========== 审计日志（已有逻辑）==========
-        let AUDIT_PAGE_SIZE = 20;
-        let currentPage = 1;
-        let totalPages = 1;
+        // ========== 安全审计日志（仅显示最新 10 条）==========
+        const AUDIT_LIMIT = 10;
         let $tbody = $('#audit-log-tbody');
-        let $pagination = $('#audit-pagination');
-        let $pageList = $('#audit-page-list');
-        let $btnPrev = $('#btn-audit-prev');
-        let $btnNext = $('#btn-audit-next');
         let $msg = $('#audit-msg');
 
         // 操作系统中文映射
@@ -403,7 +389,6 @@
             $tbody.empty();
             if (!logs || logs.length === 0) {
                 $tbody.append('<tr id="audit-empty-row"><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-check"></i></span><p class="mt-2">暂无安全审计记录</p></td></tr>');
-                $pagination.hide();
                 return;
             }
             for (let i = 0; i < logs.length; i++) {
@@ -419,80 +404,30 @@
             }
         }
 
-        function renderPagination() {
-            if (totalPages <= 1) {
-                $pagination.hide();
-                return;
-            }
-            $pagination.show();
-            $btnPrev.prop('disabled', currentPage <= 1);
-            $btnNext.prop('disabled', currentPage >= totalPages);
-            $pageList.empty();
-            for (let p = 1; p <= totalPages; p++) {
-                let $li = $('<li>');
-                let $link = $('<a class="pagination-link" aria-label="第 ' + p + ' 页">').text(p);
-                if (p === currentPage) {
-                    $link.addClass('is-current');
-                    $link.attr('aria-current', 'page');
-                } else {
-                    $link.on('click', function () {
-                        let page = parseInt($(this).text(), 10);
-                        goToPage(page);
-                    });
-                }
-                $li.append($link);
-                $pageList.append($li);
-            }
-        }
-
-        function loadPage(page) {
-            let offset = (page - 1) * AUDIT_PAGE_SIZE;
+        function loadAuditLog() {
             $.ajax({
                 url: '{{ url_for("root.api.user_audit_log") }}',
                 method: 'GET',
-                data: { limit: AUDIT_PAGE_SIZE, offset: offset },
+                data: { limit: AUDIT_LIMIT },
                 dataType: 'json',
                 success: function (res) {
                     if (res.success && res.data) {
                         let logs = res.data.audit_logs || [];
                         renderPage(logs);
-                        // 估算总页数：如果返回数量等于 page_size，则可能有更多
-                        if (logs.length >= AUDIT_PAGE_SIZE) {
-                            totalPages = currentPage + 1; // 保守估计至少多一页
-                        } else {
-                            totalPages = currentPage;
-                        }
-                        renderPagination();
                     } else {
                         showMsg(apiMessage(res, '加载审计日志失败'), 'error');
                         $tbody.html('<tr><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-exclamation"></i></span><p class="mt-2">加载失败</p></td></tr>');
-                        $pagination.hide();
                     }
                 },
                 error: function () {
                     showMsg('网络异常，请重试', 'error');
                     $tbody.html('<tr><td colspan="4" class="has-text-centered has-text-grey py-5"><span class="icon is-medium"><i class="fa-solid fa-circle-exclamation"></i></span><p class="mt-2">加载失败</p></td></tr>');
-                    $pagination.hide();
                 }
             });
         }
 
-        function goToPage(page) {
-            if (page < 1 || page > totalPages) return;
-            currentPage = page;
-            loadPage(page);
-        }
-
-        $btnPrev.on('click', function () {
-            goToPage(currentPage - 1);
-        });
-
-        $btnNext.on('click', function () {
-            goToPage(currentPage + 1);
-        });
-
         // 初始加载
-        loadPage(1);
+        loadAuditLog();
     });
 </script>
 {% endblock %}

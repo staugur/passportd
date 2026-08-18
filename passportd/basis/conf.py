@@ -188,7 +188,7 @@ class DevConfig(BaseConfig):
     DEBUG = True
     PASSKEY_RP_ID: str = "localhost"
     SITE_PRIVACY = True
-    # Flask-PluginKit 配置
+    #: 开发环境插件管理页不做鉴权，直接开放
     PLUGINKIT_AUTH_METHOD = "FUNC"
     PLUGINKIT_AUTH_FUNC = lambda: True
 
@@ -204,6 +204,25 @@ class ProdConfig(BaseConfig):
     LOG_FILE = "sys.log"
     #: 生产gunicorn运行配置
     NO_DAEMON: bool = False
+    # Flask-PluginKit 插件管理页访问控制
+    #: 生产环境插件管理页仅允许配置的管理员 uid 访问（FUNC 鉴权）
+    PLUGINKIT_AUTH_METHOD = "FUNC"
+    #: 允许访问插件管理页（/pluginmanager）的管理员 uid。
+    PLUGINKIT_AUTH_UID: str = ""
+
+    @staticmethod
+    def PLUGINKIT_AUTH_FUNC() -> bool:
+        """插件管理页鉴权：当前登录用户 uid 与配置的管理员 uid 一致才放行。
+
+        在请求上下文中被 flask-pluginkit 调用，此时 app 级
+        ``before_request`` 已设置 ``g.signin`` / ``g.user``。
+        """
+        from flask import g
+
+        return bool(
+            getattr(g, "signin", False)
+            and g.user.get("uid") == config["PLUGINKIT_AUTH_UID"]
+        )
 
 
 class PinConfig:
@@ -366,6 +385,7 @@ def _check_config_value(cfg):
         "METRICS_TOKEN",
         "GEETEST_CAPTCHA_ID",
         "GEETEST_CAPTCHA_KEY",
+        "PLUGINKIT_AUTH_UID",
     ):
         assert isinstance(cfg[_key], str), f"{_key} must be a string"
 

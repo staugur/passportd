@@ -141,3 +141,4 @@ ENABLED
 data/
 uploads/
 logs/
+dump.rdb

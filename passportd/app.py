@@ -44,25 +44,17 @@ def create_app():
     from flask_pluginkit import PluginManager, JsonResponse, blueprint
     from werkzeug.middleware.proxy_fix import ProxyFix
 
-    from .basis.vars import PROC_NAME
     from .basis.conf import config
     from .basis.errors import ApiError
     from .basis.common import new_res, is_passkey_enabled
     from .utils.common import logger
     from .utils.web import parse_user_state
-    from .models.model import db
+    from .models.model import db, init_db
     from .views.root import root
     from .views.oidc import server as OIDCServer
     from .libs.oidc import OIDCClient, oidc_save_token
     from .libs.interface import OAuthClient
     from .libs.geetest import geetest_enabled, start_bypass_checker
-
-    try:
-        from setproctitle import setproctitle
-
-        setproctitle(PROC_NAME)
-    except ImportError:
-        pass
 
     app = Flask(__name__)
     app.response_class = JsonResponse
@@ -88,6 +80,9 @@ def create_app():
             "passportd.modules.oauth2_google",
         ),  # type: ignore
     )
+
+    # 应用启动时初始化表结构（幂等），避免模块导入副作用。
+    init_db()
 
     @app.before_request
     def br():
