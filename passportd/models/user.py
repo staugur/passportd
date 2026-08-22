@@ -33,7 +33,12 @@ from .model import (
 )
 from ..basis.mixin import GetItemMixIn
 from ..basis.errors import AuthError, JWTError, ParamError
-from ..basis.vars import COMMON_DICT_TYPE, USERNAME_CHANGE_INTERVAL
+from ..basis.vars import (
+    COMMON_DICT_TYPE,
+    PROC_NAME,
+    USERNAME_CHANGE_INTERVAL,
+    USER_BG_CACHE_TTL,
+)
 from ..basis.common import now
 from ..basis.conf import config
 from ..utils.common import parse_user_agent
@@ -48,6 +53,7 @@ from ..utils.common import (
     is_valid_user_role,
     is_valid_http_url,
     logger,
+    rdb,
 )
 
 
@@ -124,14 +130,31 @@ def get_user_by_uid(uid: str) -> Union[None, COMMON_DICT_TYPE]:
 def get_user_background_image(uid: str) -> str:
     """获取用户自定义背景图 URL（未设置返回空串）。
 
+    Redis 缓存优先（``passportd:user:bg:{uid}``），未命中时查库并回填；
+    Redis 不可用时降级直查数据库，不阻塞页面渲染。
+
     :param uid: 用户唯一标识符
     :returns: 背景图 URL，未设置或用户不存在时返回空串
     """
+    key = f"{PROC_NAME}:user:bg:{uid}"
+    try:
+        cached = rdb.get(key)
+        if cached is not None:
+            return cached.decode()
+    except Exception:  # noqa: BLE001
+        # Redis 不可用时降级查库
+        pass
     try:
         u = User.select(User.background_image).where(User.uid == uid).get()
-        return u.background_image or ""
+        value = u.background_image or ""
     except User.DoesNotExist:
-        return ""
+        value = ""
+    try:
+        # 空串也缓存，避免不存在的 uid 反复查库
+        rdb.setex(key, USER_BG_CACHE_TTL, value)
+    except Exception:  # noqa: BLE001
+        pass
+    return value
 
 
 def has_account(account: str) -> bool:
@@ -566,6 +589,16 @@ def update_profile(
             u.role = " ".join(roles)
         u.mtime = now()
         u.save()
+        #: 保存成功后才刷新背景图 Redis 缓存为新值，保证缓存与库一致
+        if background_image is not None:
+            try:
+                rdb.setex(
+                    f"{PROC_NAME}:user:bg:{uid}",
+                    USER_BG_CACHE_TTL,
+                    background_image,
+                )
+            except Exception:  # noqa: BLE001
+                pass
     except Exception as e:
         raise AuthError(e)
     else:

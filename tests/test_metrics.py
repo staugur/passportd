@@ -329,7 +329,7 @@ class HttpRequestFallbackTest(unittest.TestCase):
     """HTTP 请求计数兜底测试"""
 
     def test_redis_and_local_empty_outputs_zero_series(self):
-        """Redis 与本地均无计数时输出零值系列，避免 Grafana no data"""
+        """Redis 与本地均无计数时输出常见 method×status 零值系列，避免 Grafana no data"""
         from passportd.libs.metrics import _HttpRequestCollector
 
         with patch(
@@ -340,7 +340,8 @@ class HttpRequestFallbackTest(unittest.TestCase):
             f for f in families
             if f.name == "passportd_http_requests"
         ][0]
-        self.assertEqual(len(family.samples), 1)
+        # 5 个 method × 10 个 status = 50 条零值系列
+        self.assertEqual(len(family.samples), 50)
         self.assertEqual(
             family.samples[0].name, "passportd_http_requests_total"
         )

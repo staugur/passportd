@@ -29,7 +29,7 @@ from peewee import (
 from playhouse.db_url import connect
 
 from ..basis.conf import config
-from ..utils.common import now
+from ..utils.common import logger, now
 
 _db_uri = config["DB_URI"]
 if _db_uri.startswith("sqlite"):
@@ -334,17 +334,23 @@ def _ensure_column(table_name: str, column: str, definition: str) -> None:
     """若表中不存在指定列则 ALTER TABLE 添加（SQLite/MySQL/PostgreSQL 通用）。"""
     try:
         existing = {c.name for c in db.get_columns(table_name)}
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         # 表不存在等情况直接跳过，交给 create_tables 处理
+        logger.debug("init_db: 检查表 %s 列结构失败，跳过: %s", table_name, exc)
         return
     if column not in existing:
         try:
             db.execute_sql(
-                'ALTER TABLE "{}" ADD COLUMN {}'.format(table_name, definition)
+                'ALTER TABLE "{}" ADD COLUMN "{}" {}'.format(
+                    table_name, column, definition
+                )
             )
-        except Exception:
-            # 并发建列等竞态下忽略，确保幂等
-            pass
+            logger.info("init_db: 已为表 %s 补充新列 %s", table_name, column)
+        except Exception as exc:  # noqa: BLE001
+            # 并发建列等竞态下忽略，确保幂等；记录日志便于排查
+            logger.warning(
+                "init_db: 为表 %s 添加列 %s 失败: %s", table_name, column, exc
+            )
 
 
 

@@ -33,7 +33,8 @@ sys.modules["redis.client"] = MagicMock()
 # ---- 导入 passportd ----
 from passportd.app import create_app
 from passportd.basis.errors import ParamError
-from passportd.models.model import Auth, User, db
+from passportd.basis.vars import USER_BG_CACHE_TTL
+from passportd.models.model import Auth, User, _ensure_column, db
 from passportd.models.user import (
     add_profile,
     generate_jwt,
@@ -137,6 +138,61 @@ class UserBackgroundImageTest(unittest.TestCase):
         """uid 不存在时返回空串"""
         with self.app.app_context():
             self.assertEqual(get_user_background_image("no-such-uid"), "")
+
+    def test_ensure_column_adds_missing_column(self):
+        """_ensure_column 能给旧表补充缺失列（回归：曾缺列名致 SQL 报错被静默吞掉）"""
+        table = "passport_test_migrate"
+        with self.app.app_context():
+            try:
+                db.execute_sql(
+                    'CREATE TABLE IF NOT EXISTS "{}" ("id" INTEGER PRIMARY KEY)'.format(
+                        table
+                    )
+                )
+                _ensure_column(
+                    table, "bg_probe", "VARCHAR(255) NOT NULL DEFAULT ''"
+                )
+                cols = {c.name for c in db.get_columns(table)}
+                self.assertIn("bg_probe", cols)
+            finally:
+                db.execute_sql('DROP TABLE IF EXISTS "{}"'.format(table))
+
+    def test_background_image_cache_hit(self):
+        """命中 Redis 缓存时不查库"""
+        with self.app.app_context():
+            with patch("passportd.models.user.rdb.get", return_value=_USER_BG.encode()) as m_get, \
+                    patch("passportd.models.user.rdb.setex") as m_setex:
+                self.assertEqual(get_user_background_image(_AUTH["uid"]), _USER_BG)
+                m_get.assert_called_once()
+                m_setex.assert_not_called()
+
+    def test_background_image_cache_miss_backfill(self):
+        """未命中缓存时查库并回填 Redis"""
+        with self.app.app_context():
+            update_profile(_AUTH["uid"], background_image=_USER_BG)
+            with patch("passportd.models.user.rdb.get", return_value=None) as m_get, \
+                    patch("passportd.models.user.rdb.setex") as m_setex:
+                self.assertEqual(get_user_background_image(_AUTH["uid"]), _USER_BG)
+                m_get.assert_called_once()
+                m_setex.assert_called_once()
+                #: 回填使用常量 USER_BG_CACHE_TTL
+                self.assertEqual(m_setex.call_args.args[1], USER_BG_CACHE_TTL)
+
+    def test_update_profile_refreshes_bg_cache(self):
+        """修改背景图保存成功后，把 Redis 缓存刷新为新值"""
+        with self.app.app_context():
+            with patch("passportd.models.user.rdb.setex") as m_setex:
+                update_profile(_AUTH["uid"], background_image=_USER_BG)
+                m_setex.assert_called_once()
+                self.assertEqual(m_setex.call_args.args[2], _USER_BG)
+                self.assertEqual(m_setex.call_args.args[1], USER_BG_CACHE_TTL)
+
+    def test_update_profile_no_bg_keeps_cache(self):
+        """不传 background_image 时不动背景图缓存"""
+        with self.app.app_context():
+            with patch("passportd.models.user.rdb.setex") as m_setex:
+                update_profile(_AUTH["uid"], nickname="new-name")
+                m_setex.assert_not_called()
 
     # ---------- 页面渲染层 ----------
 

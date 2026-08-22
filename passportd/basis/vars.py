@@ -90,6 +90,9 @@ OIDC_RSA_KEY_SIZE: int = 4096
 USR_STATE_KEY: str = "sid"
 #: 用户名修改间隔：3 个月（按 90 天计，秒）
 USERNAME_CHANGE_INTERVAL: int = 90 * 24 * 3600
+#: 用户背景图 Redis 缓存兜底时长（秒，默认 7 天）。修改背景图时主动刷新缓存为新值，
+#: 正常情况下 TTL 不会触发，仅为异常兜底
+USER_BG_CACHE_TTL: int = 604800
 
 #: WebAuthn Passkey
 #: Challenge 缓存有效期（秒）

@@ -349,7 +349,7 @@ class _ProcessCollector:
         procs = _get_scanned_processes()
         if not procs:
             procs = [_current_process_metrics()]
-        cpu = GaugeMetricFamily(
+        cpu = CounterMetricFamily(
             "passportd_process_cpu_seconds_total",
             "进程累计 CPU 时间（秒）",
             labels=["pid", "role"],
@@ -742,8 +742,11 @@ class _HttpRequestCollector:
                 ):
                     samples["{}:{}".format(method, status)] = float(count)
         if not samples:
-            # 完全无计数时输出零值系列，避免 Grafana 面板出现 no data
-            samples["GET:200"] = 0.0
+            # 完全无计数时输出常见 method × status 零值系列，
+            # 确保 Grafana 各维度筛选均有数据点，避免 no data
+            for method in ("GET", "POST", "PUT", "DELETE", "PATCH"):
+                for status in ("200", "201", "204", "301", "302", "400", "401", "403", "404", "500"):
+                    samples["{}:{}".format(method, status)] = 0.0
         for key, count in samples.items():
             method, _, status = key.rpartition(":")
             family.add_metric([method, status], count)

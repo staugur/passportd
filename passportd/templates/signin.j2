@@ -179,15 +179,13 @@
             <span>第三方登录</span>
           </div>
 
-          <div class="field is-grouped is-grouped-centered">
+          <div class="field" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;">
             {% for pi in oauth2_providers %}
-              <div class="control">
-                <a class="button oauth-btn" href="{{ pi.endpoint }}"
-                   {% if pi.bg %}style="background-color: {{ pi.bg }}; border-color: {{ pi.bg }}; color: #fff;"{% endif %}>
-                  <span class="icon"><i class="{{ pi.icon }}"></i></span>
-                  <span>{{ pi.provider }}</span>
-                </a>
-              </div>
+              <a class="button oauth-btn" href="{{ pi.endpoint }}"
+                 {% if pi.bg %}style="background-color: {{ pi.bg }}; border-color: {{ pi.bg }}; color: #fff;"{% endif %}>
+                <span class="icon"><i class="{{ pi.icon }}"></i></span>
+                <span>{{ pi.provider }}</span>
+              </a>
             {% endfor %}
           </div>
         {% endif %}

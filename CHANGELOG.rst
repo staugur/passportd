@@ -1,6 +1,17 @@
 更新日志
 ========
 
+v2.8.2
+------
+
+修复
+~~~~
+
+- 修复 ``_ensure_column`` 自动迁移缺列名导致 ``ALTER TABLE`` 静默失败、已有数据库无法补充 ``User.background_image`` 等新列的问题
+- 用户自定义背景图读取改为 Redis 缓存（``passportd:user:bg:{uid}``，TTL 7 天兜底，修改背景图保存成功后同步刷新缓存为新值），登录后每个请求不再直查数据库；Redis 不可用时自动降级查库
+- 修复 Prometheus HTTP 请求指标在 Grafana 显示 no data 的问题（无请求时输出 5×10 常见 method×status 零值系列，确保各维度筛选均有数据点）
+- 修复 Prometheus 进程 CPU 指标在 Grafana 显示 no data 的问题（`passportd_process_cpu_seconds_total` 由 Gauge 改为 Counter，使 Grafana 的 ``rate()`` 计算生效）
+
 v2.8.1
 ------
 
@@ -32,7 +43,6 @@ v2.8.1
 修复
 ~~~~
 
-- 修复 Prometheus Gunicorn 指标在 Grafana 显示 no data 的问题
 - 修复修改密码提示误导（新增 ``PASSWORD_SAME_AS_OLD`` 错误码）
 
 v2.7.0
