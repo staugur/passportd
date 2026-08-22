@@ -22,19 +22,47 @@
             --green-700: #15803d;
         }
 
+        {% if config.get("SITE_BG_IMAGE") %}
+        body {
+            background-color: #f9fafb;
+            background-image: url("{{ config["SITE_BG_IMAGE"] }}");
+            background-size: cover;
+            background-position: center;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background-color: rgba(255, 255, 255, 0.55);
+        }
+        {% endif %}
+
         .navbar {
+            {% if config.get("SITE_BG_IMAGE") %}
+            box-shadow: none;
+            {% else %}
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            {% endif %}
         }
 
         .navbar.is-green {
+            {% if config.get("SITE_BG_IMAGE") %}
+            background-color: transparent;
+            border-bottom: none;
+            {% else %}
             background-color: #fff;
             border-bottom: 2px solid var(--green-100);
+            {% endif %}
         }
 
         .navbar.is-green .navbar-brand .navbar-item {
             color: var(--green-700);
             font-weight: 700;
             font-size: 1.2rem;
+            background-color: transparent !important;
         }
 
         .navbar.is-green .navbar-item {
@@ -42,6 +70,9 @@
         }
 
         .navbar.is-green .navbar-item:hover {
+            {% if not config.get("SITE_BG_IMAGE") %}
+            background-color: #f0fdf4;
+            {% endif %}
             color: var(--green-600);
         }
 
@@ -135,7 +166,11 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            {% if config.get("SITE_BG_IMAGE") %}
+            background-color: transparent;
+            {% else %}
             background-color: #f9fafb;
+            {% endif %}
         }
 
         .auth-card {
@@ -167,7 +202,11 @@
         }
 
         .footer.is-light {
+            {% if config.get("SITE_BG_IMAGE") %}
+            background-color: transparent;
+            {% else %}
             background-color: #f9fafb;
+            {% endif %}
             padding: 1.5rem 1.5rem 2rem;
         }
 

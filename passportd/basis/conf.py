@@ -87,6 +87,8 @@ class BaseConfig:
     SITE_LOGO: str = ""
     #: 是否启用隐私政策页面（/privacy），true 时页脚显示「隐私政策」链接
     SITE_PRIVACY: bool = False
+    #: 全局页面背景图片 URL，为空则不启用背景图（背景自动浅化遮罩）
+    SITE_BG_IMAGE: str = ""
 
     # 上传
     #: 上传方式，支持 sapic、local，本地上传固定保存到 BASE_DIR/uploads
@@ -380,6 +382,7 @@ def _check_config_value(cfg):
         "SITE_KEYWORDS",
         "SITE_FAVICON",
         "SITE_LOGO",
+        "SITE_BG_IMAGE",
         "HOST",
         "OIDC_INTERNAL_CLIENTS",
         "METRICS_TOKEN",
