@@ -50,6 +50,7 @@ def create_app():
     from .utils.common import logger
     from .utils.web import parse_user_state
     from .models.model import db, init_db
+    from .models.user import get_user_background_image
     from .views.root import root
     from .views.oidc import server as OIDCServer
     from .libs.oidc import OIDCClient, oidc_save_token
@@ -92,6 +93,11 @@ def create_app():
         #: signin:bool -- 用户是否已登录
         #: user:dict  -- uid, account 等用户信息
         g.signin, g.user = parse_user_state()
+        #: user_background_image:str -- 登录用户自定义背景图 URL（未登录为空串）
+        #: 前端背景图优先级：用户自定义 > 全局 SITE_BG_IMAGE
+        g.user_background_image = ""
+        if g.signin:
+            g.user_background_image = get_user_background_image(g.user["uid"])
         #: passkey_enabled:bool -- Passkey 功能是否已配置有效域名
         g.passkey_enabled = is_passkey_enabled(
             (config.get("PASSKEY_RP_ID") or "").strip()

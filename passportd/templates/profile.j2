@@ -496,6 +496,20 @@
                         <input type="file" id="avatar-file-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
                     </div>
                 </div>
+
+                {# 自定义背景图 #}
+                <div class="field">
+                    <label class="label">背景图</label>
+                    <div class="control">
+                        <input class="input" type="text" name="background_image" id="edit-bg-url"
+                            value="{{ profile.background_image or '' }}"
+                            placeholder="https://example.com/bg.jpg" maxlength="512">
+                    </div>
+                    <p class="help">仅支持 http/https 图片 URL，留空使用站点默认背景</p>
+                    <figure class="image mt-2" style="height:96px;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;background-color:#f9fafb;">
+                        <img id="edit-bg-preview" src="{{ profile.background_image or '' }}" alt="" style="object-fit:cover;width:100%;height:100%;" onerror="this.style.display='none';">
+                    </figure>
+                </div>
             </section>
             <footer class="modal-card-foot">
                 <div class="buttons">
@@ -597,6 +611,17 @@
         // 打开编辑模态框
         $('.js-open-edit').on('click', function () {
             $modal.addClass('is-active');
+        });
+
+        // 背景图 URL 输入实时更新预览
+        $('#edit-bg-url').on('input', function () {
+            let url = $.trim($(this).val());
+            let $img = $('#edit-bg-preview');
+            if (url) {
+                $img.attr('src', url).show();
+            } else {
+                $img.removeAttr('src').hide();
+            }
         });
 
         // 关闭模态框

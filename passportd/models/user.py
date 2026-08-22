@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Union, List
+from typing import List, Optional, Union
 from binascii import Error as BinasciiError
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -97,7 +97,7 @@ def get_user_email(uid: str) -> Union[None, str]:
 def get_user_by_uid(uid: str) -> Union[None, COMMON_DICT_TYPE]:
     """根据 uid 获取用户基本信息。
 
-    返回字段: uid, nickname, bio, gender, avatar, location, status, role
+    返回字段: uid, nickname, bio, gender, avatar, background_image, location, status, role
 
     :param uid: 用户唯一标识符（22 位字符串）
     :returns: 用户信息字典，不存在时返回 None
@@ -110,6 +110,7 @@ def get_user_by_uid(uid: str) -> Union[None, COMMON_DICT_TYPE]:
             bio=u.bio,
             gender=u.gender,
             avatar=u.avatar,
+            background_image=u.background_image,
             location=u.location,
             status=u.status,
             role=u.role,
@@ -118,6 +119,19 @@ def get_user_by_uid(uid: str) -> Union[None, COMMON_DICT_TYPE]:
         )
     except User.DoesNotExist:
         return None
+
+
+def get_user_background_image(uid: str) -> str:
+    """获取用户自定义背景图 URL（未设置返回空串）。
+
+    :param uid: 用户唯一标识符
+    :returns: 背景图 URL，未设置或用户不存在时返回空串
+    """
+    try:
+        u = User.select(User.background_image).where(User.uid == uid).get()
+        return u.background_image or ""
+    except User.DoesNotExist:
+        return ""
 
 
 def has_account(account: str) -> bool:
@@ -159,6 +173,7 @@ def add_profile(
     bio: str = "",
     gender: int = 2,
     avatar: str = "",
+    background_image: str = "",
     location: str = "",
     role: str = "user",
 ) -> bool:
@@ -187,6 +202,9 @@ def add_profile(
     if avatar:
         if not is_valid_http_url(avatar):
             raise ParamError("Invalid avatar url")
+    if background_image:
+        if not is_valid_http_url(background_image):
+            raise ParamError("Invalid background image url")
     if has_account(account):
         raise AuthError("The account already exists")
     password_hash = None
@@ -202,6 +220,7 @@ def add_profile(
                 bio=bio,
                 gender=gender,
                 avatar=avatar,
+                background_image=background_image,
                 location=location,
                 password_hash=password_hash,
                 ctime=ctime,
@@ -475,6 +494,7 @@ def update_profile(
     bio: str = "",
     gender: int = -1,
     avatar: str = "",
+    background_image: Optional[str] = None,
     location: str = "",
     status: int = -1,
     role: str = "",
@@ -491,6 +511,7 @@ def update_profile(
     :param bio: 新简介
     :param gender: 性别（-1 表示不修改）
     :param avatar: 新头像 URL
+    :param background_image: 新背景图 URL（仅支持 http/https，None 表示不修改，空串表示清除）
     :param location: 新地区
     :param status: 状态（-1 表示不修改，0=禁用, 1=启用）
     :param role: 角色操作
@@ -506,6 +527,10 @@ def update_profile(
         raise ParamError("Invalid status value")
     if role and not is_valid_user_role(role):
         raise ParamError("Invalid role value")
+    if background_image is not None and background_image and not is_valid_http_url(
+        background_image
+    ):
+        raise ParamError("Invalid background image url")
     try:
         u = User.get(User.uid == uid)
         if nickname:
@@ -516,6 +541,8 @@ def update_profile(
             u.gender = gender
         if avatar:
             u.avatar = avatar
+        if background_image is not None:
+            u.background_image = background_image
         if location:
             u.location = location
         if status != -1:

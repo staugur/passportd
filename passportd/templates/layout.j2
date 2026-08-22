@@ -13,6 +13,7 @@
     <link href="{{ site_favicon }}" rel="shortcut icon" type="image/x-icon" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bulma-v1.0.4.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='fontawesome-free-7.3.1-web/css/all.min.css') }}">
+    {% set bg_image = g.user_background_image or config.get("SITE_BG_IMAGE") %}
     <style>
         :root {
             --green-50: #f0fdf4;
@@ -22,10 +23,10 @@
             --green-700: #15803d;
         }
 
-        {% if config.get("SITE_BG_IMAGE") %}
+        {% if bg_image %}
         body {
             background-color: #f9fafb;
-            background-image: url("{{ config["SITE_BG_IMAGE"] }}");
+            background-image: url("{{ bg_image }}");
             background-size: cover;
             background-position: center;
         }
@@ -41,7 +42,7 @@
         {% endif %}
 
         .navbar {
-            {% if config.get("SITE_BG_IMAGE") %}
+            {% if bg_image %}
             box-shadow: none;
             {% else %}
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -49,7 +50,7 @@
         }
 
         .navbar.is-green {
-            {% if config.get("SITE_BG_IMAGE") %}
+            {% if bg_image %}
             background-color: transparent;
             border-bottom: none;
             {% else %}
@@ -70,7 +71,7 @@
         }
 
         .navbar.is-green .navbar-item:hover {
-            {% if not config.get("SITE_BG_IMAGE") %}
+            {% if not bg_image %}
             background-color: #f0fdf4;
             {% endif %}
             color: var(--green-600);
@@ -166,7 +167,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            {% if config.get("SITE_BG_IMAGE") %}
+            {% if bg_image %}
             background-color: transparent;
             {% else %}
             background-color: #f9fafb;
@@ -202,7 +203,7 @@
         }
 
         .footer.is-light {
-            {% if config.get("SITE_BG_IMAGE") %}
+            {% if bg_image %}
             background-color: transparent;
             {% else %}
             background-color: #f9fafb;

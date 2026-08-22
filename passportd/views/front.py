@@ -432,6 +432,7 @@ def profile():
         nickname = request.form.get("nickname", "").strip()
         bio = request.form.get("bio", "").strip()
         avatar = request.form.get("avatar", "").strip()
+        background_image = request.form.get("background_image", "").strip()
         location = request.form.get("location", "").strip()
         gender = int(request.form.get("gender", 2))
 
@@ -442,6 +443,7 @@ def profile():
                 bio=bio,
                 gender=gender,
                 avatar=avatar,
+                background_image=background_image,
                 location=location,
             )
             return redirect(

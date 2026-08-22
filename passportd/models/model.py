@@ -61,6 +61,8 @@ class User(Model):
     gender = IntegerField(default=2)
     #: 头像
     avatar = CharField(default="")
+    #: 自定义背景图 URL
+    background_image = CharField(default="")
     #: 地区
     location = CharField(default="")
     #: 本地账号密码哈希（第三方用户为 NULL）
@@ -303,6 +305,7 @@ def init_db() -> None:
     """初始化数据库表结构（幂等），在应用启动时调用。
 
     模块导入时不建表，避免 import 副作用；仅在真正创建应用时执行。
+    对已存在的表，补充缺失的新列（轻量迁移）。
     """
     with db.atomic():
         db.create_tables(
@@ -319,6 +322,29 @@ def init_db() -> None:
             ],
             safe=True,
         )
+        # 轻量迁移：为已存在的表补充新列（仅执行一次，幂等）
+        _ensure_column(
+            User._meta.table_name,
+            "background_image",
+            "VARCHAR(255) NOT NULL DEFAULT ''",
+        )
+
+
+def _ensure_column(table_name: str, column: str, definition: str) -> None:
+    """若表中不存在指定列则 ALTER TABLE 添加（SQLite/MySQL/PostgreSQL 通用）。"""
+    try:
+        existing = {c.name for c in db.get_columns(table_name)}
+    except Exception:
+        # 表不存在等情况直接跳过，交给 create_tables 处理
+        return
+    if column not in existing:
+        try:
+            db.execute_sql(
+                'ALTER TABLE "{}" ADD COLUMN {}'.format(table_name, definition)
+            )
+        except Exception:
+            # 并发建列等竞态下忽略，确保幂等
+            pass
 
 
 

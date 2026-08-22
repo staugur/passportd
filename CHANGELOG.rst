@@ -11,6 +11,11 @@ v2.8.1
 - 新增 CLI 命令 ``create-superadmin`` 一键创建 superadmin 用户
 - 新增隐私政策页面
 - 支持 Geetest 行为验证码
+- 新增站点全局背景图配置（``SITE_BG_IMAGE``），个人中心可设置用户自定义背景图（仅 http/https），登录后优先使用用户自定义背景图，未设置时回退全局背景图（``User.background_image`` 字段，``init_db()`` 启动时自动 ``_ensure_column`` 幂等补充）
+
+.. code-block:: sql
+
+   ALTER TABLE passport_user ADD COLUMN background_image VARCHAR(255) NOT NULL DEFAULT '';
 
 变更
 ~~~~

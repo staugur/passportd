@@ -98,6 +98,10 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - bool
      - ``False``
      - 是否启用隐私政策页面（``/privacy``），为 ``True`` 时页脚显示「隐私政策」链接。环境变量 ``PASSPORT_SITE_PRIVACY``（布尔，取值 ``true``/``false``）
+   * - ``SITE_BG_IMAGE``
+     - str
+     - ``""``
+     - 站点全局背景图 URL，为空不启用背景图。用户登录后个人中心可设置自定义背景图（仅 http/https），渲染优先级：用户自定义 > ``SITE_BG_IMAGE``
    * - ``METRICS_ENABLED``
      - bool
      - ``True``

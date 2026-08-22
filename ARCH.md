@@ -26,6 +26,7 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 │  │ bio         │ 简介                                               │ │
 │  │ gender      │ 0=女 1=男 2=未知                                    │ │
 │  │ avatar      │ 头像 URL                                           │ │
+│  │ background_image │ 用户自定义背景图 URL (http/https，空=站点默认) │ │
 │  │ location    │ 地区                                               │ │
 │  │ password_hash│ 密码哈希 ★ (NULL=第三方用户无密码，所有本地方式共享)   │ │
 │  │ role        │ 角色 (空格分隔): User Admin SuperAdmin ...          │ │
@@ -763,9 +764,11 @@ GET  /oauth/client/count/<client_id> → 查看授权用户数
   ▼
 before_request (每个请求)
   ├─ db.connect(reuse_if_open=True)   ← 获取数据库连接（MySQL/PostgreSQL 使用连接池）
-  └─ g.signin, g.user = parse_user_state()
-     └─ Cookie → Header → Query 三级读取 sid JWT
-        └─ verify_jwt → 验签 + 查 Auth 表确认用户存在
+  ├─ g.signin, g.user = parse_user_state()
+  │  └─ Cookie → Header → Query 三级读取 sid JWT
+  │     └─ verify_jwt → 验签 + 查 Auth 表确认用户存在
+  └─ g.user_background_image = get_user_background_image(uid)   ← 登录用户自定义背景图
+     └─ 模板背景图优先级: 用户自定义 > SITE_BG_IMAGE
   │
   ▼
 路由处理 (Blueprint)
