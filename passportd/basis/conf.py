@@ -207,7 +207,7 @@ class ProdConfig(BaseConfig):
     # Flask-PluginKit 插件管理页访问控制
     #: 生产环境插件管理页仅允许配置的管理员 uid 访问（FUNC 鉴权）
     PLUGINKIT_AUTH_METHOD = "FUNC"
-    #: 允许访问插件管理页（/pluginmanager）的管理员 uid。
+    #: 允许访问插件管理页（/pluginmanager）的管理员 uid
     PLUGINKIT_AUTH_UID: str = ""
 
     @staticmethod
@@ -385,7 +385,6 @@ def _check_config_value(cfg):
         "METRICS_TOKEN",
         "GEETEST_CAPTCHA_ID",
         "GEETEST_CAPTCHA_KEY",
-        "PLUGINKIT_AUTH_UID",
     ):
         assert isinstance(cfg[_key], str), f"{_key} must be a string"
 

@@ -35,17 +35,9 @@
             <li id="tab-vcode" data-tab="vcode">
               <a>
                 <span class="icon"><i class="fa-solid fa-message"></i></span>
-                <span>验证码登录</span>
+                <span>验证码注册登录</span>
               </a>
             </li>
-            {% if g.passkey_enabled %}
-            <li id="tab-passkey" data-tab="passkey">
-              <a>
-                <span class="icon"><i class="fa-solid fa-fingerprint"></i></span>
-                <span>Passkey 登录</span>
-              </a>
-            </li>
-            {% endif %}
           </ul>
         </div>
 
@@ -83,11 +75,14 @@
               </div>
             </div>
 
-            <div class="field">
+            <div class="field" style="display: flex; align-items: center; justify-content: space-between;">
               <label class="checkbox">
                 <input type="checkbox" name="remember" value="1">
-                记住登录（7天有效）
+                记住登录（7天）
               </label>
+              <a class="is-size-7 has-text-grey" id="link-forgot-password" href="javascript:void(0)">
+                忘记密码？
+              </a>
             </div>
 
             {% if g.geetest_enabled %}
@@ -103,20 +98,14 @@
                 <strong>登 录</strong>
               </button>
             </div>
-
-            <div class="has-text-right mt-2">
-              <a class="is-size-7 has-text-grey" id="link-forgot-password" href="javascript:void(0)">
-                忘记密码？
-              </a>
-            </div>
             <p class="help has-text-right is-size-7 has-text-grey" id="forgot-password-hint" style="display:none;">
               <i class="fa-solid fa-circle-info"></i>
-              请使用「验证码登录」登录，然后前往个人中心修改密码
+              请使用「验证码注册登录」登录，然后前往个人中心修改密码
             </p>
           </form>
         </div>
 
-        <!-- 验证码登录表单 -->
+        <!-- 验证码注册登录表单 -->
         <div id="form-vcode" class="tab-content is-hidden">
           <div class="field">
             <label class="label">账号</label>
@@ -127,7 +116,6 @@
                 <i class="fa-solid fa-user"></i>
               </span>
             </div>
-            <p class="help">输入已注册的邮箱或手机号</p>
           </div>
 
           <div class="field is-grouped">
@@ -145,44 +133,44 @@
             </div>
           </div>
 
-          <div class="field mt-4">
+          <div class="field mt-4" style="display: flex; align-items: center; justify-content: space-between;">
             <label class="checkbox">
               <input type="checkbox" id="vcode-remember">
-              记住登录（7天有效）
+              记住登录（7天）
             </label>
+            <p class="help has-text-grey mb-0 is-size-7" id="vcode-hint">
+              验证码 5 分钟内有效，请勿泄露！
+            </p>
           </div>
 
           <div class="field">
             <button class="button is-primary is-fullwidth" id="btn-vcode-login"
                     type="button">
-              <strong>登 录</strong>
+              <strong>自动登录</strong>
             </button>
           </div>
-
-          <p class="help has-text-grey mt-2 is-size-7" id="vcode-hint">
-            验证码 5 分钟内有效，请勿泄露
+          <p class="help has-text-centered has-text-grey is-size-7">
+            未注册邮箱或手机号，验证通过后将自动注册！
           </p>
         </div>
 
-        <!-- Passkey 登录表单 -->
         {% if g.passkey_enabled %}
-        <div id="form-passkey" class="tab-content is-hidden">
-          <div id="passkey-msg" class="notification is-danger is-light mb-3" style="display:none;">
-            <button class="delete"></button>
-            <span id="passkey-msg-text"></span>
-          </div>
-          <p class="has-text-centered mb-4 has-text-grey is-size-7">
-            使用指纹、面部识别或设备 PIN 码快速登录
-          </p>
-          <div class="field">
-            <button class="button is-primary is-fullwidth" id="btn-passkey-login" type="button">
-              <span class="icon"><i class="fa-solid fa-fingerprint"></i></span>
-              <strong>使用 Passkey 登录</strong>
-            </button>
-          </div>
-          <p class="help has-text-centered mt-2 is-size-7 has-text-grey" id="passkey-hint">
-            请确保当前设备已绑定 Passkey
-          </p>
+        <div class="divider">
+          <span>通行密钥登录</span>
+        </div>
+
+        <div id="passkey-msg" class="notification is-danger is-light mb-3" style="display:none;">
+          <button class="delete"></button>
+          <span id="passkey-msg-text"></span>
+        </div>
+        <p class="has-text-centered mb-4 has-text-grey is-size-7">
+          使用指纹、面部识别或设备 PIN 码快速登录，请确保当前设备已绑定 Passkey
+        </p>
+        <div class="field">
+          <button class="button is-primary is-fullwidth" id="btn-passkey-login" type="button">
+            <span class="icon"><i class="fa-solid fa-fingerprint"></i></span>
+            <strong>使用 Passkey 登录</strong>
+          </button>
         </div>
         {% endif %}
 
@@ -191,13 +179,13 @@
             <span>第三方登录</span>
           </div>
 
-          <div class="field is-grouped is-flex-direction-column" style="gap: 0.75rem;">
+          <div class="field is-grouped is-grouped-centered">
             {% for pi in oauth2_providers %}
               <div class="control">
                 <a class="button oauth-btn" href="{{ pi.endpoint }}"
                    {% if pi.bg %}style="background-color: {{ pi.bg }}; border-color: {{ pi.bg }}; color: #fff;"{% endif %}>
                   <span class="icon"><i class="{{ pi.icon }}"></i></span>
-                  <span>使用 {{ pi.provider }} 登录</span>
+                  <span>{{ pi.provider }}</span>
                 </a>
               </div>
             {% endfor %}
@@ -223,13 +211,11 @@
 {% endif %}
 <script>
   $(function () {
-    let $tabs = $('#tab-password, #tab-vcode, #tab-passkey');
+    let $tabs = $('#tab-password, #tab-vcode');
     let $tabPassword = $('#tab-password');
     let $tabVcode = $('#tab-vcode');
-    let $tabPasskey = $('#tab-passkey');
     let $formPassword = $('#form-password');
     let $formVcode = $('#form-vcode');
-    let $formPasskey = $('#form-passkey');
     let $btnSend = $('#btn-send-vcode');
     let $btnLogin = $('#btn-vcode-login');
     let $btnPasskeyLogin = $('#btn-passkey-login');
@@ -278,12 +264,11 @@
     });
 
     // Tab 切换
-    $('#tab-password a, #tab-vcode a, #tab-passkey a').on('click', function () {
+    $('#tab-password a, #tab-vcode a').on('click', function () {
       let tab = $(this).parent().data('tab');
       $tabs.removeClass('is-active');
       $formPassword.addClass('is-hidden');
       $formVcode.addClass('is-hidden');
-      $formPasskey.addClass('is-hidden');
       $('#forgot-password-hint').hide();
 
       if (tab === 'password') {
@@ -292,13 +277,10 @@
       } else if (tab === 'vcode') {
         $tabVcode.addClass('is-active');
         $formVcode.removeClass('is-hidden');
-      } else if (tab === 'passkey') {
-        $tabPasskey.addClass('is-active');
-        $formPasskey.removeClass('is-hidden');
       }
     });
 
-    // 忘记密码 → 切换到验证码登录
+    // 忘记密码 → 切换到验证码注册登录
     $('#link-forgot-password').on('click', function () {
       $tabVcode.addClass('is-active');
       $tabPassword.removeClass('is-active');
@@ -343,7 +325,7 @@
       });
     });
 
-    // 验证码登录
+    // 验证码注册登录
     $btnLogin.on('click', function () {
       let account = $.trim($('#vcode-account').val());
       let code = $.trim($('#vcode-code').val());

@@ -219,6 +219,51 @@ def add_profile(
         return True
 
 
+def register_vcode(account: str, *, nickname: str = "") -> bool:
+    """验证码登录即注册：为邮箱/手机号创建无密码本地账号。
+
+    验证码已证明账号归属，注册时无需设置密码，密码哈希为空
+    （与第三方 OAuth 首次注册一致），用户后续可自行补设密码。
+
+    :param account: 邮箱地址或手机号
+    :param nickname: 昵称（可选，默认邮箱取 @ 前缀，手机号取完整号码）
+    :returns: 创建成功返回 True
+    :raises ParamError: 参数校验失败
+    :raises AuthError: 账号已存在或创建失败
+    """
+    if not account:
+        raise ParamError("Invalid account")
+    if len(account) < 4:
+        raise ParamError("account length too short")
+    classify = parse_account_classify(account)
+    if classify not in ("email", "mobile"):
+        raise ParamError("Invalid account type")
+    if has_account(account):
+        raise AuthError("The account already exists")
+    if not nickname:
+        nickname = account.split("@")[0] if classify == "email" else account
+    uid = gen_uid()
+    ctime = now()
+    try:
+        with db.atomic():
+            User.create(
+                uid=uid,
+                nickname=nickname,
+                password_hash=None,
+                ctime=ctime,
+            )
+            Auth.create(
+                uid=uid,
+                account=account,
+                classify=classify,
+                ctime=ctime,
+            )
+    except Exception as e:
+        raise AuthError(e)
+    else:
+        return True
+
+
 def add_account(
     uid: str,
     account: str,

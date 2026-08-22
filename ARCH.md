@@ -128,13 +128,12 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 
 ### 3.1 注册流程
 
-passportd 支持三种注册方式，均自动创建用户并登录：
+passportd 的账号创建分为**用户名注册**（设置密码）与**验证码登录即注册**（邮箱/手机号，验证码登录时账号不存在则自动创建，无密码）：
 
-| 方式 | 账号类型 | 是否需要验证码 |
-|------|----------|----------------|
-| 用户名 | username | 否 |
-| 邮箱 | email | 是（6 位数字验证码） |
-| 手机号 | mobile | 是（6 位数字验证码） |
+| 方式 | 账号类型 | 是否需要验证码 | 说明 |
+|------|----------|----------------|------|
+| 用户名注册 | username | 否 | 注册页设置密码 |
+| 验证码登录即注册 | email / mobile | 是（6 位数字验证码） | 登录页发送验证码，账号不存在自动创建 |
 
 #### 3.1.1 用户名注册
 
@@ -165,38 +164,9 @@ passportd 支持三种注册方式，均自动创建用户并登录：
     │                                    │
 ```
 
-#### 3.1.2 邮箱/手机号注册（验证码）
+#### 3.1.2 邮箱/手机号验证码登录（自动注册）
 
-```
-用户浏览器                          passportd                      邮箱/SMS
-    │                                    │                            │
-    │  GET /user/signup                   │                            │
-    │ ◄────────────────────────────────── │                            │
-    │                                    │                            │
-    │  点击 "发送验证码"                   │                            │
-    │  POST /api/send_signup_vcode        │                            │
-    │  { account: "a@x.com" }            │                            │
-    │ ──────────────────────────────────► │                            │
-    │                                    │  60s 内同账号防重复发送       │
-    │                                    │  generate_digital_verification_code()
-    │                                    │  → 6位数字                   │
-    │                                    │  Redis: signup_vcode:<account>
-    │                                    │  ├─ 存 code                  │
-    │                                    │  └─ expire = 300s (5分钟)    │
-    │                                    │ ────────────────────────────►│ 发送邮件/SMS
-    │ ◄──── { ok: true } ──────────────── │                            │
-    │                                    │                            │
-    │  POST /user/signup                  │                            │
-    │  { account, password, vcode }       │                            │
-    │ ──────────────────────────────────► │                            │
-    │                                    │  校验验证码:
-    │                                    │  ├─ Redis 取 signup_vcode:<account>
-    │                                    │  └─ 比对 → 一致则继续
-    │                                    │  add_profile(account, password)
-    │                                    │  Redis 删除验证码              │
-    │                                    │  auto_set_user_state(...)     │
-    │ ◄──── 302 → / ├───────────────────── │                            │
-```
+账号不存在时由 `register_vcode()` 自动创建无密码账号（与第三方 OAuth 首次注册一致），详见 3.2.2。
 
 ### 3.2 登录流程
 
@@ -234,12 +204,12 @@ passportd 支持三种注册方式，均自动创建用户并登录：
     │                                    │                            │
     │  切换到"验证码登录"Tab               │                            │
     │  输入邮箱/手机号，点击"发送验证码"     │                            │
-    │  POST /api/vcode                    │                            │
+    │  POST /api/send_login_vcode         │                            │
     │  { account: "a@x.com" }            │                            │
     │ ──────────────────────────────────► │                            │
     │                                    │  VCodeInterface().send(account)
     │                                    │  ├─ generate_digital_verification_code()
-    │                                    │  ├─ Redis: vcode:<account> (300s 有效)
+    │                                    │  ├─ Redis: login_vcode:<account> (300s)
     │                                    │  └─ 60s 防重复发送           │
     │                                    │ ────────────────────────────►│ 发送邮件/SMS
     │ ◄──── { ok: true } ──────────────── │                            │
@@ -248,8 +218,13 @@ passportd 支持三种注册方式，均自动创建用户并登录：
     │  { account, vcode, remember }       │                            │
     │ ──────────────────────────────────► │                            │
     │                                    │  校验验证码:
-    │                                    │  ├─ Redis 取 vcode:<account>
-    │                                    │  └─ 比对 → has_account(account)
+    │                                    │  ├─ Redis 取 login_vcode:<account>
+    │                                    │  └─ 比对 → 一致则继续
+    │                                    │  get_auth(account)
+    │                                    │  ├─ 存在 → 直接登录
+    │                                    │  └─ 不存在 → register_vcode()
+    │                                    │     ├─ User(uid, password_hash=None)
+    │                                    │     └─ Auth(uid, account, classify)
     │                                    │  RecordLoginInterface() 记录登录日志
     │                                    │  auto_set_user_state(...)
     │ ◄──── Set-Cookie: sid=<jwt> ──────── │                            │
@@ -303,8 +278,7 @@ passportd 统一使用 `generate_digital_verification_code()` 生成 **6 位数�
 
 | 场景 | Redis Key | 有效期 | 防重复 | 发送接口 |
 |------|-----------|--------|--------|----------|
-| 登录验证码 | `vcode:<account>` | 300s (5分钟) | 60s | `VCodeInterface.send()` |
-| 注册验证码 | `signup_vcode:<account>` | 300s (5分钟) | 60s | `VCodeInterface.send()` |
+| 登录验证码（即注册） | `login_vcode:<account>` | 300s (5分钟) | 60s | `VCodeInterface.send()` |
 
 **验证码生成与校验流程：**
 
@@ -322,7 +296,7 @@ generate_digital_verification_code()
 | mobile | 短信（Spug API） | `SPUG_*` 配置项 |
 
 ```
-POST /api/vcode 或 POST /api/send_signup_vcode
+POST /api/send_login_vcode
   { account: "a@x.com" 或 "13800138000" }
   │
   VCodeInterface().send(account)
@@ -711,9 +685,8 @@ GET  /oauth/client/count/<client_id> → 查看授权用户数
 | `/api/signup` | POST | 注册新用户 | anonymous_required |
 | `/api/change_pwd` | POST | 修改密码 | apilogin_required |
 | `/api/update_profile` | POST | 更新资料 | apilogin_required |
-| `/api/vcode` | POST | 发送登录验证码（邮箱/SMS） | public (60s 防重复) |
-| `/api/vcode_login` | POST | 验证码登录 | public |
-| `/api/send_signup_vcode` | POST | 发送注册验证码（邮箱/SMS） | public (60s 防重复) |
+| `/api/send_login_vcode` | POST | 发送登录验证码（未注册账号也可发送，即注册） | public (60s 防重复) |
+| `/api/vcode_login` | POST | 验证码登录（账号不存在自动注册） | public |
 | `/api/login_history` | GET | 登录历史记录 | apilogin_required |
 | `/api/upload` | POST | 上传头像/文件 | apilogin_required |
 | `/api/client/create` | POST | 创建 OIDC Client | apilogin_required |

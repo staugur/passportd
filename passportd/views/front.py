@@ -30,7 +30,6 @@ from flask import (
 )
 
 from ..basis.errors import ApiError, ErrorCode, PassportError
-from ..basis.vars import PROC_NAME
 from ..libs.interface import (
     LoginInterface,
     RecordLoginInterface,
@@ -110,7 +109,6 @@ def signup():
             parse_encrypted_password(request.form.get("encrypted_repassword", ""))
             or request.form.get("repassword", "").strip()
         )
-        vcode = request.form.get("vcode", "").strip()
         nickname = request.form.get("nickname", "").strip()
 
         if not account or not password:
@@ -128,33 +126,14 @@ def signup():
                 nickname=nickname,
             )
 
-        # 邮箱/手机号注册需要验证码
-        classify = parse_account_classify(account)
-        if classify in ("email", "mobile"):
-            if not vcode:
-                return render_template(
-                    "signup.j2",
-                    error="邮箱/手机号注册需要验证码",
-                    account=account,
-                    nickname=nickname,
-                )
-            stored = rdb.get(f"{PROC_NAME}:signup_vcode:{account}")
-            if not stored:
-                return render_template(
-                    "signup.j2",
-                    error="验证码已过期，请重新获取",
-                    account=account,
-                    nickname=nickname,
-                )
-            if stored != vcode:
-                return render_template(
-                    "signup.j2",
-                    error="验证码错误",
-                    account=account,
-                    nickname=nickname,
-                )
-            # 验证通过，删除已用验证码
-            rdb.delete(f"{PROC_NAME}:signup_vcode:{account}")
+        # 注册仅支持用户名；邮箱/手机号使用验证码注册登录（登录即注册）
+        if parse_account_classify(account) != "username":
+            return render_template(
+                "signup.j2",
+                error="注册仅支持用户名，邮箱/手机号请使用验证码注册登录",
+                account=account,
+                nickname=nickname,
+            )
 
         res = RegisterInterface(account, password, nickname=nickname)
         if res["success"]:

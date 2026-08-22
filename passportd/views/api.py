@@ -62,6 +62,7 @@ from ..models.user import (
     list_accounts,
     list_active_sessions,
     list_login_records,
+    register_vcode,
     set_username,
 )
 from ..utils.common import (
@@ -370,62 +371,14 @@ def user_oauth_authorizations():
         return new_res(success=True, data=dict(deleted=ret))
 
 
-@bp.post("/send_signup_vcode")
-@ip_rate_limit
-def send_signup_vcode():
-    """发送注册验证码（邮箱或短信）。
-
-    根据账号格式自动判断为邮箱或手机号，通过对应渠道发送 6 位数字验证码。
-    该账号必须未被注册，同一账号 60 秒内不可重复请求，验证码 5 分钟内有效。
-
-    :form account: 邮箱地址或手机号（必填）
-    :returns: 发送结果 JSON
-    """
-    account = request.form.get("account", "").strip()
-    if not account:
-        raise ApiError("account is required", code=ErrorCode.ACCOUNT_REQUIRED)
-
-    classify = parse_account_classify(account)
-    if classify not in ("email", "mobile"):
-        raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
-
-    if has_account(account):
-        raise ApiError(
-            "account already exists, please sign in", code=ErrorCode.ACCOUNT_EXISTS
-        )
-
-    check_sms_rate_limit(account)
-
-    # 60s 内同一账号不可重复发送
-    rl_key = f"{PROC_NAME}:signup_vcode_rl:{account}"
-    if rdb.exists(rl_key):
-        raise ApiError(
-            "too many requests, please retry in 60 seconds", code=ErrorCode.RATE_LIMITED
-        )
-
-    code = generate_digital_verification_code()
-    vi = VCodeInterface()
-
-    if classify == "email":
-        ret = vi.send_email(account, code)
-    else:
-        ret = vi.send_sms(account, code)
-
-    if ret["success"] is True:
-        # 验证码写入 Redis，5 分钟有效
-        rdb.setex(f"{PROC_NAME}:signup_vcode:{account}", 300, code)
-        rdb.setex(rl_key, 60, "1")
-
-    return ret
-
-
 @bp.post("/send_login_vcode")
 @ip_rate_limit
 def send_login_vcode():
     """发送登录验证码（邮箱或短信）。
 
     根据账号格式自动判断为邮箱或手机号，通过对应渠道发送 6 位数字验证码。
-    同一账号 60 秒内不可重复请求，验证码 5 分钟内有效。
+    未注册账号也可发送（验证码登录即注册），同一账号 60 秒内不可重复请求，
+    验证码 5 分钟内有效。
 
     :form account: 邮箱地址或手机号（必填）
     :returns: 发送结果 JSON
@@ -437,11 +390,6 @@ def send_login_vcode():
     classify = parse_account_classify(account)
     if classify not in ("email", "mobile"):
         raise ApiError("invalid email or mobile number", code=ErrorCode.INVALID_ACCOUNT)
-
-    if not has_account(account):
-        raise ApiError(
-            "account does not exist, please sign up", code=ErrorCode.ACCOUNT_NOT_FOUND
-        )
 
     check_sms_rate_limit(account)
 
@@ -707,7 +655,7 @@ def user_delete():
 @bp.post("/vcode_login")
 @ip_rate_limit
 def vcode_login():
-    """验证码登录接口。
+    """验证码注册登录接口。
 
     校验用户提交的验证码，验证通过后设置登录态 Cookie，
     同时写入登录记录。
@@ -744,7 +692,20 @@ def vcode_login():
     expire = 604800 if request.form.get("remember") else 7200
     auth = get_auth(account)
     if not auth:
-        raise ApiError("login failed, account is abnormal", code=ErrorCode.LOGIN_FAILED)
+        # 验证码登录即注册：验证码证明账号归属，自动创建无密码账号
+        register_vcode(account)
+        auth = get_auth(account)
+        if not auth:
+            raise ApiError(
+                "login failed, account is abnormal", code=ErrorCode.LOGIN_FAILED
+            )
+        record_audit_log(
+            uid=auth["uid"],
+            action="register",
+            detail={"account": account, "method": "vcode"},
+            ip=get_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+        )
 
     # 记录登录日志（异步，含 IP 地理位置、设备指纹）
     uid = auth["uid"]
