@@ -329,12 +329,19 @@
                 </ul>
                 <p class="mt-2 has-text-weight-bold has-text-danger">此操作不可恢复，请谨慎执行！</p>
             </div>
+            {% if has_password %}
             <div class="field">
                 <label class="label">输入密码确认</label>
                 <div class="control">
                     <input class="input" type="password" id="delete-account-password" placeholder="输入当前密码以确认" maxlength="128" autocomplete="current-password">
                 </div>
             </div>
+            {% else %}
+            <div class="notification is-info is-light mb-3">
+                <p class="has-text-weight-bold mb-1">当前账号未设置密码（第三方登录或未设置密码）</p>
+                <p class="is-size-7">无需输入密码，勾选下方确认后即可注销。</p>
+            </div>
+            {% endif %}
             <div class="field">
                 <label class="checkbox">
                     <input type="checkbox" id="delete-account-confirm">
@@ -1445,7 +1452,11 @@
     let $daMsg = $('#delete-account-msg');
 
     function toggleDeleteSubmit() {
-        $daSubmit.prop('disabled', !($daPassword.val().trim() && $daConfirm.is(':checked')));
+        if ({{ has_password|tojson }}) {
+            $daSubmit.prop('disabled', !($daPassword.val().trim() && $daConfirm.is(':checked')));
+        } else {
+            $daSubmit.prop('disabled', !$daConfirm.is(':checked'));
+        }
     }
 
     $daPassword.on('input', toggleDeleteSubmit);
@@ -1475,7 +1486,11 @@
     // 提交注销
     $daSubmit.on('click', function () {
         let password = $daPassword.val().trim();
-        if (!password || !$daConfirm.is(':checked')) return;
+        if ({{ has_password|tojson }}) {
+            if (!password || !$daConfirm.is(':checked')) return;
+        } else if (!$daConfirm.is(':checked')) {
+            return;
+        }
 
         $daSubmit.prop('disabled', true).addClass('is-loading');
         $daMsg.hide();

@@ -39,7 +39,12 @@ sys.modules["redis.client"] = MagicMock()
 from passportd.app import create_app
 from passportd.basis.common import now
 from passportd.models.model import Auth, LoginRecord, User, db
-from passportd.models.user import add_profile, generate_jwt, has_account
+from passportd.models.user import (
+    add_profile,
+    generate_jwt,
+    has_account,
+    set_username,
+)
 from passportd.utils.common import rsa_encrypt
 
 _AUTH = dict(username="testapiuser", uid="", token="")
@@ -228,6 +233,76 @@ class ApiTest(unittest.TestCase):
         data = json.loads(resp.data)
         self.assertFalse(data.get("success"))
         self.assertEqual(data.get("code"), "PASSWORD_SAME_AS_OLD")
+
+    def test_change_password_third_party_with_username(self):
+        """第三方账号设置了用户名后即可修改密码（用户名是本地身份）"""
+        third_account = "telegram.77777"
+        username = "tguser777"
+        with self.app.app_context():
+            if not has_account(third_account):
+                add_profile(third_account, "")
+            auth = Auth.get(Auth.account == third_account)
+            if not has_account(username):
+                set_username(auth.uid, username)
+            token = generate_jwt(third_account)
+        self.client.set_cookie("sid", token)
+        resp = self.client.post(
+            "/api/user/change_password",
+            data=dict(new_password="newtest456", repassword="newtest456"),
+        )
+        data = json.loads(resp.data)
+        self.assertTrue(data.get("success"))
+        # 清理测试账号（用户名 + 第三方 + User）
+        with self.app.app_context():
+            Auth.delete().where(
+                Auth.account.in_([third_account, username])
+            ).execute()
+            User.delete().where(User.uid == auth.uid).execute()
+
+    def test_change_password_pure_third_party(self):
+        """纯第三方账号（无本地身份）修改密码返回 LOCAL_ACCOUNT_ONLY"""
+        third_account = "telegram.88888"
+        with self.app.app_context():
+            if not has_account(third_account):
+                add_profile(third_account, "")
+            auth = Auth.get(Auth.account == third_account)
+            token = generate_jwt(third_account)
+        self.client.set_cookie("sid", token)
+        resp = self.client.post(
+            "/api/user/change_password",
+            data=dict(new_password="newtest456", repassword="newtest456"),
+        )
+        data = json.loads(resp.data)
+        self.assertFalse(data.get("success"))
+        self.assertEqual(data.get("code"), "LOCAL_ACCOUNT_ONLY")
+        with self.app.app_context():
+            Auth.delete().where(Auth.account == third_account).execute()
+            User.delete().where(User.uid == auth.uid).execute()
+
+    def test_delete_account_requires_password(self):
+        """有密码的本地账号注销需密码确认"""
+        self._login()
+        resp = self.client.post("/api/user/delete", data=dict())
+        data = json.loads(resp.data)
+        self.assertFalse(data.get("success"))
+        self.assertEqual(data.get("code"), "PASSWORD_REQUIRED")
+
+    def test_delete_third_party_account_without_password(self):
+        """第三方账号（无密码）凭登录态即可注销，无需密码"""
+        third_account = "telegram.99999"
+        with self.app.app_context():
+            if not has_account(third_account):
+                add_profile(third_account, "")
+            auth = Auth.get(Auth.account == third_account)
+            token = generate_jwt(third_account)
+        self.client.set_cookie("sid", token)
+        resp = self.client.post("/api/user/delete", data=dict())
+        data = json.loads(resp.data)
+        self.assertTrue(data.get("success"))
+        # 用户数据已级联删除
+        with self.app.app_context():
+            self.assertIsNone(User.get_or_none(User.uid == auth.uid))
+            Auth.delete().where(Auth.account == third_account).execute()
 
     # ---------- GET /api/user/login_history ----------
 

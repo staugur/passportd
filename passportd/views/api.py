@@ -183,6 +183,8 @@ def change_pwd():
         # 依据 models.change_password 的校验点映射错误码，
         # 避免所有场景都提示“请输入密码”造成误导
         msg = str(e)
+        if "Only local accounts" in msg:
+            raise ApiError(msg, code=ErrorCode.LOCAL_ACCOUNT_ONLY)
         if "different from current password" in msg:
             raise ApiError(msg, code=ErrorCode.PASSWORD_SAME_AS_OLD)
         if "6-32 characters" in msg:
@@ -605,31 +607,32 @@ def user_unbind_account():
 def user_delete():
     """注销账号接口。
 
-    需要输入密码确认操作，检查用户名下无 OIDC 客户端后，
-    级联删除所有用户数据（User / Auth / LoginRecord / OIDC 授权 / Passkey 等）。
+    有密码的本地账号需输入密码确认操作；第三方登录/未设置密码的账号
+    （password_hash 为空）已通过登录态认证，凭登录态即可注销。
+    检查用户名下无 OIDC 客户端后，级联删除所有用户数据
+    （User / Auth / LoginRecord / OIDC 授权 / Passkey 等）。
 
-    :form password: 当前密码（必填）
+    :form password: 有密码账号的当前密码（必填）
     :returns: 操作结果 JSON（成功时同时清除登录态 Cookie）
     """
     from flask import jsonify
 
     uid = g.user["uid"]
-    password = request.form.get("password", "")
-
-    if not password:
-        raise ApiError(
-            "password is required to confirm account deletion",
-            code=ErrorCode.PASSWORD_REQUIRED,
-        )
 
     u = User.get_or_none(User.uid == uid)
-    if not u or not u.password_hash:
-        raise ApiError(
-            "no password has been set, unable to verify identity",
-            code=ErrorCode.PASSWORD_NOT_SET,
-        )
-    if not check_password_hash(u.password_hash, password):
-        raise ApiError("incorrect password", code=ErrorCode.INVALID_PASSWORD)
+    if not u:
+        raise ApiError("user not found", code=ErrorCode.PARAM_ERROR)
+
+    # 第三方/未设置密码账号无密码可验，登录态（@apilogin_required）即认证依据
+    if u.password_hash:
+        password = request.form.get("password", "")
+        if not password:
+            raise ApiError(
+                "password is required to confirm account deletion",
+                code=ErrorCode.PASSWORD_REQUIRED,
+            )
+        if not check_password_hash(u.password_hash, password):
+            raise ApiError("incorrect password", code=ErrorCode.INVALID_PASSWORD)
 
     # 检查是否有 OIDC 客户端
     if list_oauth_clients(uid):

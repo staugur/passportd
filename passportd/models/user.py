@@ -188,6 +188,27 @@ def list_accounts(uid: str) -> List[COMMON_DICT_TYPE]:
     return [model_to_dict(u) for u in Auth.select().where(Auth.uid == uid)]
 
 
+def has_local_auth(uid: str) -> bool:
+    """检查用户是否拥有本地认证方式（username / email / mobile 任一）。
+
+    用户是否可设置密码取决于其名下是否存在本地登录身份，
+    而非当前登录账号（可能为第三方）的格式。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: 存在本地认证方式返回 True，否则 False
+    """
+    if not uid or len(uid) != 22:
+        return False
+    return (
+        Auth.select()
+        .where(
+            (Auth.uid == uid)
+            & (Auth.classify.in_(("username", "email", "mobile")))
+        )
+        .exists()
+    )
+
+
 def add_profile(
     account: str,
     credential: str,
@@ -609,16 +630,18 @@ def change_password(uid: str, account: str, new_pwd: str) -> bool:
     """修改本地账号密码。
 
     密码统一存储在 User.password_hash，所有本地登录方式共享同一密码。
+    用户只要名下拥有本地认证方式（用户名/邮箱/手机号任一，如第三方登录后
+    设置了用户名）即可设置密码；纯第三方账号无本地身份时拒绝。
     调用前需确保用户已通过 @apilogin_required 等登录态校验。
 
     :param uid: 用户 UID
-    :param account: 本地账号
+    :param account: 本地账号（兼容保留，实际以 uid 判定本地身份）
     :param new_pwd: 新密码（明文）
     :returns: 成功返回 True
     :raises ParamError: 参数校验失败
     :raises AuthError: 密码验证失败或账号不存在
     """
-    if not is_local_account(account):
+    if not has_local_auth(uid):
         raise ParamError("Only local accounts can change password")
     if not check_credential_rule(new_pwd):
         raise ParamError("New password must be 6-32 characters")

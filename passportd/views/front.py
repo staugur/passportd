@@ -37,6 +37,7 @@ from ..libs.interface import (
 )
 from ..models.audit import record_audit_log
 from ..models.user import (
+    User,
     add_account,
     add_profile,
     get_account,
@@ -472,11 +473,16 @@ def profile():
 
     accounts = list_accounts(uid)
     oauth2_providers = list_oauth2_providers()
+    # 是否有密码决定注销时是否需要密码确认（第三方/未设置密码账号凭登录态注销）
+    has_password = bool(
+        User.select(User.password_hash).where(User.uid == uid).scalar()
+    )
     return render_template(
         "profile.j2",
         profile=profile_data,
         accounts=accounts,
         oauth2_providers=oauth2_providers,
+        has_password=has_password,
         msg=msg,
         msg_type=msg_type,
     )
