@@ -82,6 +82,7 @@ def create_app():
             "passportd.modules.oauth2_wechat",
             "passportd.modules.oauth2_apple",
             "passportd.modules.oauth2_xiaomi",
+            "passportd.modules.oauth2_telegram",
         ),  # type: ignore
     )
 

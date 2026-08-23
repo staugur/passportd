@@ -1,6 +1,14 @@
 更新日志
 ========
 
+v2.8.4
+------
+
+新特性
+~~~~~~
+
+- 新增 Telegram Login Widget 第三方登录插件支持
+
 v2.8.3
 ------
 
@@ -8,6 +16,7 @@ v2.8.3
 ~~~~~~
 
 - 新增 微信、Apple、Xiaomi 插件支持
+- 新增 Telegram Login Widget 第三方登录插件支持（未配置 Bot 用户名时自动通过 Bot API 获取，可配置代理访问 Telegram）
 
 修复
 ~~~~

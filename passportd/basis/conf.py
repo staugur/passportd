@@ -165,6 +165,12 @@ class BaseConfig:
     XIAOMI_CLIENT_ID = ""
     XIAOMI_CLIENT_SECRET = ""
 
+    #: Telegram Login Widget 配置（Bot 需在 @BotFather 创建，站点必须 HTTPS）
+    TELEGRAM_BOT_TOKEN = ""
+    TELEGRAM_BOT_USERNAME = ""
+    #: 访问 Telegram Bot API 的代理（可选），格式 http://host:port，如 http://127.0.0.1:7890
+    TELEGRAM_API_PROXY = None
+
     # OIDC 内部客户端（自家应用）信任配置
     #: 自家应用 name 列表，英文逗号分隔（容忍逗号两侧空格）。仅列表内的
     #: 应用在申请 ``role`` scope 时可获得用户平台角色（admin / superadmin /

@@ -315,6 +315,47 @@ passportd 支持通过小米开放平台 OAuth2 实现第三方登录。
 
 配置生效后，登录页面会自动显示小米登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定小米账号。
 
+配置 OAuth2 对接 Telegram
+--------------------------
+
+passportd 支持通过 Telegram 官方 **Login Widget** 实现第三方登录，登录页点击 Telegram 按钮后在 Telegram 内完成授权即可登录或绑定。
+
+.. note::
+
+    该接入方式（``oauth2_telegram``） **尚未经过真实 Bot 凭据实测**，
+    签名校验与回执字段等流程请以 Telegram 官方文档为准，如遇问题请反馈。
+
+创建 Telegram Bot
+^^^^^^^^^^^^^^^^^^
+
+1. 在 Telegram 中联系 `@BotFather <https://t.me/BotFather>`_，发送 ``/newbot`` 创建 Bot，记下 **Bot Token** 与 **Bot 用户名** （如 ``passportd_bot``）。
+2. 向 @BotFather 发送 ``/setdomain``，配置站点域名（如 ``passport.example.com``），否则 Login Widget 无法在站点加载。
+3. 站点必须为 **HTTPS**，Telegram 官方要求使用 Login Widget 的页面必须加密传输。
+
+启用 Telegram 登录
+^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: shell
+
+    export PASSPORT_TELEGRAM_BOT_TOKEN="你的 Bot Token"
+    export PASSPORT_TELEGRAM_BOT_USERNAME="passportd_bot"
+    passportd restart
+
+配置生效后，登录页面会自动显示 Telegram 登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定 Telegram 账号。
+
+``TELEGRAM_BOT_USERNAME`` 可选：未配置时程序会调用 Telegram Bot API ``getMe``
+自动获取 Bot 用户名（结果缓存 1 小时），顺带校验 Bot Token 是否有效。
+服务器无法直连 Telegram API（如国内网络）时，配置代理：
+
+.. code-block:: shell
+
+    export PASSPORT_TELEGRAM_API_PROXY="http://127.0.0.1:7890"
+    passportd restart
+
+注意：登录授权过程本身由浏览器与 Telegram 交互，**服务端无需也不能通过该代理转发**，
+代理仅用于服务端调用 Bot API（如自动获取 Bot 用户名）。若浏览器也无法访问
+``telegram.org`` 的 Login Widget 脚本，请使用可访问的 CDN 或网络环境。
+
 创建 OIDC Client 提供认证服务
 ------------------------------
 

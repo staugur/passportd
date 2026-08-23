@@ -411,11 +411,21 @@ OAuth2 第三方登录配置
    * - ``XIAOMI_CLIENT_SECRET``
      - str
      - 小米开放平台 App Secret
+   * - ``TELEGRAM_BOT_TOKEN``
+     - str
+     - Telegram Bot Token（@BotFather 创建 Bot 后获取，同时作为回执验签密钥）
+   * - ``TELEGRAM_BOT_USERNAME``
+     - str
+     - Telegram Bot 用户名（不带 ``@``，用于前端 Login Widget）
+   * - ``TELEGRAM_API_PROXY``
+     - str
+     - 访问 Telegram Bot API 的代理（可选），格式 ``http://host:port``；服务器无法直连 Telegram（如国内网络）时配置
 
 .. note::
 
-    Apple（``APPLE_*``）、微信（``WECHAT_*``）与小米（``XIAOMI_*``）三项接入方式 **尚未经过真实凭据实测**，
-    部署前请对照对应开放平台官方文档核对配置与回调流程。
+    Apple（``APPLE_*``）、微信（``WECHAT_*``）、小米（``XIAOMI_*``）三项接入方式 **尚未经过真实凭据实测**，
+    部署前请对照对应开放平台官方文档核对配置与回调流程。Telegram 接入使用官方 Login Widget，
+    站点必须为 HTTPS，且需在 @BotFather 通过 ``/setdomain`` 配置允许回调的域名。
 
 OIDC 内部客户端配置
 --------------------

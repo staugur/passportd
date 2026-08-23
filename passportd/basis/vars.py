@@ -97,6 +97,11 @@ USER_BG_CACHE_TTL: int = 604800
 #: 要求调用方用 Team ID + Key ID + 私钥签发 JWT 作为 client_secret，有效期最长 180 天，
 #: 程序每次换 token 时动态生成
 APPLE_CLIENT_SECRET_TTL: int = 180 * 24 * 3600
+#: Telegram 登录回执 auth_date 新鲜度窗口（秒），默认 86400（24h），防重放
+TELEGRAM_AUTH_TTL: int = 86400
+#: Telegram Bot 信息（getMe 结果）Redis 缓存时长（秒）。Bot Token 变更前 username 基本不变，
+#: 缓存可避免每次打开登录页都请求 Telegram API
+TELEGRAM_BOT_INFO_TTL: int = 3600
 
 #: WebAuthn Passkey
 #: Challenge 缓存有效期（秒）
