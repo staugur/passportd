@@ -107,17 +107,13 @@ def public_key():
 def user_audit_log():
     """获取当前用户的安全审计日志。
 
-    返回用户所有敏感操作记录（注册、绑定/解绑、Passkey、OIDC 客户端管理等），
+    返回用户最近 10 条敏感操作记录（注册、绑定/解绑、Passkey、OIDC 客户端管理等），
     按时间倒序排列。
 
-    :query limit: 返回条数（默认 50）
-    :query offset: 偏移量（默认 0）
     :returns: data 中包含 audit_logs 列表
     """
     uid = g.user["uid"]
-    limit = int(request.args.get("limit", 50))
-    offset = int(request.args.get("offset", 0))
-    logs = list_audit_logs(uid=uid, limit=limit, offset=offset)
+    logs = list_audit_logs(uid=uid, limit=10)
     return new_res(success=True, data=dict(audit_logs=logs))
 
 

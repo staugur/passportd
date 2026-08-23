@@ -77,13 +77,13 @@ def record_audit_log(
 
 def list_audit_logs(
     uid: str,
-    limit: int = 50,
+    limit: int = 10,
     offset: int = 0,
 ) -> List[Dict[str, Any]]:
     """查询用户的审计日志记录，按时间倒序排列。
 
     :param uid: 用户唯一标识符
-    :param limit: 返回条数，默认 50
+    :param limit: 返回条数，默认 10
     :param offset: 偏移量，默认 0
     :returns: 审计日志记录列表（dict 格式，detail 已反序列化）
     """
