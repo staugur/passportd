@@ -116,14 +116,11 @@ class MetricsTest(unittest.TestCase):
         resp = self.client.get("/api/key")
         self.assertEqual(resp.status_code, 200)
         body = self.client.get("/metrics").data.decode("utf-8")
-        # 本地计数包含刚发生的 GET /api/key
-        self.assertIn(
-            'passportd_http_requests_total{method="GET",status="200"}',
-            body,
-        )
-        # 本地计数仅反映当前进程，值至少为 1
-        pattern = r'passportd_http_requests_total\{[^}]*status="200"[^}]*\} '
-        self.assertRegex(body, pattern + r'[0-9]+\.0')
+        # 本地计数包含刚发生的 GET /api/key，且带 pid 标签（反映当前 worker）
+        pattern = r'passportd_http_requests_total\{[^}]*method="GET"[^}]*status="200"[^}]*\} [0-9]+\.0'
+        self.assertRegex(body, pattern)
+        # pid 标签值为真实进程号（标签按字母序输出，位置不固定）
+        self.assertRegex(body, r'passportd_http_requests_total\{[^}]*pid="[0-9]+"[^}]*\} [0-9]+\.0')
         _mock_redis.hgetall.return_value = {"GET:200": "1"}
 
     def test_metrics_disabled_returns_503(self):
@@ -173,7 +170,7 @@ class MetricsTest(unittest.TestCase):
         self.assertIn("oauth_clients", data)
 
     def test_process_scan_returns_list(self):
-        """进程扫描函数返回列表（非 Linux 环境为空列表）"""
+        """进程扫描函数返回列表（Linux /proc 或非 Linux ps 回退）"""
         from passportd.libs.metrics import scan_processes
 
         procs = scan_processes()
@@ -340,12 +337,14 @@ class HttpRequestFallbackTest(unittest.TestCase):
             f for f in families
             if f.name == "passportd_http_requests"
         ][0]
-        # 5 个 method × 10 个 status = 50 条零值系列
+        # 5 个 method × 10 个 status = 50 条零值系列，且带 pid 标签
         self.assertEqual(len(family.samples), 50)
         self.assertEqual(
             family.samples[0].name, "passportd_http_requests_total"
         )
         self.assertEqual(family.samples[0].value, 0.0)
+        self.assertIn("pid", family.samples[0].labels)
+        self.assertEqual(family.samples[0].labels["status"], "200")
 
     def test_redis_data_merged_output(self):
         """Redis 有数据时按 method/status 输出计数"""

@@ -3,7 +3,7 @@
 网站使用说明
 ============
 
-本文档介绍 passportd 网站的核心功能使用方式，包括配置 GitHub OAuth2 第三方登录、创建 OIDC Client 提供 SSO 服务，以及管理 Passkey 设备。
+本文档介绍 passportd 网站的核心功能使用方式，包括配置 GitHub、Google、Gitee、QQ、微博、微信、Apple、小米等 OAuth2 第三方登录、创建 OIDC Client 提供 SSO 服务，以及管理 Passkey 设备。
 
 配置 OAuth2 对接 GitHub
 -----------------------
@@ -57,7 +57,7 @@ passportd 也支持通过 Google OAuth2 实现第三方登录。
 2. 进入 `APIs & Services → Credentials <https://console.cloud.google.com/apis/credentials>`_，点击 **Create Credentials → OAuth client ID**。
 3. 如果尚未配置 OAuth consent screen（同意屏幕），系统会引导完成：
 
-   - **User Type**：选择 **External**（外部用户）
+   - **User Type**：选择 **External** （外部用户）
    - **App name**：自定义应用名称
    - **User support email**：你的邮箱
    - **Developer contact email**：你的邮箱
@@ -86,10 +86,234 @@ passportd 也支持通过 Google OAuth2 实现第三方登录。
     如果 OAuth consent screen 处于 **Testing** 模式，只有已添加的 Test users 可以登录。发布到生产环境前需要在
     `OAuth consent screen <https://console.cloud.google.com/apis/credentials/consent>`_ 中点击 **PUBLISH APP**。
 
+配置 OAuth2 对接 Gitee
+-----------------------
+
+passportd 支持通过 Gitee 第三方应用实现登录，用户在登录页点击 Gitee 按钮即可使用 Gitee 账号快速登录或绑定。
+
+创建 Gitee 第三方应用
+^^^^^^^^^^^^^^^^^^^^^^
+
+1. 登录 `Gitee <https://gitee.com/>`_，点击头像 → **设置** → **第三方应用** → **创建应用**。
+2. 填写应用信息：
+
+   - **应用名称**：自定义（如 ``My Passport``）
+   - **应用主页**：passportd 服务地址（如 ``https://passport.example.com``）
+   - **应用回调地址**：``https://passport.example.com/oauth2/gitee/authorized``
+
+3. 创建后 **无需审核**，立即获得 **Client ID** 和 **Client Secret**。
+
+启用 Gitee 登录
+^^^^^^^^^^^^^^^^
+
+.. code-block:: shell
+
+    export PASSPORT_GITEE_CLIENT_ID="你的 Client ID"
+    export PASSPORT_GITEE_CLIENT_SECRET="你的 Client Secret"
+    passportd restart
+
+配置生效后，登录页面会自动显示 Gitee 登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定 Gitee 账号。
+
+配置 OAuth2 对接 QQ
+--------------------
+
+passportd 支持通过 QQ 互联（Connect）实现第三方登录。
+
+创建 QQ 互联网站应用
+^^^^^^^^^^^^^^^^^^^^^^
+
+1. 访问 `QQ 互联 <https://connect.qq.com/>`_，使用 QQ 号登录并绑定手机号，完成 **开发者注册**。
+2. 进入 **管理中心 → 应用管理 → 创建应用**，应用类型选择 **网站应用**。
+3. 填写网站信息：
+
+   - **网站名称**：自定义（如 ``My Passport``）
+   - **网站地址**：passportd 服务地址（如 ``https://passport.example.com``），需可正常访问
+   - **网站简介**：应用用途说明
+   - **网站回调地址**：``https://passport.example.com/oauth2/qq/authorized``
+
+4. 提交审核，审核通过后获得 **App ID** 与 **App Key**。
+
 .. note::
 
-    passportd 还可配置 Gitee、QQ、Weibo、Google 等 OAuth2 第三方登录，配置方式与 GitHub 类似，
-    对应配置项为 ``GITEE_CLIENT_ID`` / ``GITEE_CLIENT_SECRET`` 等，详见 :ref:`setup`。
+    QQ 互联对网站应用审核较严格，网站需可正常访问（建议已完成 ICP 备案），审核周期一般为数个工作日。
+    应用审核通过并创建后，回调地址需在应用管理页面同步配置为上面填写的地址。
+
+启用 QQ 登录
+^^^^^^^^^^^^^
+
+.. code-block:: shell
+
+    export PASSPORT_QQ_CLIENT_ID="你的 App ID"
+    export PASSPORT_QQ_CLIENT_SECRET="你的 App Key"
+    passportd restart
+
+配置生效后，登录页面会自动显示 QQ 登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定 QQ 账号。
+
+配置 OAuth2 对接微博
+---------------------
+
+passportd 支持通过微博开放平台实现第三方登录。
+
+创建微博开放平台应用
+^^^^^^^^^^^^^^^^^^^^^^
+
+1. 访问 `微博开放平台 <https://open.weibo.com/>`_，使用微博账号登录。
+2. 完善 **开发者基本信息** 并提交，随后完成 **开发者身份认证** （实名认证，上传身份证照片，等待审核通过）。
+3. 进入 **微连接 → 我的应用 → 创建应用**，选择 **网页应用**，填写：
+
+   - **应用名称**：自定义（如 ``My Passport``）
+   - **应用简介**：应用用途说明
+   - **授权回调页**：``https://passport.example.com/oauth2/weibo/authorized``
+
+4. 提交审核，审核通过后获得 **App Key** 与 **App Secret**。
+
+.. note::
+
+    微博开放平台授权回调页需要与创建应用时填写的一致，且必须为可公开访问的完整 URL（不可使用 ``127.0.0.1``/``localhost``）。
+
+启用微博登录
+^^^^^^^^^^^^
+
+.. code-block:: shell
+
+    export PASSPORT_WEIBO_CLIENT_ID="你的 App Key"
+    export PASSPORT_WEIBO_CLIENT_SECRET="你的 App Secret"
+    passportd restart
+
+配置生效后，登录页面会自动显示微博登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定微博账号。
+
+配置 OAuth2 对接微信扫码登录
+----------------------------
+
+passportd 支持通过微信开放平台（Open Platform）网站应用的扫码登录实现第三方登录。
+
+.. warning::
+
+    该接入方式（``oauth2_wechat``） **尚未经过真实开放平台凭据实测**，
+    扫码 URL 拼接与用户信息解析等流程请以微信开放平台官方文档为准，如遇问题请反馈。
+
+创建微信开放平台网站应用
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. 注册并登录 `微信开放平台 <https://open.weixin.qq.com/>`_ （需企业资质认证）。
+2. 进入 **管理中心 → 网站应用 → 创建网站应用**，填写应用信息并提交审核。
+3. 审核通过后，在应用详情中记录 **AppID** 和 **AppSecret**。
+4. 在应用详情 → 开发信息中配置 **授权回调域名** 为 passportd 服务域名（如 ``passport.example.com``），
+   回调地址为 ``https://passport.example.com/oauth2/wechat/authorized``。
+
+.. note::
+
+    - 微信扫码登录（``snsapi_login``）需开放平台网站应用，公众号网页授权（``snsapi_userinfo``）不适用于扫码场景。
+    - 同一微信用户如需在多个应用间统一身份，可在开放平台绑定 UnionID（用户信息将以 ``unionid`` 作为唯一标识）。
+
+.. warning::
+
+    微信开放平台网站应用 **仅支持企业/组织主体**，该模块适用于企业用户。
+    个人开发者注册开放平台后，微信登录功能默认锁定，须完成「开发者资质认证」（300 元/年），
+    且认证主体需为企业，个人主体无法创建网站应用。
+    个人开发者可考虑微信小程序登录或公众号网页授权（个人仅可注册订阅号，无网页授权能力）。
+
+.. note::
+
+    微信昵称可能包含 emoji 等四字节 UTF-8 字符，MySQL 数据库需使用 **utf8mb4** 字符集。
+    passportd 会自动为 MySQL 连接追加 ``charset=utf8mb4``，建库时建议显式指定：
+
+    .. code-block:: sql
+
+        CREATE DATABASE passport DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+启用微信扫码登录
+^^^^^^^^^^^^^^^^^
+
+.. code-block:: python
+
+    # passportd/basis/conf.py 或自定义配置文件
+    WECHAT_CLIENT_ID = "你的 AppID"
+    WECHAT_CLIENT_SECRET = "你的 AppSecret"
+
+配置 OAuth2 对接 Apple
+-----------------------
+
+passportd 支持通过 Sign in with Apple 实现第三方登录。
+
+.. note::
+
+    该接入方式（``oauth2_apple``） **尚未经过真实 Apple Developer 凭据实测**，
+    client_secret 动态签发与 id_token 解析等流程请以 Apple 官方文档为准，如遇问题请反馈。
+
+.. note::
+
+    Sign in with Apple 需要 **Apple Developer Program** 会员（个人开发者可注册，
+    99 美元/年），无企业主体门槛，个人开发者可直接接入。
+
+创建 Apple 登录能力
+^^^^^^^^^^^^^^^^^^^^
+
+1. 登录 `Apple Developer <https://developer.apple.com/>`_，进入 **Certificates, Identifiers & Profiles → Identifiers**。
+2. 点击 **+** 注册一个 **Services ID** （如 ``com.example.passport``），勾选 **Sign in with Apple** 并启用。
+3. 在 Sign in with Apple 配置中填写：
+
+   - **Domains**：passportd 服务域名（如 ``passport.example.com``）
+   - **Return URLs**：``https://passport.example.com/oauth2/apple/authorized``
+
+4. 进入 **Keys** 页面创建 Sign in with Apple 密钥，选择上面注册的 Services ID，
+   下载 ``.p8`` 私钥文件并记录 **Key ID**。
+5. 在 **Membership Details** 页面记录 **Team ID** （10 位字母数字）。
+
+启用 Apple 登录
+^^^^^^^^^^^^^^^^
+
+.. code-block:: shell
+
+    export PASSPORT_APPLE_CLIENT_ID="com.example.passport"
+    export PASSPORT_APPLE_TEAM_ID="你的 Team ID"
+    export PASSPORT_APPLE_KEY_ID="你的 Key ID"
+    export PASSPORT_APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY----- ..."
+    passportd restart
+
+.. note::
+
+    - ``APPLE_PRIVATE_KEY`` 为 ``.p8`` 私钥文件内容（PKCS#8 PEM 格式，含换行符），
+      通过环境变量传入时注意保留换行。
+    - 换 token 所需的 ``client_secret`` （ES256 JWT）由程序基于 Team ID、Key ID 与
+      私钥动态生成，无需手工维护。
+    - 昵称仅在用户首次授权并选择共享时返回（query 模式回传为空），邮箱默认使用
+      Apple 隐藏转发邮箱（``xxx@privaterelay.appleid.com``），用户可在 Apple 侧
+      选择共享真实邮箱；缺失的资料可在登录后于个人中心补充。
+
+配置 OAuth2 对接小米
+---------------------
+
+passportd 支持通过小米开放平台 OAuth2 实现第三方登录。
+
+.. warning::
+
+    该接入方式（``oauth2_xiaomi``） **尚未经过真实开放平台凭据实测**，
+    授权码流程与用户信息解析等流程请以小米开放平台官方文档为准，如遇问题请反馈。
+
+.. note::
+
+    小米开放平台开发者注册 **仅支持企业/组织主体** （需营业执照认证），
+    个人开发者无法注册，该模块适用于企业用户。
+
+创建小米开放平台应用
+^^^^^^^^^^^^^^^^^^^^^^
+
+1. 登录 `小米开放平台 <https://dev.mi.com/>`_，完成开发者注册与企业认证。
+2. 进入 **管理中心 → 创建应用**，选择 **网页应用**，填写应用名称与简介。
+3. 配置 **授权回调地址**：``https://passport.example.com/oauth2/xiaomi/authorized``
+4. 获取 **App ID** 与 **App Secret**，并申请「获取用户资料」接口权限。
+
+启用小米登录
+^^^^^^^^^^^^^
+
+.. code-block:: shell
+
+    export PASSPORT_XIAOMI_CLIENT_ID="你的 App ID"
+    export PASSPORT_XIAOMI_CLIENT_SECRET="你的 App Secret"
+    passportd restart
+
+配置生效后，登录页面会自动显示小米登录按钮。已登录用户也可在个人中心"绑定第三方登录"区域绑定小米账号。
 
 创建 OIDC Client 提供认证服务
 ------------------------------
@@ -146,7 +370,7 @@ passportd 支持标准 OAuth2 **Authorization Code** 授权码流程：
           -d code=<回调 code> \
           -d grant_type=authorization_code
 
-   返回 ``id_token``（JWT）和 ``access_token``。
+   返回 ``id_token`` （JWT）和 ``access_token``。
 
 4. **获取用户信息**
    使用 ``access_token`` 请求 UserInfo：
@@ -268,7 +492,7 @@ passportd 提供一套命令行管理工具，用于启动/停止服务、查看
 - 账号必须是合法用户名：小写字母开头，3-32 位小写字母/数字/下划线
 - 密码 6-32 位
 - 创建成功后自动写入 ``role_set`` 审计日志
-- 该命令仅用于**创建**新用户，不修改现有用户；如需调整现有用户角色请使用 ``role`` 子命令
+- 该命令仅用于 **创建** 新用户，不修改现有用户；如需调整现有用户角色请使用 ``role`` 子命令
 
 角色管理
 ^^^^^^^^^

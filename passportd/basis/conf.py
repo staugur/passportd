@@ -148,6 +148,23 @@ class BaseConfig:
     GOOGLE_CLIENT_SECRET = ""
     GOOGLE_CALLBACK_PROXY = None
 
+    #: 微信开放平台 OAuth2 配置（网站应用扫码登录）
+    WECHAT_CLIENT_ID = ""
+    WECHAT_CLIENT_SECRET = ""
+
+    #: Apple Sign in with Apple OAuth2 配置（需 Apple Developer 会员，$99/年）
+    APPLE_CLIENT_ID = ""
+    #: Apple Developer Team ID（Member Details 页面）
+    APPLE_TEAM_ID = ""
+    #: Sign in with Apple 密钥 ID（Keys 页面创建后生成）
+    APPLE_KEY_ID = ""
+    #: Sign in with Apple 私钥内容（.p8 文件，PKCS#8 PEM 格式，含换行符）
+    APPLE_PRIVATE_KEY = ""
+
+    #: 小米开放平台 OAuth2 配置
+    XIAOMI_CLIENT_ID = ""
+    XIAOMI_CLIENT_SECRET = ""
+
     # OIDC 内部客户端（自家应用）信任配置
     #: 自家应用 name 列表，英文逗号分隔（容忍逗号两侧空格）。仅列表内的
     #: 应用在申请 ``role`` scope 时可获得用户平台角色（admin / superadmin /

@@ -23,6 +23,7 @@ import hmac
 import os
 import re
 import resource
+import subprocess
 import threading
 import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -94,7 +95,7 @@ GCCollector(registry=REGISTRY)
 _HIST = Histogram(
     "passportd_http_request_duration_seconds",
     "HTTP 请求耗时（当前进程）",
-    ["method", "endpoint"],
+    ["pid", "method", "endpoint"],
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
     registry=REGISTRY,
 )
@@ -222,17 +223,104 @@ def _is_related_process(comm: str, cmdline: str) -> bool:
     return False
 
 
-def scan_processes() -> List[Dict[str, Any]]:
-    """扫描所有 passportd/gunicorn 相关进程（仅 Linux /proc 可用）。
+def _parse_ps_time(value: str) -> float:
+    """解析 ``ps`` 的 ``time`` 列（进程累计 CPU 时间）为秒。
 
-    非 Linux 环境（如 macOS 开发机）返回空列表，调用方回退到当前进程。
+    兼容 ``MM:SS`` / ``H:MM:SS`` 以及 macOS 带小数的 ``MM:SS.hh``。
+
+    :param value: ps 输出的 time 字段
+    :type value: str
+    :returns: 累计 CPU 秒数，解析失败返回 0
+    :rtype: float
+    """
+    text = value.strip()
+    if "." in text:
+        text = text.split(".", 1)[0]
+    parts = text.split(":")
+    try:
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+    except (TypeError, ValueError):
+        pass
+    return 0.0
+
+
+def _scan_processes_ps() -> List[Dict[str, Any]]:
+    """非 Linux 回退：通过 ``ps`` 命令扫描相关进程（macOS/BSD）。
+
+    与 /proc 方案一样输出按 pid 稳定的系列（每个 worker 一个 series，
+    CPU 时间各自独立累计），保证 ``rate()`` 在多 worker 部署下可正常计算；
+    返回结构同 scan_processes()。
 
     :returns: 进程信息字典列表
     :rtype: list[dict]
     """
+    try:
+        proc = subprocess.run(
+            ["ps", "-eo", "pid=,ppid=,time=,rss=,comm=,command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
     result: List[Dict[str, Any]] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(None, 5)
+        if len(parts) < 5:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+            comm = parts[4]
+        except ValueError:
+            continue
+        cmdline = parts[5] if len(parts) > 5 else comm
+        if not _is_related_process(comm, cmdline):
+            continue
+        try:
+            rss_bytes = int(float(parts[3])) * 1024  # ps rss 单位为 KB
+        except (TypeError, ValueError):
+            rss_bytes = 0
+        result.append(
+            {
+                "pid": pid,
+                "ppid": ppid,
+                "comm": comm,
+                "cmdline": cmdline,
+                "role": "app",
+                "cpu_seconds": _parse_ps_time(parts[2]),
+                "rss_bytes": rss_bytes,
+                "vms_bytes": 0,
+                "fds": 0,
+                "socket_fds": 0,
+                "start_time": 0,
+            }
+        )
+    related_pids = {p["pid"] for p in result}
+    for p in result:
+        p["role"] = _detect_role(p, related_pids)
+    result.sort(key=lambda p: p["pid"])
+    return result
+
+
+def scan_processes() -> List[Dict[str, Any]]:
+    """扫描所有 passportd/gunicorn 相关进程。
+
+    Linux 环境解析 /proc；其他平台（macOS/BSD 等）回退用 ``ps`` 命令，
+    保证进程级指标按 pid 输出稳定系列，Grafana ``rate()`` 可正常计算。
+
+    :returns: 进程信息字典列表
+    :rtype: list[dict]
+    """
     if not os.path.isdir(_PROC_DIR):
-        return result
+        return _scan_processes_ps()
+    result: List[Dict[str, Any]] = []
     uid = os.getuid() if hasattr(os, "getuid") else None
     for entry in os.listdir(_PROC_DIR):
         if not entry.isdigit():
@@ -720,7 +808,7 @@ class _HttpRequestCollector:
         family = CounterMetricFamily(
             "passportd_http_requests_total",
             "HTTP 请求总数（按 method/status）",
-            labels=["method", "status"],
+            labels=["pid", "method", "status"],
         )
         try:
             data = rdb.hgetall(_REQ_TOTAL_KEY)
@@ -729,27 +817,31 @@ class _HttpRequestCollector:
             data = {}
         samples: Dict[str, float] = {}
         if isinstance(data, dict) and data:
+            # Redis 聚合计数为全 worker 总量，pid 标签统一占位 "all"
             for key, count in data.items():
                 method, _, status = key.rpartition(":")
                 try:
-                    samples["{}:{}".format(method, status)] = float(count)
+                    samples["all:{}:{}".format(method, status)] = float(count)
                 except (TypeError, ValueError):
                     continue
         else:
+            # 本地兜底：计数仅反映当前 worker，pid 标签按真实进程区分，
+            # 保证系列稳定（每个 worker 独立累计），rate() 可正常计算
+            pid = str(os.getpid())
             with _local_req_lock:
                 for (method, status), count in sorted(
                     _local_req_counter.items()
                 ):
-                    samples["{}:{}".format(method, status)] = float(count)
+                    samples["{}:{}:{}".format(pid, method, status)] = float(count)
         if not samples:
             # 完全无计数时输出常见 method × status 零值系列，
+            # pid 用固定占位 "all"，保证系列稳定（rate() 可计算），
             # 确保 Grafana 各维度筛选均有数据点，避免 no data
             for method in ("GET", "POST", "PUT", "DELETE", "PATCH"):
                 for status in ("200", "201", "204", "301", "302", "400", "401", "403", "404", "500"):
-                    samples["{}:{}".format(method, status)] = 0.0
+                    samples["all:{}:{}".format(method, status)] = 0.0
         for key, count in samples.items():
-            method, _, status = key.rpartition(":")
-            family.add_metric([method, status], count)
+            family.add_metric(key.split(":"), count)
         yield family
 
 
@@ -831,7 +923,7 @@ def init_metrics(app) -> None:
         start = getattr(g, "_metrics_started", None)
         if start is not None:
             endpoint = request.endpoint or request.path
-            _HIST.labels(request.method, endpoint).observe(
+            _HIST.labels(str(os.getpid()), request.method, endpoint).observe(
                 time.perf_counter() - start
             )
         _inc_http_requests(request.method, response.status_code)

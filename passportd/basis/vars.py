@@ -93,6 +93,10 @@ USERNAME_CHANGE_INTERVAL: int = 90 * 24 * 3600
 #: 用户背景图 Redis 缓存兜底时长（秒，默认 7 天）。修改背景图时主动刷新缓存为新值，
 #: 正常情况下 TTL 不会触发，仅为异常兜底
 USER_BG_CACHE_TTL: int = 604800
+#: Apple Sign in with Apple client_secret 有效期（秒）。Apple 不使用固定 secret，
+#: 要求调用方用 Team ID + Key ID + 私钥签发 JWT 作为 client_secret，有效期最长 180 天，
+#: 程序每次换 token 时动态生成
+APPLE_CLIENT_SECRET_TTL: int = 180 * 24 * 3600
 
 #: WebAuthn Passkey
 #: Challenge 缓存有效期（秒）

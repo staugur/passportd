@@ -136,7 +136,6 @@ def authorized():
 
         return OAuthClient.oauth2_authorized_handler(
             qq.name,
-            access_token,
             OAuthClient.parse_userinfo(qq.name, user_info),
         )
 

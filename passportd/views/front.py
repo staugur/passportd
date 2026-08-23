@@ -263,7 +263,6 @@ def oauth2go():
 
     oauth2_data = json.loads(raw_data)
     provider = oauth2_data["provider"]
-    access_token = oauth2_data["access_token"]
     userinfo = oauth2_data["userinfo"]
 
     # 恢复登录后跳转地址（由 OIDC 授权流程通过 Redis 传入）
@@ -353,9 +352,10 @@ def oauth2go():
                 "name", ""
             )
             try:
+                #: 第三方账号凭证不入库（password_hash 为 None），credential 传空串
                 add_profile(
                     account=userinfo["account"],
-                    credential=access_token,
+                    credential="",
                     nickname=nickname,
                     bio="",
                     gender=userinfo.get("gender", 2),

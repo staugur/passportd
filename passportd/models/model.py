@@ -31,7 +31,24 @@ from playhouse.db_url import connect
 from ..basis.conf import config
 from ..utils.common import logger, now
 
-_db_uri = config["DB_URI"]
+def _ensure_mysql_charset(db_uri: str) -> str:
+    """确保 MySQL/MariaDB 连接使用 utf8mb4 字符集。
+
+    微信昵称等第三方用户信息可能包含 emoji（四字节 UTF-8 字符，如 😀），
+    MySQL 默认 utf8（utf8mb3）无法存储四字节字符，插入会报错或截断为乱码。
+    若连接串未显式指定 charset，自动追加 ``charset=utf8mb4``。
+    SQLite 原生 UTF-8、PostgreSQL 建库使用 UTF8 编码，均无此问题，无需处理。
+
+    :param db_uri: 原始数据库连接串
+    :returns: 处理后的连接串
+    """
+    if not db_uri.startswith("mysql") or "charset=" in db_uri:
+        return db_uri
+    sep = "&" if "?" in db_uri else "?"
+    return "{}{}charset=utf8mb4".format(db_uri, sep)
+
+
+_db_uri = _ensure_mysql_charset(config["DB_URI"])
 if _db_uri.startswith("sqlite"):
     # SQLite 不使用连接池：SQLite 是文件型数据库，池化无益且会导致
     # Flask 多线程模式下 MaxConnectionsExceeded。

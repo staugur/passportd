@@ -97,7 +97,7 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
    * - ``SITE_PRIVACY``
      - bool
      - ``False``
-     - 是否启用隐私政策页面（``/privacy``），为 ``True`` 时页脚显示「隐私政策」链接。环境变量 ``PASSPORT_SITE_PRIVACY``（布尔，取值 ``true``/``false``）
+     - 是否启用隐私政策页面（``/privacy``），为 ``True`` 时页脚显示「隐私政策」链接。环境变量 ``PASSPORT_SITE_PRIVACY`` （布尔，取值 ``true``/``false``）
    * - ``SITE_BG_IMAGE``
      - str
      - ``""``
@@ -119,9 +119,9 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
      - ``""``
      - 可选 Bearer Token 鉴权，Prometheus 抓取需携带 ``Authorization: Bearer <token>``
 
-   Prometheus 抓取配置示例（已启用 ``METRICS_TOKEN`` 时）：
+Prometheus 抓取配置示例（已启用 ``METRICS_TOKEN`` 时）：
 
-   .. code-block:: yaml
+.. code-block:: yaml
 
     scrape_configs:
       - job_name: "passportd"
@@ -131,9 +131,9 @@ passportd 使用 Flask 的配置体系，所有配置项定义在 :mod:`passport
         static_configs:
           - targets: ["auth.example.com:10030"]
 
-   Grafana 可视化：项目提供完整监控面板 ``examples/grafana_dashboard.json``，导入 Grafana 后选择 Prometheus 数据源即可查看进程资源、Gunicorn、Python GC、业务指标、Redis 与 HTTP 请求等全部指标。
+Grafana 可视化：项目提供完整监控面板 ``examples/grafana_dashboard.json``，导入 Grafana 后选择 Prometheus 数据源即可查看进程资源、Gunicorn、Python GC、业务指标、Redis 与 HTTP 请求等全部指标。
 
-   .. tip::
+.. tip::
 
    ``BASE_DIR`` 是数据管理的核心配置项。设置后，以下路径由 ``PinConfig`` 固定派生，**不可通过环境变量覆盖**：
 
@@ -159,6 +159,16 @@ passportd 支持三种数据库后端，通过 ``DB_URI`` 配置：
 .. code-block:: shell
 
     export PASSPORT_DB_URI="mysql+pool://root:pwd@localhost:3306/passport?max_connections=20"
+
+.. note::
+
+    MySQL/MariaDB 需使用 ``utf8mb4`` 字符集，程序会自动为连接追加
+    ``charset=utf8mb4`` （无需手动添加），保证微信昵称等 emoji（四字节 UTF-8
+    字符）可正常存取。建库时仍建议显式指定：
+
+    .. code-block:: sql
+
+        CREATE DATABASE passport DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 **PostgreSQL**：
 
@@ -250,22 +260,6 @@ OIDC 相关的以下值由 ``PinConfig`` 固定管理，不可通过配置或环
      - str
      - ``""``
      - Spug 推送助手短信模板 ID，SMS_PROVIDER 为 ``spug`` 时必填
-   * - ``LOGIN_FAIL_MAX``
-     - int
-     - ``5``
-     - 同一账号连续密码错误达到该次数后临时锁定。环境变量 ``PASSPORT_LOGIN_FAIL_MAX``
-   * - ``LOGIN_LOCK_TIME``
-     - int
-     - ``900``
-     - 账号临时锁定时间（秒），到期自动解锁。环境变量 ``PASSPORT_LOGIN_LOCK_TIME``
-   * - ``LOGIN_IP_LIMIT``
-     - int
-     - ``20``
-     - 同一 IP 在窗口时间内允许的最大登录/注册/验证码请求次数。环境变量 ``PASSPORT_LOGIN_IP_LIMIT``
-   * - ``LOGIN_IP_WINDOW``
-     - int
-     - ``60``
-     - IP 限流统计窗口（秒）。环境变量 ``PASSPORT_LOGIN_IP_WINDOW``
 
 **SPUG_MAIL_TEMPLATE_ID 与 SPUG_SMS_TEMPLATE_ID 获取方法**：
 
@@ -284,10 +278,37 @@ Spug 推送助手提供官方验证码模板，无需自主创建。获取步骤
 
 4. 复制模板编码（形如 ``Vf7Jp2sD9xL``），即为对应的 ``SPUG_MAIL_TEMPLATE_ID`` 或 ``SPUG_SMS_TEMPLATE_ID``。
 
+登录安全
+--------
+
+.. list-table::
+   :header-rows: 1
+
+   * - 配置项
+     - 类型
+     - 默认值
+     - 说明
+   * - ``LOGIN_FAIL_MAX``
+     - int
+     - ``5``
+     - 同一账号连续密码错误达到该次数后临时锁定。环境变量 ``PASSPORT_LOGIN_FAIL_MAX``
+   * - ``LOGIN_LOCK_TIME``
+     - int
+     - ``900``
+     - 账号临时锁定时间（秒），到期自动解锁。环境变量 ``PASSPORT_LOGIN_LOCK_TIME``
+   * - ``LOGIN_IP_LIMIT``
+     - int
+     - ``20``
+     - 同一 IP 在窗口时间内允许的最大登录/注册/验证码请求次数。环境变量 ``PASSPORT_LOGIN_IP_LIMIT``
+   * - ``LOGIN_IP_WINDOW``
+     - int
+     - ``60``
+     - IP 限流统计窗口（秒）。环境变量 ``PASSPORT_LOGIN_IP_WINDOW``
+
 极验行为验证配置
 ----------------
 
-passportd 接入极验行为验证（第三代，GeeTest v3），注册（用户名/邮箱/手机号注册）与密码登录提交前需完成行为验证，防止机器人批量注册与撞库攻击。服务端实现参照极验官方 Python Flask 示例（``GeeTeam/gt3-server-python-flask-bypass``）的 ``GeetestLib`` 协议：初始化走 ``register.php``，二次校验走 ``validate.php``；前端 SDK 使用官方新版 ``gt.js``（支持 ``new_captcha`` 协议）。配置 ``GEETEST_CAPTCHA_ID`` 与 ``GEETEST_CAPTCHA_KEY`` 后自动启用。
+passportd 接入极验行为验证（第三代，GeeTest v3），注册（用户名/邮箱/手机号注册）与密码登录提交前需完成行为验证，防止机器人批量注册与撞库攻击。服务端实现参照极验官方 Python Flask 示例（``GeeTeam/gt3-server-python-flask-bypass``）的 ``GeetestLib`` 协议：初始化走 ``register.php``，二次校验走 ``validate.php``；前端 SDK 使用官方新版 ``gt.js`` （支持 ``new_captcha`` 协议）。配置 ``GEETEST_CAPTCHA_ID`` 与 ``GEETEST_CAPTCHA_KEY`` 后自动启用。
 
 .. list-table::
    :header-rows: 1
@@ -366,6 +387,35 @@ OAuth2 第三方登录配置
      - Google OAuth2 回调时代理地址。
        服务器无法直连 Google API（googleapis.com）时使用，
        如 ``http://proxy:8080``。仅支持 HTTP 代理。
+   * - ``WECHAT_CLIENT_ID``
+     - str
+     - 微信开放平台（网站应用扫码登录）AppID
+   * - ``WECHAT_CLIENT_SECRET``
+     - str
+     - 微信开放平台（网站应用扫码登录）AppSecret
+   * - ``APPLE_CLIENT_ID``
+     - str
+     - Apple Services ID（如 ``com.example.passport``）
+   * - ``APPLE_TEAM_ID``
+     - str
+     - Apple Developer Team ID（Membership Details 页面）
+   * - ``APPLE_KEY_ID``
+     - str
+     - Sign in with Apple 密钥 ID（Keys 页面）
+   * - ``APPLE_PRIVATE_KEY``
+     - str
+     - Sign in with Apple 私钥内容（.p8 文件，PKCS#8 PEM 格式，含换行符）
+   * - ``XIAOMI_CLIENT_ID``
+     - str
+     - 小米开放平台 App ID
+   * - ``XIAOMI_CLIENT_SECRET``
+     - str
+     - 小米开放平台 App Secret
+
+.. note::
+
+    Apple（``APPLE_*``）、微信（``WECHAT_*``）与小米（``XIAOMI_*``）三项接入方式 **尚未经过真实凭据实测**，
+    部署前请对照对应开放平台官方文档核对配置与回调流程。
 
 OIDC 内部客户端配置
 --------------------

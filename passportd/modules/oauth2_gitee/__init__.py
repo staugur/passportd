@@ -68,7 +68,6 @@ def authorized():
         user_info: Dict[str, Any] = resp.json()
         return OAuthClient.oauth2_authorized_handler(
             gitee.name,
-            token["access_token"],
             OAuthClient.parse_userinfo(gitee.name, user_info),
         )
 

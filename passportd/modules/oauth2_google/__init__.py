@@ -84,7 +84,6 @@ def authorized():
         user_info = resp.json()
         return OAuthClient.oauth2_authorized_handler(
             google.name,
-            token["access_token"],
             OAuthClient.parse_userinfo(google.name, user_info),
         )
 

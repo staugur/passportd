@@ -71,7 +71,6 @@ def authorized():
         user_info = resp.json()
         return OAuthClient.oauth2_authorized_handler(
             github.name,
-            token["access_token"],
             OAuthClient.parse_userinfo(github.name, user_info),
         )
 

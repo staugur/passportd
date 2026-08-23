@@ -80,7 +80,7 @@ def RegisterInterface(
     """用户注册接口。
 
     :param account: 用户账号（username / email / mobile 或 OAuthName.tpid 格式）
-    :param password: 密码凭证（本地账号为明文密码，第三方为 access_token）
+    :param password: 密码凭证（本地账号为明文密码；第三方账号凭证不入库，传空串）
     :param profile: 其他用户资料字段（nickname, bio, gender, avatar, location 等）
     :returns: 标准 API 响应
     """
@@ -382,29 +382,29 @@ class OAuthClintInterface(OAuth):
     def oauth2_authorized_handler(
         self,
         provider: str,
-        access_token: str,
         userinfo: OAuthUserInfoType,
     ):
         """OAuth 授权回调处理，执行绑定或自动登录逻辑。
 
         场景：
-        1. **已登录**：检测账号是否已绑定，已绑定则更新凭证，未绑定则新建绑定。
+        1. **已登录**：检测账号是否已绑定，已绑定则提示无需重复操作，未绑定则新建绑定。
         2. **未登录**：检测账号是否已绑定，已绑定则直接签发登录态，未绑定则跳转 OAuth2 选择页面。
 
+        说明：第三方 access_token 仅用于本次授权流程获取用户信息，不入库持久化，
+        故本方法不接收 access_token。
+
         :param provider: OAuth 提供商名称
-        :param access_token: 第三方访问令牌
         :param userinfo: 标准化 OAuth 用户信息
         :returns: Flask redirect 响应
         :raises ParamError: 参数无效时抛出
         """
         if (
             not provider
-            or not access_token
             or not userinfo
             or not isinstance(userinfo, dict)
             or "account" not in userinfo
         ):
-            raise ParamError("Invalid provider, access_token or userinfo")
+            raise ParamError("Invalid provider or userinfo")
         account = userinfo["account"]
         auth_data = get_account(account)
 
@@ -477,7 +477,6 @@ class OAuthClintInterface(OAuth):
                     json.dumps(
                         dict(
                             provider=provider,
-                            access_token=access_token,
                             userinfo=userinfo,
                             next_url=redirect_url,
                         )

@@ -79,7 +79,6 @@ def authorized():
         user_info: Dict[str, Any] = resp.json()
         return OAuthClient.oauth2_authorized_handler(
             weibo.name,
-            token["access_token"],
             OAuthClient.parse_userinfo(weibo.name, user_info),
         )
 

@@ -179,3 +179,24 @@ Google OAuth2
 .. automodule:: passportd.modules.oauth2_google
     :members:
     :undoc-members:
+
+WeChat OAuth2
+~~~~~~~~~~~~~~
+
+.. automodule:: passportd.modules.oauth2_wechat
+    :members:
+    :undoc-members:
+
+Apple OAuth2
+~~~~~~~~~~~~~
+
+.. automodule:: passportd.modules.oauth2_apple
+    :members:
+    :undoc-members:
+
+Xiaomi OAuth2
+~~~~~~~~~~~~~~
+
+.. automodule:: passportd.modules.oauth2_xiaomi
+    :members:
+    :undoc-members:
