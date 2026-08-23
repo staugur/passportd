@@ -352,6 +352,9 @@ passportd 支持通过 Telegram 官方 **Login Widget** 实现第三方登录，
     export PASSPORT_TELEGRAM_API_PROXY="http://127.0.0.1:7890"
     passportd restart
 
+也可只配置全局代理 ``PASSPORT_PROXY``，``TELEGRAM_API_PROXY`` 未配置时自动回退使用；
+GitHub、Google 回调代理同理（各自专属代理为空时回退全局代理）。
+
 注意：登录授权过程本身由浏览器与 Telegram 交互，**服务端无需也不能通过该代理转发**，
 代理仅用于服务端调用 Bot API（如自动获取 Bot 用户名）。若浏览器也无法访问
 ``telegram.org`` 的 Login Widget 脚本，请使用可访问的 CDN 或网络环境。

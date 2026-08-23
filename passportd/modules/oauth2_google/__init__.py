@@ -19,7 +19,7 @@ from flask import Blueprint, url_for, redirect, request, current_app
 from authlib.integrations.flask_client import FlaskOAuth2App
 
 from passportd.libs.interface import OAuthClient
-from passportd.utils.common import is_valid_http_url
+from passportd.utils.common import get_proxies
 from passportd.basis.conf import config
 
 __plugin_name__ = "oauth2_google"
@@ -36,12 +36,10 @@ __state__ = (
 
 bp = Blueprint(__plugin_name__, __plugin_name__)
 
-# 代理配置：生产环境无法直连 Google API 时使用
-_google_proxy = config.get("GOOGLE_CALLBACK_PROXY")
-_google_proxies = (
-    {"http": _google_proxy, "https": _google_proxy}
-    if is_valid_http_url(_google_proxy)
-    else None
+# 代理配置：专属代理优先，为空时回退全局 PROXY；生产环境无法直连 Google API 时使用
+_google_proxies = get_proxies(
+    config.get("GOOGLE_CALLBACK_PROXY"),
+    config.get("PROXY"),
 )
 
 google: FlaskOAuth2App = OAuthClient.register(
@@ -69,8 +67,11 @@ def login():
 @bp.route("/authorized")
 def authorized():
     try:
-        proxy: str = current_app.config.get("GOOGLE_CALLBACK_PROXY")  # type: ignore
-        proxies = {"http": proxy, "https": proxy} if is_valid_http_url(proxy) else None
+        # 专属代理优先，为空时回退全局 PROXY
+        proxies = get_proxies(
+            current_app.config.get("GOOGLE_CALLBACK_PROXY"),
+            current_app.config.get("PROXY"),
+        )
 
         token = google.authorize_access_token(proxies=proxies)
 

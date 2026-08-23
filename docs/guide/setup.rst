@@ -347,6 +347,11 @@ OAuth2 第三方登录配置
    * - 配置项
      - 类型
      - 说明
+   * - ``PROXY`` (可选)
+     - str
+     - 全局 HTTP 代理地址，如 ``http://proxy:8080``。仅支持 HTTP 代理。
+       各模块专属代理（``GITHUB_CALLBACK_PROXY``、``GOOGLE_CALLBACK_PROXY``、
+       ``TELEGRAM_API_PROXY``）为空时自动回退到此代理。
    * - ``GITHUB_CLIENT_ID``
      - str
      - GitHub OAuth App Client ID
@@ -357,7 +362,7 @@ OAuth2 第三方登录配置
      - str
      - Github OAuth2 回调时代理地址。
        服务器无法直连 Github API时使用，
-       如 ``http://proxy:8080``。仅支持 HTTP 代理。
+       如 ``http://proxy:8080``。仅支持 HTTP 代理；为空时回退全局 ``PROXY``。
    * - ``GITEE_CLIENT_ID``
      - str
      - Gitee OAuth App Client ID
@@ -386,7 +391,7 @@ OAuth2 第三方登录配置
      - str
      - Google OAuth2 回调时代理地址。
        服务器无法直连 Google API（googleapis.com）时使用，
-       如 ``http://proxy:8080``。仅支持 HTTP 代理。
+       如 ``http://proxy:8080``。仅支持 HTTP 代理；为空时回退全局 ``PROXY``。
    * - ``WECHAT_CLIENT_ID``
      - str
      - 微信开放平台（网站应用扫码登录）AppID
@@ -419,7 +424,7 @@ OAuth2 第三方登录配置
      - Telegram Bot 用户名（不带 ``@``，用于前端 Login Widget）
    * - ``TELEGRAM_API_PROXY``
      - str
-     - 访问 Telegram Bot API 的代理（可选），格式 ``http://host:port``；服务器无法直连 Telegram（如国内网络）时配置
+     - 访问 Telegram Bot API 的代理（可选），格式 ``http://host:port``；服务器无法直连 Telegram（如国内网络）时配置；为空时回退全局 ``PROXY``
 
 .. note::
 

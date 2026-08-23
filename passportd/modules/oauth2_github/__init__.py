@@ -19,7 +19,7 @@ from flask import Blueprint, url_for, redirect, request, current_app
 from authlib.integrations.flask_client import FlaskOAuth2App
 
 from passportd.libs.interface import OAuthClient
-from passportd.utils.common import is_valid_http_url
+from passportd.utils.common import get_proxies
 from passportd.basis.conf import config
 
 __plugin_name__ = "oauth2_github"
@@ -56,8 +56,11 @@ def login():
 @bp.route("/authorized")
 def authorized():
     try:
-        proxy: str = current_app.config.get("GITHUB_CALLBACK_PROXY")  # type: ignore
-        proxies = {"http": proxy, "https": proxy} if is_valid_http_url(proxy) else None
+        # 专属代理优先，为空时回退全局 PROXY
+        proxies = get_proxies(
+            current_app.config.get("GITHUB_CALLBACK_PROXY"),
+            current_app.config.get("PROXY"),
+        )
 
         token = github.authorize_access_token(proxies=proxies)
 

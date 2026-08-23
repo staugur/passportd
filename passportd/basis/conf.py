@@ -126,6 +126,9 @@ class BaseConfig:
     PASSKEY_RP_ID: str = ""
 
     # OAuth2 配置
+    #: 全局 HTTP 代理（可选）。第三方 OAuth 模块的专属代理（如 GITHUB_CALLBACK_PROXY、
+    #: GOOGLE_CALLBACK_PROXY、TELEGRAM_API_PROXY）为空时自动回退到此代理。
+    PROXY = None
     #: GitHub OAuth2 配置
     GITHUB_CLIENT_ID = ""
     GITHUB_CLIENT_SECRET = ""

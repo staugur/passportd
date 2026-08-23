@@ -13,8 +13,14 @@ import unittest.mock as mock
 from hashlib import sha256
 from time import time
 
+from passportd.basis.conf import config
+
 #: 测试用 Bot Token（模拟 @BotFather 发放的格式）
 _BOT_TOKEN = "123456789:TEST-BOT-TOKEN"
+
+# 预先注入测试 Token，确保 telegram 插件模块首次导入时 __state__ = enabled，
+# 蓝图与 /oauth2/telegram/authorized 路由得以注册（供路由级测试使用）。
+config["TELEGRAM_BOT_TOKEN"] = _BOT_TOKEN
 
 
 def _make_tg_data(**overrides):
@@ -111,6 +117,71 @@ class TestTelegramBuildUserinfo(unittest.TestCase):
         self.assertEqual(info["picture"], "")
 
 
+class TestTelegramAuthorized(unittest.TestCase):
+    """authorized 路由：GET/POST 双兼容、验签与错误路径。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from passportd import app as passportd_app
+
+        cls.app = passportd_app.create_app()
+        cls._make_data = staticmethod(_make_tg_data)
+
+    @mock.patch("passportd.libs.interface.OAuthClient.oauth2_authorized_handler")
+    def test_get_request_accepts_query(self, mock_handler):
+        """GET 携带 query 参数可直接完成验签（不再 405）"""
+        mock_handler.return_value = ("ok", 200)
+        data = self._make_data()
+        with mock.patch.dict(
+            "passportd.modules.oauth2_telegram.config",
+            {"TELEGRAM_BOT_TOKEN": _BOT_TOKEN},
+        ):
+            resp = self.app.test_client().get(
+                "/oauth2/telegram/authorized", query_string=data
+            )
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once()
+
+    @mock.patch("passportd.libs.interface.OAuthClient.oauth2_authorized_handler")
+    def test_post_request_accepts_form(self, mock_handler):
+        """POST form 提交（widget 默认方式）仍可用"""
+        mock_handler.return_value = ("ok", 200)
+        data = self._make_data()
+        with mock.patch.dict(
+            "passportd.modules.oauth2_telegram.config",
+            {"TELEGRAM_BOT_TOKEN": _BOT_TOKEN},
+        ):
+            resp = self.app.test_client().post(
+                "/oauth2/telegram/authorized", data=data
+            )
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once()
+
+    def test_invalid_signature(self):
+        """签名错误返回 403"""
+        data = self._make_data()
+        data["first_name"] = "Eve"
+        with mock.patch.dict(
+            "passportd.modules.oauth2_telegram.config",
+            {"TELEGRAM_BOT_TOKEN": _BOT_TOKEN},
+        ):
+            resp = self.app.test_client().get(
+                "/oauth2/telegram/authorized", query_string=data
+            )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_missing_fields(self):
+        """缺少 id/hash 返回 400"""
+        with mock.patch.dict(
+            "passportd.modules.oauth2_telegram.config",
+            {"TELEGRAM_BOT_TOKEN": _BOT_TOKEN},
+        ):
+            resp = self.app.test_client().get(
+                "/oauth2/telegram/authorized", query_string={"id": "1"}
+            )
+        self.assertEqual(resp.status_code, 400)
+
+
 class TestTelegramBotUsername(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -196,6 +267,34 @@ class TestTelegramBotUsername(unittest.TestCase):
             {"TELEGRAM_API_PROXY": ""},
         ):
             self.assertIsNone(self._proxies())
+
+    def test_proxies_fallback_to_global(self):
+        """专属代理为空时回退全局 PROXY"""
+        with mock.patch.dict(
+            "passportd.modules.oauth2_telegram.config",
+            {
+                "TELEGRAM_API_PROXY": "",
+                "PROXY": "http://127.0.0.1:1080",
+            },
+        ):
+            self.assertEqual(
+                self._proxies(),
+                {"http": "http://127.0.0.1:1080", "https": "http://127.0.0.1:1080"},
+            )
+
+    def test_proxies_specific_precedence(self):
+        """专属代理优先于全局 PROXY"""
+        with mock.patch.dict(
+            "passportd.modules.oauth2_telegram.config",
+            {
+                "TELEGRAM_API_PROXY": "http://127.0.0.1:7890",
+                "PROXY": "http://127.0.0.1:1080",
+            },
+        ):
+            self.assertEqual(
+                self._proxies(),
+                {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+            )
 
 
 if __name__ == "__main__":

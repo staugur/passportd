@@ -18,6 +18,7 @@ from passportd.utils.common import (
     jwt_decode,
     jwt_decode_payload_without_verify,
     is_valid_http_url,
+    get_proxies,
     is_valid_ipv4,
     generate_verification_code,
     generate_digital_verification_code,
@@ -260,6 +261,26 @@ class UtilsTest(unittest.TestCase):
         self.assertFalse(is_valid_http_url("http://example..com"))
         self.assertFalse(is_valid_http_url("http://example.com:80abc"))
         self.assertFalse(is_valid_http_url("http://example.com/path with space"))
+
+    def test_get_proxies(self):
+        # 第一个合法候选生效
+        self.assertEqual(
+            get_proxies("http://127.0.0.1:7890", "http://127.0.0.1:1080"),
+            {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+        )
+        # 第一个为空/非法时，回退到后续候选
+        self.assertEqual(
+            get_proxies("", "http://127.0.0.1:1080"),
+            {"http": "http://127.0.0.1:1080", "https": "http://127.0.0.1:1080"},
+        )
+        self.assertEqual(
+            get_proxies(None, "ftp://bad", "http://127.0.0.1:1080"),
+            {"http": "http://127.0.0.1:1080", "https": "http://127.0.0.1:1080"},
+        )
+        # 全空/非法返回 None（直连）
+        self.assertIsNone(get_proxies())
+        self.assertIsNone(get_proxies("", None, "ftp://bad"))
+        self.assertIsNone(get_proxies("  "))
 
     def test_is_valid_ipv4(self):
         # 合法 IPv4

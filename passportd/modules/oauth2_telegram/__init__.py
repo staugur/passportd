@@ -33,7 +33,7 @@ from passportd.basis.vars import (
     TELEGRAM_BOT_INFO_TTL,
 )
 from passportd.libs.interface import OAuthClient
-from passportd.utils.common import is_valid_http_url, rdb
+from passportd.utils.common import get_proxies, rdb
 
 __plugin_name__ = "oauth2_telegram"
 __version__ = "0.1.0"
@@ -103,15 +103,16 @@ def _build_telegram_userinfo(data: Dict[str, str]) -> OAuthUserInfoType:
 
 
 def _build_proxies() -> Optional[Dict[str, str]]:
-    """根据 ``TELEGRAM_API_PROXY`` 配置构造 requests 代理参数。
+    """根据代理配置构造 requests 代理参数。
 
+    优先使用 ``TELEGRAM_API_PROXY``，为空时回退全局 ``PROXY``；
     网络环境无法直连 Telegram API（如国内服务器）时配置代理；
-    未配置或地址非法时返回 None（直连）。
+    均未配置或地址非法时返回 None（直连）。
     """
-    proxy: str = config.get("TELEGRAM_API_PROXY") or ""
-    if is_valid_http_url(proxy):
-        return {"http": proxy, "https": proxy}
-    return None
+    return get_proxies(
+        config.get("TELEGRAM_API_PROXY"),
+        config.get("PROXY"),
+    )
 
 
 def _fetch_bot_username(bot_token: str, proxies: Optional[Dict[str, str]] = None) -> str:
@@ -182,15 +183,17 @@ def login():
     )
 
 
-@bp.route("/authorized", methods=["POST"])
+@bp.route("/authorized", methods=["GET", "POST"])
 def authorized() -> ResponseReturnValue:
-    """处理 Telegram Login Widget 的 POST 回执并完成登录/绑定。
+    """处理 Telegram Login Widget 回执并完成登录/绑定。
 
+    - 兼容 POST（widget 默认 form 提交）与 GET（query string 提交）；
     - 先验签（HMAC-SHA256）与 auth_date 新鲜度校验，失败返回 403；
     - 通过后构造 userinfo 交给公共回调处理（未登录则登录，已登录则绑定）。
     """
     try:
-        data = request.form.to_dict()
+        # request.values 同时兼容 query 与 form 提交
+        data = request.values.to_dict()
         tg_id = data.get("id", "")
         tg_hash = data.get("hash", "")
         if not tg_id or not tg_hash:

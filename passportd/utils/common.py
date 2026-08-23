@@ -183,6 +183,22 @@ def is_valid_http_url(url: str) -> bool:
     return pattern.match(url) is not None
 
 
+def get_proxies(*candidates: Optional[str]) -> Optional[Dict[str, str]]:
+    """按顺序取第一个合法的 HTTP(S) 代理，构造 requests 代理参数字典。
+
+    用于第三方回调/API 请求：先取模块专属代理，为空时回退全局代理。
+    传入的候选值均非法或为空时返回 None（表示直连）。
+
+    :param candidates: 代理候选值，按优先级从高到低排列
+    :returns: ``{"http": proxy, "https": proxy}`` 或 None
+    """
+    for candidate in candidates:
+        proxy = str(candidate or "").strip()
+        if is_valid_http_url(proxy):
+            return {"http": proxy, "https": proxy}
+    return None
+
+
 def is_valid_ipv4(ip):
     """校验字符串是否为合法的 IPv4 地址。
 
