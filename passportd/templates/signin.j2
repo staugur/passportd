@@ -456,6 +456,10 @@
             if (cred.response.userHandle) {
               json.response.userHandle = bufToB64url(cred.response.userHandle);
             }
+            let nextUrl = {{ next|tojson }} || '';
+            if (nextUrl) {
+              json.next = nextUrl;
+            }
             return $.ajax({
               url: '{{ url_for("root.api.passkey_login_verify") }}',
               method: 'POST',

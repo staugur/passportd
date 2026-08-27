@@ -876,7 +876,7 @@ def passkey_login_verify():
             },
         },
         method="passkey",
-        source="self",
+        source=resolve_login_source(credential_json.get("next", "")),
     )
     if not ret:
         raise ApiError("generate token failed", code=ErrorCode.TOKEN_GENERATE_FAILED)
