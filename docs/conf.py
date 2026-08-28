@@ -11,42 +11,13 @@ import sys
 
 from pallets_sphinx_themes import get_version, ProjectLink
 
-# 文档构建不需要真实数据库与缓存连接，强制使用 SQLite 内存库。
-# postgresql / redis 驱动在文档构建环境可能未安装，且 autodoc 导入
-# 模块时会触发 peewee 的 Field.bind() → get_binary_type() 调用。
-# get_binary_type 定义在 PostgresqlDatabase 子类上，无法通过基类
-# Database 的 monkey-patch 拦截，必须在导入前覆写环境变量。
+# 文档构建不需要真实数据库：model.py 模块级会根据 config["DB_URI"] 创建
+# db 对象（非 SQLite 时 connect() 会导入 PostgreSQL/MySQL 驱动），此处强制
+# 使用 SQLite 内存库，避免文档构建环境未安装数据库驱动导致导入失败。
+# 建表已收敛到 init_db()（应用启动时调用），autodoc 导入模块不会触发建表。
 os.environ["PASSPORT_DB_URI"] = "sqlite:///:memory:"
-os.environ["PASSPORT_REDIS_URI"] = "redis://localhost:6379/0"
 
 sys.path.insert(0, os.path.abspath("../"))
-
-# autodoc 导入项目模块时 model.py 会执行模块级的：
-#   with db.atomic():
-#       db.create_tables([...])
-# 这会尝试建立真实数据库连接。以下 patch 阻止数据库连接，
-# 确保文档构建不依赖实际数据库或缓存服务。
-import peewee as _peewee
-
-_orig_atomic = _peewee.Database.atomic
-_orig_connect = _peewee.Database.connect
-_orig_create_tables = _peewee.Database.create_tables
-
-
-def _fake_atomic(self):
-    class _FakeCtx:
-        def __enter__(_self):
-            return _self
-
-        def __exit__(_self, *_a):
-            pass
-
-    return _FakeCtx()
-
-
-_peewee.Database.atomic = _fake_atomic
-_peewee.Database.connect = lambda self, reuse_if_open=False: None
-_peewee.Database.create_tables = lambda self, models, safe=True: None
 
 # mock 外部依赖避免文档构建期间触发真实连接或网络请求
 autodoc_mock_imports = [

@@ -56,6 +56,7 @@ def create_app():
     from .libs.oidc import OIDCClient, oidc_save_token
     from .libs.interface import OAuthClient
     from .libs.geetest import geetest_enabled, start_bypass_checker
+    from .libs.metrics import init_metrics
 
     app = Flask(__name__)
     app.response_class = JsonResponse
@@ -88,6 +89,13 @@ def create_app():
 
     # 应用启动时初始化表结构（幂等），避免模块导入副作用。
     init_db()
+
+    # 初始化Prometheus指标
+    init_metrics(app)
+
+    # 后台守护线程：定时检测极验 bypass 状态并写入 Redis。
+    # gunicorn 多 worker 各自启动，Redis 分布式锁保证仅一个实例实际检测。
+    start_bypass_checker()
 
     @app.before_request
     def br():
@@ -150,13 +158,5 @@ def create_app():
         response = jsonify(e.to_dict())
         response.status_code = e.status_code
         return response
-
-    from .libs.metrics import init_metrics
-
-    init_metrics(app)
-
-    # 后台守护线程：定时检测极验 bypass 状态并写入 Redis。
-    # gunicorn 多 worker 各自启动，Redis 分布式锁保证仅一个实例实际检测。
-    start_bypass_checker()
 
     return app

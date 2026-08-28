@@ -26,6 +26,8 @@ from passportd.basis.conf import config
 __plugin_name__ = "oauth2_weibo"
 __version__ = "0.1.0"
 __author__ = "staugur"
+__description__ = "Login with Weibo OAuth2"
+__license__ = "Apache-2.0"
 __oauth2_provider__ = True
 __oauth2_name__ = "Weibo"
 __state__ = (

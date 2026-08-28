@@ -556,11 +556,11 @@ def user_set_username():
 @bp.post("/user/unbind_account")
 @apilogin_required
 def user_unbind_account():
-    """解绑邮箱、手机号或第三方账号接口。
+    """解绑邮箱、手机号、用户名或第三方账号接口。
 
     验证当前密码，通过后删除该 Auth 记录。
 
-    :form account: 邮箱地址、手机号或第三方账号（必填）
+    :form account: 邮箱地址、手机号、用户名或第三方账号（必填）
     :form password: 当前密码（必填）
     :returns: 解绑结果 JSON
     """

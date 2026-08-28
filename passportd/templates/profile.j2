@@ -172,7 +172,7 @@
                             </td>
                             <td class="is-size-7 js-timestamp" data-ts="{{ acct.ctime }}"></td>
                             <td>
-                                {% if acct.classify in ('email', 'mobile', '3rd') and accounts|length > 1 %}
+                                {% if acct.classify in ('email', 'mobile', '3rd', 'username') and accounts|length > 1 %}
                                 <button class="button is-danger is-light is-small js-open-unbind" data-account="{{ acct.account }}">
                                     <span>解绑</span>
                                 </button>

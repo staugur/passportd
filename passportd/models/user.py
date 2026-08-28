@@ -374,10 +374,10 @@ def add_account(
 
 
 def delete_account(uid: str, account: str) -> int:
-    """解绑用户的某个邮箱、手机号或第三方认证方式。
+    """解绑用户的某个邮箱、手机号、用户名或第三方认证方式。
 
     限制：
-    - 只能解绑邮箱、手机号或第三方登录类型
+    - 支持解绑邮箱、手机号、用户名或第三方登录类型
     - 至少保留一条 Auth 记录
     - ``account`` 必须属于该用户
 
@@ -385,7 +385,7 @@ def delete_account(uid: str, account: str) -> int:
     :param account: 待解绑的账号
     :returns: 删除的记录数
     :raises ParamError: 参数校验失败
-    :raises AuthError: 不能解绑用户名或这是最后一条记录
+    :raises AuthError: 这是最后一条记录
     """
     if not uid or len(uid) != 22:
         raise ParamError("Invalid uid")
@@ -393,8 +393,8 @@ def delete_account(uid: str, account: str) -> int:
         raise ParamError("Invalid account")
 
     classify = parse_account_classify(account)
-    if classify not in ("email", "mobile", "3rd"):
-        raise ParamError("仅支持解绑邮箱、手机号或第三方账号")
+    if classify not in ("email", "mobile", "3rd", "username"):
+        raise ParamError("仅支持解绑邮箱、手机号、用户名或第三方账号")
 
     if not has_uid(uid):
         raise AuthError("Not found uid")

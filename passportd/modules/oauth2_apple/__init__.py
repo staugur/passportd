@@ -6,11 +6,12 @@
 - ``client_secret`` 不是固定字符串，而是调用方用 Team ID + Key ID + 私钥
   签发的 ES256 JWT（有效期最长 180 天），程序在每次换 token 时动态生成；
 - 无 userinfo 端点，用户信息（``sub``/``email`` 等）包含在 token 响应返回的
-  ``id_token``（JWT）中，直接解析 payload 获取；
+  id_token（JWT）中，直接解析 payload 获取；
 - 授权走 ``response_mode=query``，与现有模块回调模式一致。昵称等资料仅当用户
   首次授权时在 Apple 侧选择共享才会返回（form_post 模式才回传 user 参数），
   因此 ``name`` 可能为空，用户登录后可在个人中心补充。
 """
+
 import base64
 import json
 from time import time
@@ -29,6 +30,8 @@ from passportd.utils.common import logger
 __plugin_name__ = "oauth2_apple"
 __version__ = "0.1.0"
 __author__ = "staugur"
+__description__ = "Login with Apple OAuth2"
+__license__ = "Apache-2.0"
 __oauth2_provider__ = True
 __oauth2_name__ = "Apple"
 __state__ = (

@@ -5,6 +5,7 @@
 小米用户信息接口（``/user/profile``）要求 ``clientId`` + ``token`` 作为
 query 参数（不识别 Bearer 头），因此单独手工请求。
 """
+
 from typing import Any
 
 import requests
@@ -17,6 +18,8 @@ from passportd.libs.interface import OAuthClient
 __plugin_name__ = "oauth2_xiaomi"
 __version__ = "0.1.0"
 __author__ = "staugur"
+__description__ = "Login with Xiaomi OAuth2"
+__license__ = "Apache-2.0"
 __oauth2_provider__ = True
 __oauth2_name__ = "Xiaomi"
 __state__ = (

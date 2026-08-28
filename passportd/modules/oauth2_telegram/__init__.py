@@ -38,6 +38,8 @@ from passportd.utils.common import get_proxies, rdb
 __plugin_name__ = "oauth2_telegram"
 __version__ = "0.1.0"
 __author__ = "staugur"
+__description__ = "Login with Telegram OAuth2"
+__license__ = "Apache-2.0"
 __oauth2_provider__ = True
 __oauth2_name__ = "Telegram"
 __state__ = "enabled" if config.get("TELEGRAM_BOT_TOKEN") else "disabled"
@@ -115,7 +117,9 @@ def _build_proxies() -> Optional[Dict[str, str]]:
     )
 
 
-def _fetch_bot_username(bot_token: str, proxies: Optional[Dict[str, str]] = None) -> str:
+def _fetch_bot_username(
+    bot_token: str, proxies: Optional[Dict[str, str]] = None
+) -> str:
     """调用 Telegram Bot API ``getMe`` 获取 Bot 用户名。
 
     :param bot_token: Bot Token
@@ -173,9 +177,7 @@ def login():
     oidc_state = request.args.get("oidc_state", "")
     auth_url = url_for(".authorized", _external=True)
     if oidc_state:
-        auth_url += ("&" if "?" in auth_url else "?") + urlencode(
-            {"state": oidc_state}
-        )
+        auth_url += ("&" if "?" in auth_url else "?") + urlencode({"state": oidc_state})
     return render_template(
         "telegram_login.j2",
         bot_username=_get_bot_username(),

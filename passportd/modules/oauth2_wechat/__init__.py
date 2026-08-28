@@ -28,6 +28,8 @@ from passportd.basis.conf import config
 __plugin_name__ = "oauth2_wechat"
 __version__ = "0.1.0"
 __author__ = "staugur"
+__description__ = "Login with Wechat OAuth2"
+__license__ = "Apache-2.0"
 __oauth2_provider__ = True
 __oauth2_name__ = "WeChat"
 __state__ = (
@@ -145,9 +147,7 @@ def _wechat_fetch_userinfo(access_token: str, openid: str) -> Dict[str, Any]:
         "openid": openid,
         "lang": "zh_CN",
     }
-    userinfo_resp = requests.get(
-        userinfo_url, params=userinfo_params, timeout=15
-    )
+    userinfo_resp = requests.get(userinfo_url, params=userinfo_params, timeout=15)
     userinfo_resp.raise_for_status()
     userinfo_data: Dict[str, Any] = userinfo_resp.json()
     if userinfo_data.get("errcode"):

@@ -25,6 +25,8 @@ from passportd.basis.conf import config
 __plugin_name__ = "oauth2_google"
 __version__ = "0.1.0"
 __author__ = "staugur"
+__description__ = "Login with Google OAuth2"
+__license__ = "Apache-2.0"
 __oauth2_provider__ = True
 __oauth2_name__ = "Google"
 __state__ = (
