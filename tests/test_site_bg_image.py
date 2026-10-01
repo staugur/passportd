@@ -2,7 +2,7 @@
 """SITE_BG_IMAGE 全局背景图配置相关测试。
 
 范围：
-- 默认配置启用背景图：body 背景图 + 浅化遮罩、导航/页脚/内容区透明
+- 默认配置启用背景图：body::before 伪元素铺满视口、导航/页脚/内容区透明
 - 启用背景图时去除导航栏边框、阴影与 hover 白色背景框
 - SITE_BG_IMAGE 置空时恢复原始实心配色
 """
@@ -36,11 +36,20 @@ _BG_URL = "https://hub.saintic.com/openservice/bingpic"
 
 
 def _css_block(html, selector):
-    """提取模板内联 CSS 中指定选择器的规则块文本。"""
-    start = html.find(selector)
-    if start < 0:
-        return ""
-    return html[start: html.find("}", start)]
+    """提取模板内联 CSS 中指定选择器的规则块文本。
+
+    仅匹配作为独立规则起始的选择器，避免命中 ``body > .footer``
+    这类复合选择器中的片段。
+    """
+    idx = 0
+    while True:
+        start = html.find(selector, idx)
+        if start < 0:
+            return ""
+        line_start = html.rfind("\n", 0, start) + 1
+        if html[line_start:start].strip() == "":
+            return html[start: html.find("}", start)]
+        idx = start + 1
 
 
 class SiteBgImageTest(unittest.TestCase):
@@ -69,17 +78,19 @@ class SiteBgImageTest(unittest.TestCase):
         return resp.get_data(as_text=True)
 
     def test_bg_enabled_styles(self):
-        """启用背景图时渲染背景图、遮罩，导航/页脚/内容区透明"""
+        """启用背景图时渲染背景图伪元素，导航/页脚/内容区透明"""
         html = self._signin_html(_BG_URL)
-        # body 背景图与浅化遮罩
-        self.assertIn('background-image: url("{}")'.format(_BG_URL), html)
-        self.assertIn("rgba(255, 255, 255, 0.55)", html)
+        # body::before 固定定位伪元素承载背景图，铺满整个视口
+        before = _css_block(html, "body::before")
+        self.assertIn('background-image: url("{}")'.format(_BG_URL), before)
+        self.assertIn("position: fixed", before)
+        self.assertIn("background-size: cover", before)
         # 内容区透明，露出背景图
         self.assertIn("background-color: transparent", _css_block(html, ".page-center"))
         # 导航栏透明
         self.assertIn("background-color: transparent", _css_block(html, ".navbar.is-green"))
         # 页脚透明
-        self.assertIn("background-color: transparent", _css_block(html, ".footer.is-light"))
+        self.assertIn("background-color: transparent", _css_block(html, ".footer"))
 
     def test_bg_enabled_removes_lines(self):
         """启用背景图时去除导航栏边框、阴影与 hover 白色背景框"""
@@ -99,10 +110,11 @@ class SiteBgImageTest(unittest.TestCase):
         """SITE_BG_IMAGE 置空时恢复原始实心配色"""
         html = self._signin_html("")
         self.assertNotIn("background-image: url", html)
-        self.assertNotIn("rgba(255, 255, 255, 0.55)", html)
+        self.assertNotIn("body::before", html)
         self.assertIn("background-color: #fff", _css_block(html, ".navbar.is-green"))
-        self.assertIn("background-color: #f9fafb", _css_block(html, ".footer.is-light"))
         self.assertIn("background-color: #f9fafb", _css_block(html, ".page-center"))
+        # 页脚恒定透明（由 body 底色承载）
+        self.assertIn("background-color: transparent", _css_block(html, ".footer"))
 
 
 if __name__ == "__main__":
