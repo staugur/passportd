@@ -537,7 +537,7 @@ DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status
     │  访问第三方应用          │                              │
     │ ──────────────────────►│                              │
     │                        │                              │
-    │                        │ GET /oauth/authorize         │
+    │                        │ GET /oidc/authorize          │
     │                        │  ?response_type=code         │
     │                        │  &client_id=<client_id>      │
     │                        │  &redirect_uri=<uri>         │
@@ -564,7 +564,7 @@ DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status
     │                        │                              │
     │                        │ ◄──── 302 ───────────────────│
     │                        │                              │
-    │                        │ POST /oauth/token            │
+    │                        │ POST /oidc/token             │
     │                        │  grant_type=authorization_code│
     │                        │  &code=<code>                │
     │                        │  &client_id=<id>             │
@@ -580,7 +580,7 @@ DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status
     │                        │       token_type: "Bearer",  │
     │                        │       expires_in: 3600 }     │
     │                        │                              │
-    │                        │ GET /oauth/userinfo          │
+    │                        │ GET /oidc/userinfo           │
     │                        │  Authorization: Bearer <token>│
     │                        │ ────────────────────────────►│
     │                        │                              │
@@ -620,14 +620,15 @@ DELETE /api/passkey/credential/<id>  → 删除指定凭证（软删除，status
 GET /.well-known/openid-configuration
 → {
     "issuer": "https://passport.example.com",
-    "authorization_endpoint": "https://passport.example.com/oauth/authorize",
-    "token_endpoint": "https://passport.example.com/oauth/token",
-    "userinfo_endpoint": "https://passport.example.com/oauth/userinfo",
-    "jwks_uri": "https://passport.example.com/oauth/jwks",
-    "scopes_supported": ["openid", "profile"],
+    "authorization_endpoint": "https://passport.example.com/oidc/authorize",
+    "token_endpoint": "https://passport.example.com/oidc/token",
+    "userinfo_endpoint": "https://passport.example.com/oidc/userinfo",
+    "jwks_uri": "https://passport.example.com/oidc/jwks",
+    "scopes_supported": ["openid", "profile", "email", "role"],
     "response_types_supported": ["code"],
-    "grant_types_supported": ["authorization_code"],
-    "id_token_signing_alg_values_supported": ["RS256"]
+    "id_token_signing_alg_values_supported": ["RS256"],
+    "token_endpoint_auth_methods_supported": [
+      "client_secret_post", "client_secret_basic"]
   }
 ```
 
@@ -642,22 +643,36 @@ id_token = JWT (RS256 签名)
     "aud": "<client_id>",
     "exp": <now + 3600>,
     "iat": <now>,
-    "nickname": "...",
-    "avatar": "...",
-    ...
+    "nickname": "...",    # scope: profile
+    "gender": 1,          # scope: profile
+    "picture": "...",     # scope: profile
+    "location": "...",    # scope: profile
+    "bio": "...",         # scope: profile
+    "status": 1,          # scope: profile
+    "email": "...",       # scope: email
+    "role": "admin user"  # scope: role，且仅内部客户端
   }
 ```
 
+**scope 分层与 role 门控：**
+
+- `openid` → 仅 `sub`；`+ profile` → 昵称/性别/头像/地区/简介/状态；`+ email` → 邮箱；`+ role` → 平台角色
+- 授权请求的 scope 会与**客户端注册的 scope 求交集**，不在交集内的 scope 被**静默丢弃**（不报错）
+- `role` 需**同时**满足：客户端 scope 含 `role`、且客户端 name 在配置 `OIDC_INTERNAL_CLIENTS` 内
+- `role` 仅输出平台内置角色（小写 `admin` / `superadmin` / `user`），`ClientName:Role` 格式的客户端角色会被过滤
+- 前端创建/编辑客户端的表单中，`role` 选项仅对 `OIDC_INTERNAL_CLIENTS` 中的应用显示
+
 ### 5.5 OIDC Client 管理
 
-用户可以在 profile 页面管理自己创建的 OIDC Client 应用：
+用户可以在 **OIDC Client** 页面（`/user/oidc/client`）管理自己创建的应用：
 
 ```
-GET  /oauth/client/list    → 列出我的所有 OIDC Client
-POST /oauth/client/create  → 创建新 Client (name, redirect_uri, homepage, scope)
-POST /oauth/client/update  → 更新 Client 信息
-POST /oauth/client/delete  → 删除 Client (级联删除关联 Token)
-GET  /oauth/client/count/<client_id> → 查看授权用户数
+GET    /api/oidc/client               → 列出我的所有 OIDC Client（含授权用户数）
+POST   /api/oidc/client               → 创建新 Client (name, redirect_uri, homepage, scope, bio)
+PUT    /api/oidc/client               → 更新 Client 信息
+DELETE /api/oidc/client               → 删除 Client (级联删除关联 Token)
+GET    /api/user/oauth/authorizations → 我的授权记录（最近 10 条）
+DELETE /api/user/oauth/authorizations → 撤销对某个 Client 的授权
 ```
 
 ---
@@ -712,10 +727,10 @@ GET  /oauth/client/count/<client_id> → 查看授权用户数
 | 路由 | 方法 | 功能 |
 |---|---|---|
 | `/.well-known/openid-configuration` | GET | OIDC Discovery |
-| `/oauth/authorize` | GET/POST | 授权端点 (Authorization Code Flow) |
-| `/oauth/token` | POST | Token 端点 (code→token) |
-| `/oauth/userinfo` | GET | 用户信息端点 (Bearer token) |
-| `/oauth/jwks` | GET | JWKS 公钥端点 (RS256验签) |
+| `/oidc/authorize` | GET/POST | 授权端点 (Authorization Code Flow) |
+| `/oidc/token` | POST | Token 端点 (code→token) |
+| `/oidc/userinfo` | GET | 用户信息端点 (Bearer token) |
+| `/oidc/jwks` | GET | JWKS 公钥端点 (RS256验签) |
 
 ### 6.4 OAuth2 第三方登录
 

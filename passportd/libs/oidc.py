@@ -66,20 +66,29 @@ def oidc_save_token(token_data: dict, request: OAuth2Request) -> bool:
     )
 
 
+def internal_client_names() -> set:
+    """获取内部（自家）应用的名称集合。
+
+    内部应用列表来自配置 ``OIDC_INTERNAL_CLIENTS``，为英文逗号分隔的
+    客户端 name 列表（容忍逗号两侧空格）。
+
+    :returns: 内部应用名称集合，未配置时返回空集合
+    """
+    internal = config.get("OIDC_INTERNAL_CLIENTS") or ""
+    if not isinstance(internal, str):
+        return set()
+    return {x.strip() for x in internal.split(",") if x.strip()}
+
+
 def _is_internal_client(client_name: str) -> bool:
     """判断客户端是否为内部（自家）应用。
 
-    内部应用列表来自配置 ``OIDC_INTERNAL_CLIENTS``，为英文逗号分隔的
-    客户端 name 列表。仅内部应用可获得用户平台角色。
+    仅内部应用可获得用户平台角色，列表见 ``OIDC_INTERNAL_CLIENTS``。
 
     :param client_name: 客户端名称
     :returns: 是内部应用返回 True，否则 False
     """
-    internal = config.get("OIDC_INTERNAL_CLIENTS") or ""
-    if not isinstance(internal, str):
-        return False
-    names = {x.strip() for x in internal.split(",") if x.strip()}
-    return client_name in names
+    return client_name in internal_client_names()
 
 
 def _platform_roles(role: str) -> str:

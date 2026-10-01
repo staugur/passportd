@@ -35,6 +35,7 @@ from ..libs.interface import (
     RecordLoginInterface,
     RegisterInterface,
 )
+from ..libs.oidc import internal_client_names
 from ..models.audit import record_audit_log
 from ..models.user import (
     User,
@@ -491,8 +492,13 @@ def profile():
 @bp.get("/user/oidc/client")
 @login_required
 def oidc_client():
-    """OIDC 客户端管理页面。"""
-    return render_template("oidc.j2")
+    """OIDC 客户端管理页面。
+
+    传入内部应用名称列表，供前端仅为内部应用显示 ``role`` 授权范围。
+    """
+    return render_template(
+        "oidc.j2", internal_clients=sorted(internal_client_names())
+    )
 
 
 @bp.get("/user/security")

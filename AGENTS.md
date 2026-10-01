@@ -171,7 +171,35 @@ var $box = $('#sessions-box');
 - 模板文件后缀 `.j2`
 - 使用 `{# 注释 #}` 进行模板注释
 - 模板中的 Python 变量使用 `{{ var }}`，需注意转义
+- 服务端数据注入 JS 用 `{{ var | tojson }}`，配合 `const` 声明真正的常量（如内部客户端名单 `INTERNAL_CLIENTS`）
 - URL 生成统一用 `url_for()`，不硬编码路径
+- 页脚结构：`layout.j2` 的 `footer.footer` **无背景色**、仅保留版权文字；公告栏 `#notice-bar` 是 `<body>` 级独立区块（位于 `<main>` 与 `<footer>` 之间），与页脚相互分离且同样无背景色，公告由 JS 异步渲染并支持逐条关闭
+
+## OIDC 认证约定
+
+### 客户端 scope 白名单
+
+- 客户端可申请的 scope 白名单来自数据库的 `OAuthClient.scope` 字段（即创建客户端时勾选的范围）；授权请求的 `scope` 会与之**求交集**，不在白名单内的 scope 被**静默丢弃且不报错**（`libs/oidc.py` 的 `OIDCClient.get_allowed_scope()` 返回过滤后的字符串，永不为 `None`，因此 authlib 的 `InvalidScopeError` 分支不会触发）
+- `basis/vars.py` 的 `OIDC_SUPPORTED_SCOPES` 仅用于 Discovery 文档的 `scopes_supported` 声明，**不是**授权校验的白名单
+- scope 分层输出：`openid` → 仅 `sub`；`+ profile` → 昵称/头像等；`+ email` → 邮箱；`+ role` → 平台角色
+
+### 平台角色（role scope）双条件门控
+
+输出用户平台角色必须**同时**满足两个条件：
+
+1. 客户端 `OAuthClient.scope` 含 `role`
+2. 客户端 name 在配置 `OIDC_INTERNAL_CLIENTS`（英文逗号分隔，容忍逗号两侧空格）内
+
+- 名称集合统一由 `libs/oidc.py` 的 `internal_client_names()` 解析，判断入口为 `_is_internal_client()`，禁止在别处重复解析该配置
+- 仅输出平台内置角色（小写 `admin` / `superadmin` / `user`），`ClientName:Role` 格式的客户端角色会被 `_platform_roles()` 过滤；用户无内置角色时兜底 `user`
+- 判定发生在 ID Token（`generate_user_info`）与 `/oidc/userinfo` 两处，**两处逻辑必须保持一致**
+- 修改客户端 scope 后已签发的 token 不会自动升级，需重新走一次授权流程
+
+### 管理页面 role 选项
+
+- `templates/oidc.j2` 中 role 是普通复选框（`name="scope" value="role"`，非隐藏字段），仅当「应用名称」输入值命中 `INTERNAL_CLIENTS` 时才显示，显隐函数为 `toggleRoleScopeField()`
+- 该名称列表由 `views/front.py` 的 `oidc_client` 视图通过 `internal_clients` 变量注入模板
+- 非内部应用若库中已有 `role`，编辑时复选框仍会被自动勾选，提交后保留，避免误删
 
 ## 变更记录
 
@@ -202,6 +230,7 @@ v2.7.0
 
 ## 持续集成 / 质量
 
-- 代码格式化：`make lint`（flake8 + isort）
+- 代码检查：flake8 + isort（配置见 `setup.cfg`，行宽上限 79）。Makefile 当前**没有** lint 目标，直接运行 `.venv/bin/python -m flake8 <path>` 与 `.venv/bin/python -m isort --check-only <path>`
+- 仓库存在少量历史告警（`E501` / `W503` 等），改动后对比报错数**不增加**即可，不要求清零
 - 测试：`make test`（unittest：`python -m unittest discover`，Python 3.10/3.11/3.12，不依赖 pytest）
-- 修改代码后需保持零 lint 错误，保证导入不失败
+- 修改代码后需保证导入不失败

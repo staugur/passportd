@@ -24,21 +24,36 @@
         }
 
         {% if bg_image %}
-        body {
-            background-color: #f9fafb;
-            background-image: url("{{ bg_image }}");
-            background-size: cover;
-            background-position: center;
-        }
-
+        /* 背景图由固定定位伪元素承载（比 background-attachment:fixed 兼容性更好）：
+           inset:0 使其恒等于视口尺寸，无论页面长短、是否滚动都铺满全屏，
+           内容较短的页面（如 OIDC）底部也不会露出纯色底 */
         body::before {
             content: "";
             position: fixed;
             inset: 0;
             z-index: -1;
             pointer-events: none;
-            background-color: rgba(255, 255, 255, 0.55);
+            background-color: #f9fafb;
+            background-image: url("{{ bg_image }}");
+            background-size: cover;
+            background-position: center;
         }
+
+        /* body 撑满视口，内容不足时由 main 占满剩余空间，页脚贴近视口底部 */
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        body > main {
+            flex: 1 0 auto;
+        }
+
+        body > .footer {
+            flex: none;
+        }
+
         {% endif %}
 
         .navbar {
@@ -202,19 +217,16 @@
             border: 3px solid var(--green-100);
         }
 
-        .footer.is-light {
-            {% if bg_image %}
+        .footer {
             background-color: transparent;
-            {% else %}
-            background-color: #f9fafb;
-            {% endif %}
-            padding: 1.5rem 1.5rem 2rem;
+            padding: 1rem 1.5rem 1.5rem;
         }
 
-        /* 公告栏 — 页脚位置，多条公告独立显示 */
+        /* 公告栏 — 页脚上方独立区域，多条公告独立显示 */
         .notice-bar {
             max-width: 960px;
-            margin: 8px auto 0;
+            margin: 0 auto;
+            padding: 0 1.5rem;
             font-size: 0.8rem;
             line-height: 1.5;
         }
@@ -307,7 +319,9 @@
         {% block content %}{% endblock %}
     </main>
 
-    <footer class="footer is-light mt-4">
+    <div id="notice-bar" class="notice-bar" hidden></div>
+
+    <footer class="footer mt-2">
         <div class="content has-text-centered">
             <p class="has-text-grey is-size-7">&copy; <span id="footer-year"></span>
                 {{ config.get("SITE_TITLE") or "Passport" }}. All rights
@@ -319,7 +333,6 @@
                 {% if config.get("SITE_PRIVACY") %}&nbsp;|&nbsp; <a href="{{ url_for('root.front.privacy') }}"
                     class="has-text-grey">隐私政策</a>{% endif %}</p>
         </div>
-        <div id="notice-bar" class="notice-bar" hidden></div>
     </footer>
 
     <script src="{{ url_for('static', filename='js/jquery-v3.7.1.min.js') }}"></script>

@@ -463,11 +463,17 @@ passportd 作为统一认证中心时，平台角色（小写 ``admin`` / ``supe
 
 .. note::
 
-   前端创建/编辑 OIDC 客户端的表单 **不展示** ``role`` 授权范围选项（对第三方
-   不可见）。内部客户端需要 ``role`` scope 时，通过 OIDC 客户端 API 或数据库
-   直接配置即可；后端在 ID Token 与 ``/oidc/userinfo`` 中仍按 ``OIDC_INTERNAL_CLIENTS``
-   判断是否返回平台角色。编辑已带 ``role`` scope 的内部客户端时，前端会自动
-   保留该 scope，不会因表单不显示而被误删。
+   前端创建/编辑 OIDC 客户端的表单中，``role`` 授权范围默认隐藏，仅当填写的
+   应用名称位于 ``OIDC_INTERNAL_CLIENTS`` 列表时才出现「平台角色」选项，
+   勾选后随授权范围一并保存，无需再手工改库或调 API。
+
+.. warning::
+
+   ``OIDC_INTERNAL_CLIENTS`` 只是**第二道**闸门。客户端注册的授权范围（scope）
+   里也必须包含 ``role``，否则授权请求中的 ``role`` 会在与服务端登记的 scope
+   求交集时被**静默丢弃**（不返回错误），最终 ID Token 与 ``/oidc/userinfo``
+   都不会返回平台角色，表现为「明明配了内部客户端却拿不到 role」。
+   此外，修改 scope 后已签发的 token 不会自动升级，需重新走一次授权流程。
 
 Passkey（WebAuthn）配置
 --------------------------

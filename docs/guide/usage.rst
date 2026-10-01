@@ -372,7 +372,9 @@ passportd 本身可作为一个 OpenID Connect Provider（身份提供者），�
 
    - **客户端名称**：用于识别的名称，如 ``我的 Web 应用``
    - **重定向 URI**：OAuth 授权回调地址，如 ``https://myapp.example.com/oauth/callback``
-   - **授权范围**：默认 ``openid``，还需 ``profile`` 可获取用户昵称、头像等信息
+   - **授权范围**：默认 ``openid``，还需 ``profile`` 可获取用户昵称、头像等信息；
+     应用名称在 ``OIDC_INTERNAL_CLIENTS`` 中时会额外出现 ``role`` 选项，用于获取
+     用户平台角色（见下文「获取用户平台角色」）
    - **描述**\ （可选）：应用用途说明
 
 3. 提交成功后，系统会生成：
@@ -394,7 +396,7 @@ passportd 支持标准 OAuth2 **Authorization Code** 授权码流程：
 
    ::
 
-       https://passport.example.com/oauth2/authorize
+       https://passport.example.com/oidc/authorize
          ?client_id=<Client ID>
          &redirect_uri=<回调地址>
          &response_type=code
@@ -408,7 +410,7 @@ passportd 支持标准 OAuth2 **Authorization Code** 授权码流程：
 
    .. code-block:: shell
 
-        curl -v "https://passport.example.com/api/oauth2/token" \
+        curl -v "https://passport.example.com/oidc/token" \
           -d client_id=<Client ID> \
           -d client_secret=<Client Secret> \
           -d code=<回调 code> \
@@ -421,7 +423,7 @@ passportd 支持标准 OAuth2 **Authorization Code** 授权码流程：
 
    .. code-block:: shell
 
-        curl -v "https://passport.example.com/api/oidc/userinfo" \
+        curl -v "https://passport.example.com/oidc/userinfo" \
           -H "Authorization: Bearer <access_token>"
 
    返回当前登录用户的昵称、头像等基本信息。
@@ -432,10 +434,45 @@ OIDC 高级功能
 passportd 实现了 OpenID Connect 标准端点，可用于 OIDC Discovery：
 
 - **Discovery 端点**：``/.well-known/openid-configuration``
-- **JWKS 端点**\ （JWT 签名公钥）：``/api/oidc/certs``
-- **UserInfo 端点**：``/api/oidc/userinfo``
+- **JWKS 端点**\ （JWT 签名公钥）：``/oidc/jwks``
+- **UserInfo 端点**：``/oidc/userinfo``
 
 在 OIDC Client 页面还可管理已创建的客户端（查看密钥、编辑信息、删除），以及查看已授权的应用列表。
+
+获取用户平台角色（role scope）
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+自有应用若需要通过 OIDC 判断用户是否为管理员，可申请 ``role`` scope。需要**同时**
+满足以下两个条件，缺一不可：
+
+1. **客户端授权范围包含 role**：在 OIDC Client 页面创建/编辑客户端时，若填写的
+   应用名称位于配置 ``OIDC_INTERNAL_CLIENTS`` 列表中，表单会自动出现「平台角色」
+   选项，勾选并保存即可；不在列表中的应用不会显示该选项。
+2. **客户端名称已在配置中登记**：应用名称需存在于 ``OIDC_INTERNAL_CLIENTS``
+   （英文逗号分隔，详见「配置」文档的 OIDC 内部客户端配置一节）。
+
+之后引导用户在授权请求中携带 ``role`` scope：
+
+::
+
+    https://passport.example.com/oidc/authorize
+      ?client_id=<Client ID>
+      &redirect_uri=<回调地址>
+      &response_type=code
+      &scope=openid%20role
+
+授权成功后，ID Token 与 ``/oidc/userinfo`` 会包含 ``role`` 字段（空格分隔的角色列表）。
+
+.. note::
+
+   ``role`` 仅返回平台内置角色（小写 ``admin`` / ``superadmin`` / ``user``），
+   ``ClientName:Role`` 格式的客户端角色不会输出给其他客户端。
+
+.. warning::
+
+   若客户端授权范围未包含 ``role``，授权请求中的 ``role`` 会在与服务端登记 scope
+   求交集时被**静默丢弃**（不返回错误），表现为「配了内部客户端却拿不到 role」。
+   修改授权范围后需重新走一次授权流程，已签发的 token 不会自动获得该 scope。
 
 管理 Passkey 设备
 ------------------

@@ -120,7 +120,17 @@
                         </label>
                     </div>
                     <p class="help">选择允许客户端访问的权限范围。</p>
-                    <input type="hidden" id="form-role-scope" name="role_scope">
+                </div>
+
+                {# role 授权范围仅内部应用（OIDC_INTERNAL_CLIENTS）可勾选，随应用名称显隐 #}
+                <div class="field" id="role-scope-field" style="display:none;">
+                    <label class="label">平台角色</label>
+                    <div class="control">
+                        <label class="checkbox">
+                            <input type="checkbox" name="scope" value="role"> role
+                        </label>
+                    </div>
+                    <p class="help">仅内部应用可申请，用于获取用户平台角色（admin / superadmin / user）。</p>
                 </div>
 
                 <div class="field">
@@ -229,6 +239,8 @@
         let deleteClientId = null;
         let revokeClientId = null;
         let clientsCache = [];
+        // 内部应用（OIDC_INTERNAL_CLIENTS 配置）名称列表，仅这些应用可勾选 role
+        const INTERNAL_CLIENTS = {{ internal_clients | tojson }};
 
         // --- 通用：关闭 error 通知 ---
         $errorEl.find('.delete').on('click', function () {
@@ -249,13 +261,20 @@
         });
 
         // --- 表单相关 ---
+        // role 授权范围仅内部应用可见，随应用名称输入动态显隐
+        function toggleRoleScopeField() {
+            let name = $('#form-name').val().trim();
+            $('#role-scope-field').toggle(INTERNAL_CLIENTS.indexOf(name) !== -1);
+        }
+
+        $('#form-name').on('input', toggleRoleScopeField);
+
         function resetForm() {
             $('#form-client-id').val('');
             $('#form-name').val('');
             $('#form-redirect-uri').val('');
             $('#form-homepage').val('');
             $('input[name="scope"]').prop('checked', false).filter('[value="openid"]').prop('checked', true);
-            $('#form-role-scope').val('');
             $('#form-bio').val('');
         }
 
@@ -268,20 +287,17 @@
                 $('#form-name').val(client.name || '');
                 $('#form-redirect-uri').val(client.redirect_uri || '');
                 $('#form-homepage').val(client.homepage || '');
-                // 根据客户端已保存的 scope 勾选对应复选框
+                // 根据客户端已保存的 scope 勾选对应复选框（含 role）
                 let savedScopes = (client.scope || 'openid').split(' ');
                 $('input[name="scope"]').each(function () {
                     $(this).prop('checked', savedScopes.indexOf($(this).val()) !== -1);
                 });
-                // role scope 不在表单开放，但编辑内部客户端时保留原值避免误删
-                if (savedScopes.indexOf('role') !== -1) {
-                    $('#form-role-scope').val('role');
-                }
                 $('#form-bio').val(client.bio || '');
             } else {
                 $('#form-modal-title').html('<span class="icon-text"><span class="icon"><i class="fa-solid fa-plus"></i></span><span>创建 OIDC 客户端</span></span>');
                 $('#form-submit-btn').html('<span class="icon"><i class="fa-solid fa-check"></i></span><span>确认创建</span>');
             }
+            toggleRoleScopeField();
         }
 
         $('.js-open-create').on('click', function () {
@@ -297,12 +313,8 @@
             formData.append('name', $('#form-name').val().trim());
             formData.append('redirect_uri', $('#form-redirect-uri').val().trim());
             formData.append('homepage', $('#form-homepage').val().trim());
-            // 收集所有勾选的 scope 拼成空格分隔字符串
+            // 收集所有勾选的 scope 拼成空格分隔字符串（role 仅内部应用可见）
             let scopes = $('input[name="scope"]:checked').map(function () { return $(this).val(); }).get();
-            let preservedRole = $('#form-role-scope').val();
-            if (preservedRole && scopes.indexOf('role') === -1) {
-                scopes.push('role');
-            }
             formData.append('scope', scopes.join(' '));
             formData.append('bio', $('#form-bio').val().trim());
 
