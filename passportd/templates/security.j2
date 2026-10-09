@@ -363,6 +363,11 @@
         function formatDetail(action, detail) {
             if (!detail || Object.keys(detail).length === 0) return '—';
             let parts = [];
+            if (detail.target_uid) parts.push('对象：<code class="is-size-7">' + $('<span>').text(detail.target_uid).html() + '</code>');
+            if (detail.operator_uid) parts.push('操作者：<code class="is-size-7">' + $('<span>').text(detail.operator_uid).html() + '</code>');
+            if (detail.roles !== undefined) parts.push('角色：' + $('<span>').text(detail.roles || '无').html());
+            if (detail.status !== undefined) parts.push('状态：' + (Number(detail.status) === 1 ? '启用' : '禁用'));
+            if (detail.is_internal !== undefined) parts.push('内部应用：' + (detail.is_internal ? '是' : '否'));
             if (detail.account) parts.push('账号：' + $('<span>').text(detail.account).html());
             if (detail.provider) parts.push('提供商：' + $('<span>').text(detail.provider).html());
             if (detail.type) parts.push('类型：' + $('<span>').text(detail.type).html());
@@ -383,6 +388,7 @@
             else if (action.startsWith('passkey_')) cls = 'is-info is-light';
             else if (action.startsWith('oidc_client_')) cls = 'is-primary is-light';
             else if (action === 'oidc_auth_revoke') cls = 'is-danger is-light';
+            else if (action.startsWith('admin_')) cls = 'is-danger is-light';
             return '<span class="tag ' + cls + ' is-size-7">' + $('<span>').text(label).html() + '</span>';
         }
 

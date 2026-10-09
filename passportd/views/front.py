@@ -37,6 +37,7 @@ from ..libs.interface import (
 )
 from ..libs.oidc import internal_client_names
 from ..models.audit import record_audit_log
+from ..models.oidc import list_internal_client_names
 from ..models.user import (
     User,
     add_account,
@@ -494,11 +495,11 @@ def profile():
 def oidc_client():
     """OIDC 客户端管理页面。
 
-    传入内部应用名称列表，供前端仅为内部应用显示 ``role`` 授权范围。
+    传入内部应用名称列表（配置项 ``OIDC_INTERNAL_CLIENTS`` 与数据库
+    ``is_internal`` 标记的并集），供前端仅为内部应用显示 ``role`` 授权范围。
     """
-    return render_template(
-        "oidc.j2", internal_clients=sorted(internal_client_names())
-    )
+    internal = internal_client_names() | set(list_internal_client_names())
+    return render_template("oidc.j2", internal_clients=sorted(internal))
 
 
 @bp.get("/user/security")

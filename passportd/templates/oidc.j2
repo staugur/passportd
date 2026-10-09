@@ -383,6 +383,7 @@
                 ['Discovery 端点', '<a href="' + escHtml(discoveryUrl) + '" target="_blank" class="is-size-7">' + escHtml(discoveryUrl) + ' <span class="icon is-small"><i class="fa-solid fa-arrow-up-right-from-square"></i></span></a>'],
                 ['主页', client.homepage || '<span class="has-text-grey-light">—</span>'],
                 ['授权范围', client.scope],
+                ['内部应用', client.is_internal ? '<span class="tag is-danger is-light is-size-7">是</span>' : '<span class="has-text-grey-light">否</span>'],
                 ['授权类型', client.grant_type],
                 ['响应类型', client.response_type],
                 ['授权用户数', (client.auth_count || 0)],

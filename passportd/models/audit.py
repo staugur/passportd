@@ -40,6 +40,9 @@ ACTION_LABELS: Dict[str, str] = {
     "role_set": "设置角色",
     "role_add": "添加角色",
     "role_remove": "移除角色",
+    "admin_role_set": "后台设置角色",
+    "admin_user_status": "后台启用/禁用用户",
+    "admin_client_internal": "后台标记内部应用",
 }
 
 

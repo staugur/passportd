@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 from binascii import Error as BinasciiError
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -83,6 +83,76 @@ def list_users() -> List[COMMON_DICT_TYPE]:
     :returns: 用户信息字典列表（已剔除 password_hash）
     """
     return [model_to_dict(u, exclude=[User.password_hash]) for u in User.select()]
+
+
+#: 可访问后台管理的内置角色
+ADMIN_ROLES: Tuple[str, ...] = ("admin", "superadmin")
+
+
+def is_admin(uid: str) -> bool:
+    """判断用户是否拥有后台管理权限（内置 admin 或 superadmin 角色）。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: 拥有后台管理权限返回 True，否则 False
+    """
+    if not uid or len(uid) != 22:
+        return False
+    role = User.select(User.role).where(User.uid == uid).scalar()
+    if not role:
+        return False
+    return any(r in ADMIN_ROLES for r in (role or "").split())
+
+
+def count_superadmins() -> int:
+    """统计拥有内置 superadmin 角色的用户数。
+
+    :returns: superadmin 用户数量
+    """
+    query = User.select(User.role).where(User.role.contains("superadmin"))
+    return sum(1 for u in query if "superadmin" in (u.role or "").split())
+
+
+def admin_list_users(
+    keyword: str = "", page: int = 1, per_page: int = 20
+) -> Tuple[List[COMMON_DICT_TYPE], int]:
+    """管理员分页查询用户列表（含绑定的账号方式）。
+
+    :param keyword: 搜索关键词，匹配 uid、昵称或账号
+    :param page: 页码，从 1 开始
+    :param per_page: 每页条数，最大 100
+    :returns: (用户信息列表, 总条数) 元组，用户信息不含密码哈希
+    """
+    query = User.select()
+    if keyword:
+        matched_uids = [
+            a.uid
+            for a in Auth.select(Auth.uid).where(
+                Auth.account.contains(keyword)
+            )
+        ]
+        cond = (User.uid == keyword) | (User.nickname.contains(keyword))
+        if matched_uids:
+            cond = cond | (User.uid.in_(matched_uids))
+        query = query.where(cond)
+    total = query.count()
+    page = max(1, page)
+    per_page = max(1, min(per_page, 100))
+    rows = query.order_by(User.ctime.desc()).paginate(page, per_page)
+    users = []
+    for u in rows:
+        item = model_to_dict(u, exclude=[User.password_hash])
+        item["has_password"] = bool(u.password_hash)
+        users.append(item)
+    uids = [u["uid"] for u in users]
+    accounts_map: Dict[str, List[COMMON_DICT_TYPE]] = {}
+    if uids:
+        for a in Auth.select().where(Auth.uid.in_(uids)):
+            accounts_map.setdefault(a.uid, []).append(
+                {"account": a.account, "classify": a.classify}
+            )
+    for u in users:
+        u["accounts"] = accounts_map.get(u["uid"], [])
+    return users, total
 
 
 def get_user_email(uid: str) -> Union[None, str]:
@@ -624,6 +694,43 @@ def update_profile(
         raise AuthError(e)
     else:
         return True
+
+
+def set_platform_roles(uid: str, roles: List[str]) -> str:
+    """设置用户的内置平台角色，保留客户端角色不变。
+
+    内置平台角色仅支持 ``superadmin`` / ``admin`` / ``user``；客户端角色
+    （``ClientName:Role``，含 ``:``）在此操作中保持原样，避免后台误删。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :param roles: 内置平台角色列表
+    :returns: 更新后的完整 role 字符串
+    :raises ParamError: uid 或角色非法
+    :raises AuthError: 用户不存在或数据库操作失败
+    """
+    if not uid or len(uid) != 22:
+        raise ParamError("Invalid uid")
+    platform_roles: List[str] = []
+    for raw in roles:
+        role = (raw or "").strip().lower()
+        if not role:
+            continue
+        if role not in ("superadmin", "admin", "user"):
+            raise ParamError("Invalid role")
+        if role not in platform_roles:
+            platform_roles.append(role)
+    try:
+        u = User.get(User.uid == uid)
+    except User.DoesNotExist:
+        raise AuthError("Not found user id")
+    client_roles = [r for r in (u.role or "").split() if ":" in r]
+    u.role = " ".join(platform_roles + client_roles) or "user"
+    u.mtime = now()
+    try:
+        u.save()
+    except Exception as e:
+        raise AuthError(e)
+    return u.role
 
 
 def change_password(uid: str, account: str, new_pwd: str) -> bool:

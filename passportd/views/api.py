@@ -42,28 +42,36 @@ from ..libs.geetest import GeetestLib, get_bypass_cache
 from ..models.audit import list_audit_logs, record_audit_log
 from ..models.model import User
 from ..models.oidc import (
+    admin_set_client_internal,
     count_oauth_authorizations,
     create_oauth_client,
     delete_oauth_authorization,
     delete_oauth_client,
     list_oauth_authorizations_by_user,
     list_oauth_clients,
+    list_oauth_clients_page,
     update_oauth_client,
 )
 from ..models.user import (
     add_account,
+    admin_list_users,
     change_password,
+    count_superadmins,
     delete_account,
     delete_user_data,
 )
 from ..models.user import get_account as get_auth
 from ..models.user import (
+    get_user_by_uid,
     has_account,
+    has_uid,
     list_accounts,
     list_active_sessions,
     list_login_records,
     register_vcode,
+    set_platform_roles,
     set_username,
+    update_profile,
 )
 from ..utils.common import (
     generate_digital_verification_code,
@@ -75,6 +83,7 @@ from ..utils.common import (
 )
 from ..utils.web import (
     apilogin_required,
+    api_admin_required,
     auto_set_user_state,
     check_sms_rate_limit,
     get_ip,
@@ -1002,3 +1011,222 @@ def geetest_validate():
     else:
         response = {"result": "fail", "version": GeetestLib.VERSION, "msg": result.msg}
     return response
+
+
+# ---------------------------------------------------------------------------
+# 后台管理接口（仅 admin / superadmin）
+# ---------------------------------------------------------------------------
+
+def _record_admin_audit(
+    action: str, target_uid: str, detail: dict
+) -> None:
+    """记录一次后台写操作的审计日志（操作者与被操作用户各记一条）。
+
+    操作者视角：``uid`` 为操作者，detail 内含 ``target_uid``（被操作对象）；
+    被操作用户视角：``uid`` 为被操作用户，detail 内含 ``operator_uid``，
+    便于用户在「安全」页知晓自己的账号/应用被哪位管理员改动。
+
+    :param action: 操作类型，如 ``admin_role_set``
+    :param target_uid: 被操作用户 uid（无对应用户时传空串则只记操作者）
+    :param detail: 操作详情（两类视角共用的业务字段）
+    """
+    ip = get_ip()
+    ua = request.headers.get("User-Agent", "")
+    record_audit_log(
+        uid=g.user["uid"],
+        action=action,
+        detail=dict(detail, target_uid=target_uid),
+        ip=ip,
+        user_agent=ua,
+    )
+    if target_uid and target_uid != g.user["uid"]:
+        record_audit_log(
+            uid=target_uid,
+            action=action,
+            detail=dict(detail, operator_uid=g.user["uid"]),
+            ip=ip,
+            user_agent=ua,
+        )
+
+
+def _parse_page_args(default_per_page: int = 10) -> tuple:
+    """解析分页参数 ``page`` / ``per_page``，非法值回退默认。
+
+    :param default_per_page: 每页默认条数
+    :returns: (page, per_page) 元组，page 最小 1，per_page 限制 [1, 100]
+    """
+    try:
+        page = int(request.args.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", default_per_page))
+    except (TypeError, ValueError):
+        per_page = default_per_page
+    return max(1, page), max(1, min(per_page, 100))
+
+
+@bp.get("/admin/users")
+@api_admin_required
+def admin_users():
+    """后台：分页查询用户列表（支持按 uid/昵称/账号搜索）。
+
+    :query keyword: 搜索关键词（可选）
+    :query page: 页码，默认 1
+    :query per_page: 每页条数，默认 10
+    :returns: data 中包含 users、total、page、per_page、pages
+    """
+    keyword = request.args.get("keyword", "").strip()
+    page, per_page = _parse_page_args()
+    users, total = admin_list_users(
+        keyword=keyword, page=page, per_page=per_page
+    )
+    pages = (total + per_page - 1) // per_page if per_page else 0
+    return new_res(
+        success=True,
+        data=dict(
+            users=users,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages,
+        ),
+    )
+
+
+@bp.put("/admin/user/role")
+@api_admin_required
+def admin_set_user_role():
+    """后台：设置指定用户的内置平台角色（保留客户端角色）。
+
+    :form uid: 目标用户 uid（必填）
+    :form roles: 平台角色，空格分隔（superadmin / admin / user）
+    :returns: data 中包含更新后的 uid 与 role
+    """
+    uid = request.form.get("uid", "").strip()
+    roles = [
+        r.strip().lower()
+        for r in request.form.get("roles", "").split()
+        if r.strip()
+    ]
+    if not uid:
+        raise ApiError("uid is required", code=ErrorCode.PARAM_ERROR)
+    for role in roles:
+        if role not in ("superadmin", "admin", "user"):
+            raise ApiError("invalid role", code=ErrorCode.ROLE_INVALID)
+    if not has_uid(uid):
+        raise ApiError("user not found", code=ErrorCode.USER_NOT_FOUND)
+
+    # 防止移除最后一个 superadmin 导致后台失联
+    profile = get_user_by_uid(uid) or {}
+    current_roles = (profile.get("role") or "").split()
+    if (
+        "superadmin" not in roles
+        and "superadmin" in current_roles
+        and count_superadmins() <= 1
+    ):
+        raise ApiError(
+            "cannot remove the last superadmin",
+            code=ErrorCode.LAST_SUPERADMIN,
+        )
+
+    try:
+        new_role = set_platform_roles(uid, roles)
+    except PassportError as e:
+        raise ApiError(str(e), code=ErrorCode.ROLE_INVALID)
+    _record_admin_audit("admin_role_set", uid, {"roles": new_role})
+    return new_res(success=True, data=dict(uid=uid, role=new_role))
+
+
+@bp.put("/admin/user/status")
+@api_admin_required
+def admin_set_user_status():
+    """后台：启用或禁用指定用户（禁止禁用自己）。
+
+    :form uid: 目标用户 uid（必填）
+    :form status: 状态，1=启用，0=禁用
+    :returns: data 中包含 uid 与 status
+    """
+    uid = request.form.get("uid", "").strip()
+    status = request.form.get("status", "")
+    if status not in ("0", "1"):
+        raise ApiError("status must be 0 or 1", code=ErrorCode.PARAM_ERROR)
+    if not has_uid(uid):
+        raise ApiError("user not found", code=ErrorCode.USER_NOT_FOUND)
+    if uid == g.user["uid"] and status == "0":
+        raise ApiError("cannot disable yourself", code=ErrorCode.PARAM_ERROR)
+    try:
+        update_profile(uid, status=int(status))
+    except PassportError as e:
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
+    _record_admin_audit("admin_user_status", uid, {"status": int(status)})
+    return new_res(success=True, data=dict(uid=uid, status=int(status)))
+
+
+@bp.get("/admin/oidc/clients")
+@api_admin_required
+def admin_oidc_clients():
+    """后台：分页查询所有 OIDC 客户端（含所有者与内部应用标记）。
+
+    :query keyword: 搜索关键词，匹配应用名称或所有者（可选）
+    :query page: 页码，默认 1
+    :query per_page: 每页条数，默认 10
+    :returns: data 中包含 clients、total、page、per_page、pages
+    """
+    keyword = request.args.get("keyword", "").strip()
+    page, per_page = _parse_page_args()
+    clients, total = list_oauth_clients_page(
+        keyword=keyword, page=page, per_page=per_page
+    )
+    pages = (total + per_page - 1) // per_page if per_page else 0
+    return new_res(
+        success=True,
+        data=dict(
+            clients=clients,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages,
+        ),
+    )
+
+
+@bp.put("/admin/oidc/client/internal")
+@api_admin_required
+def admin_set_oidc_client_internal():
+    """后台：标记 OIDC 应用是否为内部应用（唯一的后台 OIDC 操作）。
+
+    内部应用在申请 ``role`` scope 时可获得用户平台角色，等效于配置项
+    ``OIDC_INTERNAL_CLIENTS``。
+
+    :form client_id: 客户端 ID（必填）
+    :form is_internal: 是否内部应用，1/0（必填）
+    :returns: data 为更新后的客户端信息
+    """
+    client_id = request.form.get("client_id", "").strip()
+    if not client_id:
+        raise ApiError(
+            "client_id is required", code=ErrorCode.CLIENT_ID_REQUIRED
+        )
+    is_internal_raw = request.form.get("is_internal", "")
+    if is_internal_raw not in ("0", "1"):
+        raise ApiError(
+            "is_internal must be 0 or 1", code=ErrorCode.PARAM_ERROR
+        )
+    is_internal = is_internal_raw == "1"
+    try:
+        ret = admin_set_client_internal(client_id, is_internal)
+    except PermissionError:
+        raise ApiError("client not found", code=ErrorCode.CLIENT_NOT_FOUND)
+    except PassportError as e:
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
+    _record_admin_audit(
+        "admin_client_internal",
+        str(ret.get("uid") or ""),
+        {
+            "client_id": client_id,
+            "name": ret.get("name", ""),
+            "is_internal": is_internal,
+        },
+    )
+    return new_res(success=True, data=ret)

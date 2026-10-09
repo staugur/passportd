@@ -15,12 +15,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Union, List
+from typing import Dict, List, Tuple, Union
 
 from playhouse.shortcuts import model_to_dict
 from werkzeug.security import gen_salt
 
-from .model import OAuthClient, OAuthToken, OAuthAuthorization
+from .model import OAuthClient, OAuthToken, OAuthAuthorization, User
 from ..basis.vars import COMMON_DICT_TYPE
 from ..basis.errors import ParamError, DBError
 from ..basis.common import check_uid_rule
@@ -29,6 +29,7 @@ from ..utils.common import (
     appname_check,
     is_valid_http_url,
     is_valid_ipv4,
+    logger,
 )
 
 
@@ -65,6 +66,49 @@ def get_oauth_client(client_id: str) -> Union[None, COMMON_DICT_TYPE]:
         return model_to_dict(oc)
     except OAuthClient.DoesNotExist:
         return None
+
+
+def is_internal_oauth_client(name: str) -> bool:
+    """判断同名客户端是否被标记为内部（自家）应用。
+
+    内部应用标记存储在 ``OAuthClient.is_internal``，由后台管理页面维护，
+    与配置项 ``OIDC_INTERNAL_CLIENTS`` 等效。
+
+    :param name: 客户端应用名称
+    :returns: 是内部应用返回 True，否则 False
+    """
+    if not name:
+        return False
+    try:
+        return (
+            OAuthClient.select()
+            .where(
+                (OAuthClient.name == name)
+                & (OAuthClient.is_internal == True)  # noqa: E712
+            )
+            .exists()
+        )
+    except Exception as e:  # noqa: BLE001
+        # 数据库不可用或表未初始化时按「非内部应用」处理，不阻断授权流程
+        logger.debug("is_internal_oauth_client 查询失败: %s", e)
+        return False
+
+
+def list_internal_client_names() -> List[str]:
+    """列出所有被标记为内部（自家）应用的客户端名称。
+
+    :returns: 客户端名称列表，查询失败时返回空列表
+    """
+    try:
+        return [
+            c.name
+            for c in OAuthClient.select(OAuthClient.name).where(
+                OAuthClient.is_internal == True  # noqa: E712
+            )
+        ]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("list_internal_client_names 查询失败: %s", e)
+        return []
 
 
 def list_oauth_tokens(uid: str, client_id: Union[None, str]) -> List[COMMON_DICT_TYPE]:
@@ -418,3 +462,72 @@ def save_oauth_authorization(
         raise DBError(e)
     else:
         return True
+
+
+def list_oauth_clients_page(
+    keyword: str = "", page: int = 1, per_page: int = 20
+) -> Tuple[List[COMMON_DICT_TYPE], int]:
+    """管理员分页查询所有 OIDC 客户端（含所有者昵称与授权用户数）。
+
+    :param keyword: 搜索关键词，匹配应用名称或所有者（uid / 昵称）
+    :param page: 页码，从 1 开始
+    :param per_page: 每页条数，最大 100
+    :returns: (客户端信息列表, 总条数) 元组
+    """
+    query = OAuthClient.select()
+    if keyword:
+        cond = OAuthClient.name.contains(keyword)
+        matched_uids = [
+            u.uid
+            for u in User.select(User.uid).where(
+                (User.uid == keyword) | (User.nickname.contains(keyword))
+            )
+        ]
+        if matched_uids:
+            cond = cond | (OAuthClient.uid.in_(matched_uids))
+        query = query.where(cond)
+    total = query.count()
+    page = max(1, page)
+    per_page = max(1, min(per_page, 100))
+    rows = query.order_by(OAuthClient.ctime.desc()).paginate(page, per_page)
+    clients = [model_to_dict(c) for c in rows]
+    uids = {c["uid"] for c in clients}
+    owners: Dict[str, str] = {}
+    if uids:
+        for u in User.select().where(User.uid.in_(uids)):
+            owners[u.uid] = u.nickname
+    for c in clients:
+        c["owner_nickname"] = owners.get(c["uid"], "")
+        c["auth_count"] = count_oauth_authorizations(str(c["client_id"]))
+    return clients, total
+
+
+def admin_set_client_internal(
+    client_id: str, is_internal: bool
+) -> COMMON_DICT_TYPE:
+    """管理员标记任意 OIDC 客户端是否为内部（自家）应用。
+
+    内部应用在申请 ``role`` scope 时可获得用户平台角色，等效于配置项
+    ``OIDC_INTERNAL_CLIENTS``。不做归属校验。
+
+    :param client_id: 要标记的客户端标识
+    :param is_internal: True 标记为内部应用，False 取消标记
+    :returns: 更新后的客户端信息字典
+    :raises ParamError: 参数校验失败
+    :raises PermissionError: 客户端不存在
+    :raises DBError: 数据库操作失败
+    """
+    if not client_id or len(client_id) < 24:
+        raise ParamError("Invalid params")
+    try:
+        oc = OAuthClient.get(OAuthClient.client_id == client_id)
+    except OAuthClient.DoesNotExist:
+        raise PermissionError("Client not found")
+    oc.is_internal = bool(is_internal)
+    oc.mtime = now()
+    try:
+        oc.save()
+    except Exception as e:
+        raise DBError(e)
+    else:
+        return model_to_dict(oc)

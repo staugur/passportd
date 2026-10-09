@@ -17,6 +17,7 @@ passportd
 - **多数据库支持**：SQLite（开发）/ MySQL / PostgreSQL（生产）
 - **JWT 认证**：支持 HMAC-SHA256 和 RS256 双算法签名
 - **RESTful API**：提供完整的用户管理与 OIDC 客户端管理接口
+- **后台管理**：admin / superadmin 登录后可进入后台，管理用户角色与 OIDC 应用（内部应用标记），写操作均记入安全审计日志
 - **无状态设计**：不依赖 Flask Session，跨请求状态通过 Redis + JWT + Cookie 传递
 
 架构概览

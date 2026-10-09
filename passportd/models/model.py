@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from peewee import (
     Database,
     Model,
+    BooleanField,
     CharField,
     IntegerField,
     TextField,
@@ -141,6 +142,9 @@ class OAuthClient(Model):
     response_type = CharField(default="code")
     #: 授权列表（空格分开），支持 openid、profile
     scope = CharField(default="openid")
+    #: 是否内部（自家）应用：内部应用在申请 role scope 时可获得用户平台角色，
+    #: 由后台管理页面标记，与配置项 OIDC_INTERNAL_CLIENTS 等效
+    is_internal = BooleanField(default=False)
     #: 生成时间戳与更新时间戳
     ctime = IntegerField(default=now)
     mtime = IntegerField(default=0)
@@ -344,6 +348,13 @@ def init_db() -> None:
             User._meta.table_name,
             "background_image",
             "VARCHAR(255) NOT NULL DEFAULT ''",
+        )
+        # 布尔列默认值按数据库方言区分：SQLite 用 0，MySQL/PostgreSQL 用 FALSE
+        _bool_default = "0" if isinstance(db, SqliteDatabase) else "FALSE"
+        _ensure_column(
+            OAuthClient._meta.table_name,
+            "is_internal",
+            "BOOLEAN NOT NULL DEFAULT {}".format(_bool_default),
         )
 
 

@@ -1,0 +1,415 @@
+{% extends "layout.j2" %}
+{% block title %}后台 · 用户管理 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="container" style="max-width: 1000px;">
+
+        {# 页头 #}
+        <div class="mb-5">
+            <h1 class="title is-4 mb-1">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
+                    <span>后台管理</span>
+                </span>
+            </h1>
+            <p class="subtitle is-6 has-text-grey mb-0">仅管理员（admin / superadmin）可访问</p>
+        </div>
+
+        {# 后台导航 #}
+        <div class="tabs is-toggle is-small mb-5">
+            <ul>
+                <li class="is-active">
+                    <a href="{{ url_for('root.admin.users') }}">
+                        <span class="icon is-small"><i class="fa-solid fa-users"></i></span>
+                        <span>用户管理</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('root.admin.clients') }}">
+                        <span class="icon is-small"><i class="fa-solid fa-server"></i></span>
+                        <span>OIDC 应用</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        {# 搜索 #}
+        <div class="field is-grouped mb-4">
+            <div class="control is-expanded">
+                <input class="input" type="text" id="search-input" placeholder="按 uid、昵称或账号搜索">
+            </div>
+            <div class="control">
+                <button class="button is-primary" id="search-btn">
+                    <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <span>搜索</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="error-notice" class="notification is-danger is-light is-hidden">
+            <button class="delete"></button>
+            <span id="error-msg"></span>
+        </div>
+
+        <div id="loading-notice" class="has-text-centered py-6 is-hidden">
+            <span class="icon is-large has-text-grey-light"><i class="fa-solid fa-spinner fa-pulse fa-2x"></i></span>
+            <p class="has-text-grey mt-2">加载中...</p>
+        </div>
+
+        <div id="user-list"></div>
+
+        {# 分页（由 static/js/pager.js 渲染） #}
+        <div id="pager" class="mt-5" style="display:none;"></div>
+
+    </div>
+</section>
+
+{# 角色编辑模态框 #}
+<div class="modal" id="role-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-user-gear"></i></span>
+                    <span>管理用户角色</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body">
+            <input type="hidden" id="role-uid" value="">
+            <div class="is-flex is-align-items-center mb-4" style="gap:10px;">
+                <span id="role-user-avatar"></span>
+                <div>
+                    <strong id="role-user-name"></strong>
+                    <div class="has-text-grey is-size-7" id="role-user-uid"></div>
+                    <div class="is-size-7 mt-1" id="role-user-meta"></div>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">平台角色</label>
+                <div class="control">
+                    <label class="checkbox mr-4">
+                        <input type="checkbox" name="platform-role" value="superadmin"> superadmin
+                    </label>
+                    <label class="checkbox mr-4">
+                        <input type="checkbox" name="platform-role" value="admin"> admin
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" name="platform-role" value="user"> user
+                    </label>
+                </div>
+                <p class="help">superadmin 可访问后台；admin 为平台管理员角色；user 为普通用户。</p>
+            </div>
+
+            <div class="field" id="client-roles-field" style="display:none;">
+                <label class="label">客户端角色</label>
+                <div class="control">
+                    <div class="tags" id="client-roles-tags"></div>
+                </div>
+                <p class="help">客户端角色由各 OIDC 应用分配，此处仅展示，修改平台角色时自动保留。</p>
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div class="buttons">
+                <button type="button" class="button is-primary" id="save-role-btn">
+                    <span class="icon"><i class="fa-solid fa-check"></i></span>
+                    <span>保存</span>
+                </button>
+                <button type="button" class="button js-close-role-modal">取消</button>
+            </div>
+        </footer>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/pager.js') }}"></script>
+<script>
+    $(function () {
+        let $listEl = $('#user-list');
+        let $loadingEl = $('#loading-notice');
+        let $errorEl = $('#error-notice');
+        let $errorMsgEl = $('#error-msg');
+        let $roleModal = $('#role-modal');
+        let $pagerEl = $('#pager');
+        let pageSize = 10;
+        let currentPage = 1;
+
+        // --- 通用 ---
+        $errorEl.find('.delete').on('click', function () {
+            $errorEl.addClass('is-hidden');
+        });
+
+        function showError(msg) {
+            $errorMsgEl.text(msg);
+            $errorEl.removeClass('is-hidden');
+        }
+
+        function escHtml(str) {
+            return $('<div>').text(str === undefined || str === null ? '' : str).html();
+        }
+
+        // 属性值转义：escHtml 不转义引号，写入 HTML 属性前补转义，防注入
+        function escAttr(str) {
+            return escHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // 性别标签（User.gender：0 女 / 1 男 / 2 未知）
+        function genderLabel(gender) {
+            if (gender === 0) return '<span class="tag is-danger is-light is-size-7">女</span>';
+            if (gender === 1) return '<span class="tag is-link is-light is-size-7">男</span>';
+            return '<span class="has-text-grey-light">未知</span>';
+        }
+
+        // 头像：有 avatar 用图片，否则占位图标
+        function avatarHtml(avatar, nickname) {
+            if (avatar) {
+                return '<img src="' + escAttr(avatar) + '" alt="' + escAttr(nickname || '') + '"'
+                    + ' style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex:none;">';
+            }
+            return '<span style="width:32px;height:32px;border-radius:50%;background:#e5e7eb;color:#9ca3af;'
+                + 'display:inline-flex;align-items:center;justify-content:center;flex:none;">'
+                + '<i class="fa-solid fa-user"></i></span>';
+        }
+
+        function platformRoles(role) {
+            return (role || '').split(' ').filter(function (r) {
+                return r && r.indexOf(':') === -1;
+            });
+        }
+
+        function clientRoles(role) {
+            return (role || '').split(' ').filter(function (r) {
+                return r && r.indexOf(':') !== -1;
+            });
+        }
+
+        function roleTag(role) {
+            let cls = 'is-light';
+            if (role === 'superadmin') cls = 'is-danger is-light';
+            else if (role === 'admin') cls = 'is-warning is-light';
+            else if (role === 'user') cls = 'is-info is-light';
+            return '<span class="tag ' + cls + ' is-size-7">' + escHtml(role) + '</span>';
+        }
+
+        // --- 加载用户列表 ---
+        function loadUsers(page) {
+            currentPage = page || 1;
+            $loadingEl.removeClass('is-hidden');
+            $errorEl.addClass('is-hidden');
+            $listEl.empty();
+            $.ajax({
+                url: '{{ url_for("root.api.admin_users") }}',
+                method: 'GET',
+                data: { page: currentPage, per_page: pageSize, keyword: $('#search-input').val().trim() },
+                success: function (res) {
+                    $loadingEl.addClass('is-hidden');
+                    if (!res.success) {
+                        showError(apiMessage(res, '加载失败'));
+                        return;
+                    }
+                    let data = res.data || {};
+                    renderUsers(data.users || []);
+                    renderPager(data);
+                },
+                error: function (xhr) {
+                    $loadingEl.addClass('is-hidden');
+                    showError('网络错误: ' + xhr.statusText);
+                }
+            });
+        }
+
+        function renderUsers(users) {
+            if (!users.length) {
+                $listEl.html('<div class="box has-text-centered has-text-grey py-6">'
+                    + '<span class="icon is-large"><i class="fa-solid fa-user-slash fa-2x"></i></span>'
+                    + '<p class="mt-3">没有匹配的用户</p></div>');
+                return;
+            }
+            let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable">'
+                + '<thead><tr>'
+                + '<th>用户</th>'
+                + '<th>性别</th>'
+                + '<th>地区</th>'
+                + '<th>账号</th>'
+                + '<th>平台角色</th>'
+                + '<th>状态</th>'
+                + '<th style="width: 180px;">操作</th>'
+                + '</tr></thead><tbody>';
+            $.each(users, function (_, u) {
+                let accounts = (u.accounts || []).map(function (a) {
+                    return '<span class="tag is-light is-size-7 mr-1">' + escHtml(a.account) + '</span>';
+                }).join('') || '<span class="has-text-grey-light">—</span>';
+                let roles = platformRoles(u.role).map(roleTag).join(' ') || '<span class="has-text-grey-light">—</span>';
+                let statusTag = (u.status === 0)
+                    ? '<span class="tag is-danger is-light">已禁用</span>'
+                    : '<span class="tag is-success is-light">正常</span>';
+                let toggleLabel = (u.status === 0) ? '启用' : '禁用';
+                let toggleCls = (u.status === 0) ? 'is-success' : 'is-danger';
+                let userCell = '<div class="is-flex is-align-items-center" style="gap:8px;">'
+                    + avatarHtml(u.avatar, u.nickname)
+                    + '<div><div class="has-text-weight-semibold">' + escHtml(u.nickname || '—') + '</div>'
+                    + '<code class="is-size-7 has-text-grey">' + escHtml(u.uid) + '</code></div></div>';
+                html += '<tr>'
+                    + '<td>' + userCell + '</td>'
+                    + '<td>' + genderLabel(u.gender) + '</td>'
+                    + '<td class="is-size-7">' + escHtml(u.location || '—') + '</td>'
+                    + '<td>' + accounts + '</td>'
+                    + '<td>' + roles + '</td>'
+                    + '<td>' + statusTag + '</td>'
+                    + '<td><div class="buttons are-small">'
+                    + '<button class="button is-primary is-light js-role" data-uid="' + escHtml(u.uid) + '">'
+                    + '<span class="icon is-small"><i class="fa-solid fa-user-gear"></i></span><span>角色</span></button>'
+                    + '<button class="button ' + toggleCls + ' is-light js-toggle" data-uid="' + escHtml(u.uid) + '" data-status="' + u.status + '">'
+                    + '<span class="icon is-small"><i class="fa-solid fa-power-off"></i></span><span>' + toggleLabel + '</span></button>'
+                    + '</div></td></tr>';
+            });
+            html += '</tbody></table></div>';
+            $listEl.html(html);
+        }
+
+        // 渲染分页：支持选择每页数量
+        function renderPager(data) {
+            let total = data.total || 0;
+            if (total <= 0) {
+                $pagerEl.hide().empty();
+                return;
+            }
+            $pagerEl.show();
+            PassportPager.render($pagerEl, {
+                page: data.page || 1,
+                pages: data.pages || 1,
+                perPage: data.per_page || pageSize,
+                total: total,
+                onChange: function (page, perPage) {
+                    pageSize = perPage;
+                    loadUsers(page);
+                }
+            });
+        }
+
+        // --- 事件绑定 ---
+        $('#search-btn').on('click', function () { loadUsers(1); });
+        $('#search-input').on('keydown', function (e) {
+            if (e.key === 'Enter') loadUsers(1);
+        });
+
+        // --- 角色编辑 ---
+        $listEl.on('click', '.js-role', function () {
+            let uid = $(this).data('uid');
+            $.ajax({
+                url: '{{ url_for("root.api.admin_users") }}',
+                method: 'GET',
+                data: { keyword: uid, per_page: 1 },
+                success: function (res) {
+                    let users = (res.data && res.data.users) || [];
+                    let user = null;
+                    for (let i = 0; i < users.length; i++) {
+                        if (users[i].uid === uid) { user = users[i]; break; }
+                    }
+                    if (user) openRoleModal(user);
+                },
+                error: function (xhr) {
+                    alert('获取用户信息失败: ' + xhr.statusText);
+                }
+            });
+        });
+
+        function openRoleModal(user) {
+            $('#role-uid').val(user.uid);
+            $('#role-user-name').text(user.nickname || '—');
+            $('#role-user-uid').text(user.uid);
+            $('#role-user-avatar').html(avatarHtml(user.avatar, user.nickname));
+            $('#role-user-meta').html(
+                '性别：' + genderLabel(user.gender)
+                + ' &nbsp;地区：' + escHtml(user.location || '—')
+            );
+            let plats = platformRoles(user.role);
+            $('input[name="platform-role"]').each(function () {
+                $(this).prop('checked', plats.indexOf($(this).val()) !== -1);
+            });
+            let cr = clientRoles(user.role);
+            if (cr.length) {
+                $('#client-roles-tags').html(cr.map(function (r) {
+                    return '<span class="tag is-light is-size-7">' + escHtml(r) + '</span>';
+                }).join(''));
+                $('#client-roles-field').show();
+            } else {
+                $('#client-roles-field').hide();
+            }
+            $roleModal.addClass('is-active');
+        }
+
+        $roleModal.find('.modal-background, .delete').on('click', function () {
+            $roleModal.removeClass('is-active');
+        });
+        $('.js-close-role-modal').on('click', function () {
+            $roleModal.removeClass('is-active');
+        });
+
+        $('#save-role-btn').on('click', function () {
+            let uid = $('#role-uid').val();
+            if (!uid) return;
+            let roles = $('input[name="platform-role"]:checked').map(function () {
+                return $(this).val();
+            }).get();
+            let formData = new FormData();
+            formData.append('uid', uid);
+            formData.append('roles', roles.join(' '));
+            $.ajax({
+                url: '{{ url_for("root.api.admin_set_user_role") }}',
+                method: 'PUT',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (res) {
+                    if (res.success) {
+                        $roleModal.removeClass('is-active');
+                        loadUsers(currentPage);
+                    } else {
+                        alert('保存失败: ' + apiMessage(res, '未知错误'));
+                    }
+                },
+                error: function (xhr) {
+                    alert('网络错误: ' + xhr.statusText);
+                }
+            });
+        });
+
+        // --- 启用/禁用 ---
+        $listEl.on('click', '.js-toggle', function () {
+            let uid = $(this).data('uid');
+            let current = parseInt($(this).data('status'), 10);
+            let next = current === 0 ? 1 : 0;
+            if (next === 0 && !confirm('确定禁用该用户吗？禁用后该用户将无法登录。')) return;
+            let formData = new FormData();
+            formData.append('uid', uid);
+            formData.append('status', String(next));
+            $.ajax({
+                url: '{{ url_for("root.api.admin_set_user_status") }}',
+                method: 'PUT',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (res) {
+                    if (res.success) {
+                        loadUsers(currentPage);
+                    } else {
+                        alert('操作失败: ' + apiMessage(res, '未知错误'));
+                    }
+                },
+                error: function (xhr) {
+                    alert('网络错误: ' + xhr.statusText);
+                }
+            });
+        });
+
+        // 初始化
+        loadUsers(1);
+    });
+</script>
+{% endblock %}

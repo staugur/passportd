@@ -17,6 +17,7 @@
 - **多数据库支持**：SQLite（开发） / MySQL / PostgreSQL（生产）
 - **JWT 认证**：支持 HMAC-SHA256 和 RS256 双算法 JWT 签名
 - **RESTful API**：提供完整的注册、登录、用户信息、OIDC 客户端管理接口
+- **后台管理**：admin / superadmin 可管理用户角色与 OIDC 应用（内部应用标记），写操作记入安全审计日志
 
 ## 快速开始
 

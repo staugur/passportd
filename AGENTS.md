@@ -188,9 +188,9 @@ var $box = $('#sessions-box');
 输出用户平台角色必须**同时**满足两个条件：
 
 1. 客户端 `OAuthClient.scope` 含 `role`
-2. 客户端 name 在配置 `OIDC_INTERNAL_CLIENTS`（英文逗号分隔，容忍逗号两侧空格）内
+2. 客户端为「内部应用」：name 在配置 `OIDC_INTERNAL_CLIENTS`（英文逗号分隔，容忍逗号两侧空格）内，**或**数据库 `OAuthClient.is_internal` 为真（后台管理页面标记）
 
-- 名称集合统一由 `libs/oidc.py` 的 `internal_client_names()` 解析，判断入口为 `_is_internal_client()`，禁止在别处重复解析该配置
+- 判断入口统一为 `libs/oidc.py` 的 `_is_internal_client()`：先查配置 `internal_client_names()`，再查数据库 `is_internal_oauth_client()`，禁止在别处重复实现
 - 仅输出平台内置角色（小写 `admin` / `superadmin` / `user`），`ClientName:Role` 格式的客户端角色会被 `_platform_roles()` 过滤；用户无内置角色时兜底 `user`
 - 判定发生在 ID Token（`generate_user_info`）与 `/oidc/userinfo` 两处，**两处逻辑必须保持一致**
 - 修改客户端 scope 后已签发的 token 不会自动升级，需重新走一次授权流程
@@ -198,8 +198,21 @@ var $box = $('#sessions-box');
 ### 管理页面 role 选项
 
 - `templates/oidc.j2` 中 role 是普通复选框（`name="scope" value="role"`，非隐藏字段），仅当「应用名称」输入值命中 `INTERNAL_CLIENTS` 时才显示，显隐函数为 `toggleRoleScopeField()`
-- 该名称列表由 `views/front.py` 的 `oidc_client` 视图通过 `internal_clients` 变量注入模板
+- 该名称列表由 `views/front.py` 的 `oidc_client` 视图通过 `internal_clients` 变量注入模板（配置项与数据库 `is_internal` 标记的并集）
 - 非内部应用若库中已有 `role`，编辑时复选框仍会被自动勾选，提交后保留，避免误删
+
+## 后台管理
+
+- 内置 `admin` 或 `superadmin` 角色均可访问；页面路由在 `views/admin.py`（`/admin/users`、`/admin/clients`），API 在 `views/api.py`（`/api/admin/...`）
+- 后台权限由 `models/user.py` 的 `is_admin()` 判定（`ADMIN_ROLES`）
+- 页面鉴权在 `views/admin.py` 的 `bp.before_request` 中完成：未登录跳登录页、非管理员 403，并在后台请求上下文写入 `g.is_admin`；**不**使用 `app.before_request` 全局判定，避免每个请求都查角色
+- API 用 `api_admin_required` 装饰器（返回 `ADMIN_REQUIRED` JSON），同样按需查询
+- 布局导航的「后台」入口用模板函数 `current_user_is_admin()`（`app.jinja_env.globals` 注册，懒求值）
+- 用户管理以 `User` 为主体、`Auth` 仅作账号展示：列表展示昵称/头像/性别/地区与绑定账号，搜索/分页、设置内置平台角色（保留客户端角色）、启用禁用；禁止移除最后一个 superadmin、禁止禁用自己
+- 后台列表分页统一用共享组件 `static/js/pager.js`（`PassportPager.render`）：页码导航遵循 Bulma 官方 Pagination 结构（`nav.pagination.is-small > a.pagination-previous + a.pagination-next + ul.pagination-list`，当前页 `is-current` + `aria-current="page"`，边界 `is-disabled`，区间用 `li > span.pagination-ellipsis`）；每页数量选择（默认 10）用独立 Bulma 表单控件，不含跳页输入；两个后台页面均通过 `{% block extra_scripts %}` 引入
+- OIDC 应用管理**只有**「标记为内部应用」一项操作（`is_internal`），不提供编辑/删除
+- 后台写操作均写入安全审计日志（`admin_role_set` / `admin_user_status` / `admin_client_internal`），统一经 `views/api.py` 的 `_record_admin_audit()` 一次记两条：**操作者**名下 detail 含 `target_uid`（被操作对象），**被操作用户**名下 detail 含 `operator_uid`（管理员），便于双方各自在「安全」页查看；操作者与被操作者是同一人时只记一条
+- 安全页 `templates/security.j2` 的 `formatDetail` 需覆盖上述 detail 字段，`actionTag` 对 `admin_` 前缀单独着色
 
 ## 变更记录
 

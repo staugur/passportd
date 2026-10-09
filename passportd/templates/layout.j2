@@ -295,6 +295,12 @@
                         <span class="icon"><i class="fa-solid fa-shield-halved"></i></span>
                         <span>安全</span>
                     </a>
+                    {% if current_user_is_admin() %}
+                    <a class="navbar-item" href="{{ url_for('root.admin.users') }}">
+                        <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
+                        <span>后台</span>
+                    </a>
+                    {% endif %}
                     <div class="navbar-item">
                         <a class="button is-light" href="{{ url_for('root.front.signout') }}">登出</a>
                     </div>
@@ -376,6 +382,11 @@
             'PASSKEY_ERROR': 'Passkey 操作失败',
             'TOKEN_GENERATE_FAILED': '生成令牌失败',
             'COOKIE_FAILED': '设置登录态失败',
+            'ADMIN_REQUIRED': '需要管理员权限',
+            'USER_NOT_FOUND': '用户不存在',
+            'CLIENT_NOT_FOUND': '客户端不存在',
+            'ROLE_INVALID': '角色不合法',
+            'LAST_SUPERADMIN': '不能移除最后一个超级管理员',
         };
 
         // 将 API 错误响应转成本地语言文案：优先映射 code，其次回退 message，最后兜底参数/通用文案

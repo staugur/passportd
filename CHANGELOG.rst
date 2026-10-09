@@ -1,6 +1,25 @@
 更新日志
 ========
 
+v2.9.0
+------
+
+新特性
+~~~~~~
+
+- 新增后台管理功能，admin / superadmin 角色均可访问，支持用户角色管理与 OIDC 应用管理。
+- OIDC 应用可在后台标记为内部应用，等效于配置项 ``OIDC_INTERNAL_CLIENTS``。
+- 后台写操作（用户角色、启用禁用、内部应用标记）记入安全审计日志，操作者与被操作用户均可查看。
+
+.. code-block:: sql
+
+   ALTER TABLE passport_oauth_client ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT FALSE;
+
+修复
+~~~~
+
+- 修复删库后 CLI 命令（如创建超级管理员）因表未创建而报错的问题，命令现在会先自举建表
+
 v2.8.6
 ------
 

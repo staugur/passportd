@@ -267,11 +267,15 @@ def _normalize_roles(role_args):
 
 @contextmanager
 def _db_conn():
-    """打开数据库连接，命令执行结束后关闭（CLI 场景使用）。"""
-    from .models.model import db
+    """打开数据库连接，命令执行结束后关闭（CLI 场景使用）。
+
+    连接后先确保表结构存在（初次运行或删库后建表），再执行命令。
+    """
+    from .models.model import db, init_db
 
     db.connect(reuse_if_open=True)
     try:
+        init_db()
         yield
     finally:
         db.close()

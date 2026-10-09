@@ -1,0 +1,238 @@
+{% extends "layout.j2" %}
+{% block title %}后台 · OIDC 应用 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="container" style="max-width: 1000px;">
+
+        {# 页头 #}
+        <div class="mb-5">
+            <h1 class="title is-4 mb-1">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
+                    <span>后台管理</span>
+                </span>
+            </h1>
+            <p class="subtitle is-6 has-text-grey mb-0">仅管理员（admin / superadmin）可访问</p>
+        </div>
+
+        {# 后台导航 #}
+        <div class="tabs is-toggle is-small mb-5">
+            <ul>
+                <li>
+                    <a href="{{ url_for('root.admin.users') }}">
+                        <span class="icon is-small"><i class="fa-solid fa-users"></i></span>
+                        <span>用户管理</span>
+                    </a>
+                </li>
+                <li class="is-active">
+                    <a href="{{ url_for('root.admin.clients') }}">
+                        <span class="icon is-small"><i class="fa-solid fa-server"></i></span>
+                        <span>OIDC 应用</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        {# 搜索 #}
+        <div class="field is-grouped mb-4">
+            <div class="control is-expanded">
+                <input class="input" type="text" id="search-input" placeholder="按应用名称或所有者搜索">
+            </div>
+            <div class="control">
+                <button class="button is-primary" id="search-btn">
+                    <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <span>搜索</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="error-notice" class="notification is-danger is-light is-hidden">
+            <button class="delete"></button>
+            <span id="error-msg"></span>
+        </div>
+
+        <div id="loading-notice" class="has-text-centered py-6 is-hidden">
+            <span class="icon is-large has-text-grey-light"><i class="fa-solid fa-spinner fa-pulse fa-2x"></i></span>
+            <p class="has-text-grey mt-2">加载中...</p>
+        </div>
+
+        <div id="client-list"></div>
+
+        {# 分页（由 static/js/pager.js 渲染） #}
+        <div id="pager" class="mt-5" style="display:none;"></div>
+
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/pager.js') }}"></script>
+<script>
+    $(function () {
+        let $listEl = $('#client-list');
+        let $loadingEl = $('#loading-notice');
+        let $errorEl = $('#error-notice');
+        let $errorMsgEl = $('#error-msg');
+        let $pagerEl = $('#pager');
+        let pageSize = 10;
+        let currentPage = 1;
+
+        // --- 通用 ---
+        $errorEl.find('.delete').on('click', function () {
+            $errorEl.addClass('is-hidden');
+        });
+
+        function showError(msg) {
+            $errorMsgEl.text(msg);
+            $errorEl.removeClass('is-hidden');
+        }
+
+        function escHtml(str) {
+            return $('<div>').text(str === undefined || str === null ? '' : str).html();
+        }
+
+        function scopeTags(scope, isInternal) {
+            let scopes = (scope || '').split(' ').filter(function (s) { return s; });
+            if (!scopes.length) return '<span class="has-text-grey-light">—</span>';
+            return scopes.map(function (s) {
+                let cls = 'is-info is-light';
+                if (s === 'role') cls = isInternal ? 'is-danger is-light' : 'is-light';
+                return '<span class="tag ' + cls + ' is-size-7 mr-1">' + escHtml(s) + '</span>';
+            }).join('');
+        }
+
+        // --- 加载列表 ---
+        function loadClients(page) {
+            currentPage = page || 1;
+            $loadingEl.removeClass('is-hidden');
+            $errorEl.addClass('is-hidden');
+            $listEl.empty();
+            $.ajax({
+                url: '{{ url_for("root.api.admin_oidc_clients") }}',
+                method: 'GET',
+                data: { page: currentPage, per_page: pageSize, keyword: $('#search-input').val().trim() },
+                success: function (res) {
+                    $loadingEl.addClass('is-hidden');
+                    if (!res.success) {
+                        showError(apiMessage(res, '加载失败'));
+                        return;
+                    }
+                    let data = res.data || {};
+                    clientsCache = data.clients || [];
+                    renderClients(clientsCache);
+                    renderPager(data);
+                },
+                error: function (xhr) {
+                    $loadingEl.addClass('is-hidden');
+                    showError('网络错误: ' + xhr.statusText);
+                }
+            });
+        }
+
+        function renderClients(clients) {
+            if (!clients.length) {
+                $listEl.html('<div class="box has-text-centered has-text-grey py-6">'
+                    + '<span class="icon is-large"><i class="fa-solid fa-folder-open fa-2x"></i></span>'
+                    + '<p class="mt-3">没有匹配的应用</p></div>');
+                return;
+            }
+            let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable">'
+                + '<thead><tr>'
+                + '<th>应用名称</th>'
+                + '<th>Client ID</th>'
+                + '<th>所有者</th>'
+                + '<th>授权范围</th>'
+                + '<th>内部应用</th>'
+                + '<th style="width: 140px;">操作</th>'
+                + '</tr></thead><tbody>';
+            $.each(clients, function (_, c) {
+                let internalBadge = c.is_internal
+                    ? '<span class="tag is-danger is-light">内部</span>'
+                    : '<span class="tag is-light">外部</span>';
+                let owner = c.owner_nickname
+                    ? escHtml(c.owner_nickname) + '<br><code class="is-size-7 has-text-grey">' + escHtml(c.uid) + '</code>'
+                    : '<code class="is-size-7 has-text-grey">' + escHtml(c.uid) + '</code>';
+                let nextInternal = c.is_internal ? 0 : 1;
+                let btnCls = c.is_internal ? 'is-warning' : 'is-primary';
+                let btnText = c.is_internal ? '取消内部' : '标记内部';
+                html += '<tr>'
+                    + '<td class="has-text-weight-semibold">' + escHtml(c.name) + '</td>'
+                    + '<td><code class="is-size-7">' + escHtml(c.client_id) + '</code></td>'
+                    + '<td class="is-size-7">' + owner + '</td>'
+                    + '<td>' + scopeTags(c.scope, c.is_internal) + '</td>'
+                    + '<td>' + internalBadge + '</td>'
+                    + '<td><button class="button ' + btnCls + ' is-light is-small js-internal"'
+                    + ' data-id="' + escHtml(c.client_id) + '"'
+                    + ' data-name="' + escHtml(c.name) + '"'
+                    + ' data-next="' + nextInternal + '">'
+                    + '<span class="icon is-small"><i class="fa-solid fa-shield-halved"></i></span>'
+                    + '<span>' + btnText + '</span></button></td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table></div>';
+            $listEl.html(html);
+        }
+
+        // 渲染分页：支持选择每页数量
+        function renderPager(data) {
+            let total = data.total || 0;
+            if (total <= 0) {
+                $pagerEl.hide().empty();
+                return;
+            }
+            $pagerEl.show();
+            PassportPager.render($pagerEl, {
+                page: data.page || 1,
+                pages: data.pages || 1,
+                perPage: data.per_page || pageSize,
+                total: total,
+                onChange: function (page, perPage) {
+                    pageSize = perPage;
+                    loadClients(page);
+                }
+            });
+        }
+
+        // --- 事件绑定 ---
+        $('#search-btn').on('click', function () { loadClients(1); });
+        $('#search-input').on('keydown', function (e) {
+            if (e.key === 'Enter') loadClients(1);
+        });
+
+        // --- 标记 / 取消内部应用 ---
+        $listEl.on('click', '.js-internal', function () {
+            let clientId = $(this).data('id');
+            let name = $(this).data('name');
+            let next = parseInt($(this).data('next'), 10);
+            let tip = next === 1
+                ? '确定将应用「' + name + '」标记为内部应用吗？标记后该应用可获得用户平台角色。'
+                : '确定取消应用「' + name + '」的内部应用标记吗？取消后该应用将不再输出用户平台角色。';
+            if (!confirm(tip)) return;
+            let formData = new FormData();
+            formData.append('client_id', clientId);
+            formData.append('is_internal', String(next));
+            $.ajax({
+                url: '{{ url_for("root.api.admin_set_oidc_client_internal") }}',
+                method: 'PUT',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (res) {
+                    if (res.success) {
+                        loadClients(currentPage);
+                    } else {
+                        alert('操作失败: ' + apiMessage(res, '未知错误'));
+                    }
+                },
+                error: function (xhr) {
+                    alert('网络错误: ' + xhr.statusText);
+                }
+            });
+        });
+
+        // 初始化
+        loadClients(1);
+    });
+</script>
+{% endblock %}

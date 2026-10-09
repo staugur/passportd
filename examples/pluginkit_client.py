@@ -9,11 +9,11 @@ app.secret_key = getenv("SECRET_KEY", "dev-secret-change-me")
 app.config.update(
     PASSPORTD_OIDC_CLIENT_ID=getenv(
         "PASSPORTD_OIDC_CLIENT_ID",
-        "LitzywCR8H1dmpxieKJp2nag",
+        "",
     ),
     PASSPORTD_OIDC_CLIENT_SECRET=getenv(
         "PASSPORTD_OIDC_CLIENT_SECRET",
-        "ysSUqMYsf9LDdEm6UpDn6nBhElNEMd9MCV3v85keooPz6nyG",
+        "",
     ),
     PASSPORTD_OIDC_SERVER_METADATA_URL=getenv(
         "PASSPORTD_OIDC_SERVER_METADATA_URL",

@@ -85,6 +85,10 @@ Mixin 类
     :members:
     :undoc-members:
 
+.. automodule:: passportd.models.audit
+    :members:
+    :undoc-members:
+
 OIDC 模块
 ----------
 
@@ -133,6 +137,13 @@ OIDC 视图
 ~~~~~~~~~~
 
 .. automodule:: passportd.views.oidc
+    :members:
+    :undoc-members:
+
+后台管理视图
+~~~~~~~~~~~~
+
+.. automodule:: passportd.views.admin
     :members:
     :undoc-members:
 

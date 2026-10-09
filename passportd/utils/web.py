@@ -40,6 +40,7 @@ from ..models.user import (
     create_session,
     delete_session,
     generate_jwt,
+    is_admin,
     verify_jwt,
 )
 from .common import parse_account_classify, rdb
@@ -307,6 +308,44 @@ def apilogin_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
+
+def api_admin_required(f):
+    """装饰器：要求当前登录用户拥有后台管理权限，否则抛出 ApiError（403）。
+
+    后台管理权限指内置 ``admin`` 或 ``superadmin`` 角色。用于后台管理 API
+    路由保护，返回 JSON 错误而非页面重定向。
+    """
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not g.signin:
+            raise ApiError(
+                "no permission to access",
+                code=ErrorCode.NO_PERMISSION,
+                status_code=403,
+            )
+        if not is_admin(g.user.get("uid", "")):
+            raise ApiError(
+                "admin permission required",
+                code=ErrorCode.ADMIN_REQUIRED,
+                status_code=403,
+            )
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def current_user_is_admin() -> bool:
+    """模板辅助函数：当前登录用户是否拥有后台管理权限。
+
+    仅在模板引用时求值（如布局导航的「后台」入口），避免在全局请求钩子中
+    为每个请求提前查询角色，减少无谓的数据库交互。
+    """
+
+    if not g.get("signin"):
+        return False
+    return is_admin(g.user.get("uid", ""))
 
 
 # 内网地址段：RFC 1918 + CGNAT + 环回 + 链路本地

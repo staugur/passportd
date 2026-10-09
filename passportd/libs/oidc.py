@@ -36,7 +36,12 @@ from ..basis.vars import (
     OIDC_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
     PROC_NAME,
 )
-from ..models.oidc import get_oauth_client, get_oauth_token, save_oauth_token
+from ..models.oidc import (
+    get_oauth_client,
+    get_oauth_token,
+    is_internal_oauth_client,
+    save_oauth_token,
+)
 from ..models.user import get_user_by_uid, get_user_email
 from ..utils.common import compute_kid, now, rdb, read_rsa_private_key
 from ..utils.web import absolute_url, get_ip
@@ -83,12 +88,16 @@ def internal_client_names() -> set:
 def _is_internal_client(client_name: str) -> bool:
     """判断客户端是否为内部（自家）应用。
 
-    仅内部应用可获得用户平台角色，列表见 ``OIDC_INTERNAL_CLIENTS``。
+    内部应用由配置项 ``OIDC_INTERNAL_CLIENTS`` 或客户端数据库标记
+    （``OAuthClient.is_internal``，可通过后台管理页面维护）任一命中即为内部
+    应用。仅内部应用可获得用户平台角色。
 
     :param client_name: 客户端名称
     :returns: 是内部应用返回 True，否则 False
     """
-    return client_name in internal_client_names()
+    if client_name and client_name in internal_client_names():
+        return True
+    return is_internal_oauth_client(client_name)
 
 
 def _platform_roles(role: str) -> str:

@@ -48,7 +48,7 @@ def create_app():
     from .basis.errors import ApiError
     from .basis.common import new_res, is_passkey_enabled
     from .utils.common import logger
-    from .utils.web import parse_user_state
+    from .utils.web import current_user_is_admin, parse_user_state
     from .models.model import db, init_db
     from .models.user import get_user_background_image
     from .views.root import root
@@ -62,6 +62,8 @@ def create_app():
     app.response_class = JsonResponse
     app.config.update(config)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_for=1)
+    #: 模板函数：当前用户是否有后台管理权限（懒求值，仅模板引用时查询）
+    app.jinja_env.globals["current_user_is_admin"] = current_user_is_admin
     app.register_blueprint(root, url_prefix=config.get("URI_PREFIX"))
     app.register_blueprint(blueprint, url_prefix="/pluginmanager")
 
