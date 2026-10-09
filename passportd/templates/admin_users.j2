@@ -177,8 +177,11 @@
         }
 
         function platformRoles(role) {
+            // 内置角色统一小写展示，兼容历史数据中的 SuperAdmin 等形式
             return (role || '').split(' ').filter(function (r) {
                 return r && r.indexOf(':') === -1;
+            }).map(function (r) {
+                return r.toLowerCase();
             });
         }
 

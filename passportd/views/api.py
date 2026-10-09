@@ -75,6 +75,7 @@ from ..models.user import (
 )
 from ..utils.common import (
     generate_digital_verification_code,
+    normalize_builtin_role,
     parse_account_classify,
     parse_encrypted_password,
     rdb,
@@ -1119,7 +1120,10 @@ def admin_set_user_role():
 
     # 防止移除最后一个 superadmin 导致后台失联
     profile = get_user_by_uid(uid) or {}
-    current_roles = (profile.get("role") or "").split()
+    # 归一化大小写，兼容历史数据中的 SuperAdmin 等形式
+    current_roles = {
+        normalize_builtin_role(r) for r in (profile.get("role") or "").split()
+    }
     if (
         "superadmin" not in roles
         and "superadmin" in current_roles

@@ -43,7 +43,13 @@ from ..models.oidc import (
     save_oauth_token,
 )
 from ..models.user import get_user_by_uid, get_user_email
-from ..utils.common import compute_kid, now, rdb, read_rsa_private_key
+from ..utils.common import (
+    compute_kid,
+    normalize_builtin_role,
+    now,
+    rdb,
+    read_rsa_private_key,
+)
 from ..utils.web import absolute_url, get_ip
 
 
@@ -105,12 +111,19 @@ def _platform_roles(role: str) -> str:
 
     用户角色以空格分隔，内置角色（小写 admin / superadmin / user）与
     客户端角色（``ClientName:Role``）混合存储。这里仅保留不含 ``:``
-    的内置角色；若没有内置角色则回退为 ``user``。
+    的内置角色并统一小写输出（兼容历史数据中的 ``SuperAdmin`` 等形式）；
+    若没有内置角色则回退为 ``user``。
 
     :param role: 用户角色字符串
     :returns: 平台角色字符串
     """
-    roles = [r for r in (role or "").split() if ":" not in r]
+    roles = []
+    for raw in (role or "").split():
+        if ":" in raw:
+            continue
+        name = normalize_builtin_role(raw)
+        if name and name not in roles:
+            roles.append(name)
     if not roles:
         return "user"
     return " ".join(roles)

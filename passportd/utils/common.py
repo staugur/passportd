@@ -209,6 +209,24 @@ def is_valid_ipv4(ip):
     return fullmatch(pattern, ip) is not None
 
 
+#: 内置平台角色的规范形式（统一小写存储）
+BUILTIN_ROLES: Tuple[str, ...] = ("superadmin", "admin", "user")
+
+
+def normalize_builtin_role(role: str) -> str:
+    """把内置平台角色归一化为小写，非内置角色（含客户端角色）原样返回。
+
+    历史数据中可能残留 ``SuperAdmin`` 等混合大小写形式，所有角色**判定/展示**
+    统一经此函数归一化，避免因大小写导致权限判断失败；角色**校验与存储**仍由
+    :func:`is_valid_user_role` 严格限制为小写。
+
+    :param role: 单个角色名，如 ``SuperAdmin``
+    :returns: 归一化后的角色名，如 ``superadmin``
+    """
+    text = (role or "").strip()
+    return text.lower() if text.lower() in BUILTIN_ROLES else text
+
+
 def is_valid_user_role(role: str) -> bool:
     """校验用户角色格式是否合法。
 
@@ -221,7 +239,7 @@ def is_valid_user_role(role: str) -> bool:
     :param role: 角色字符串
     :returns: 合法返回 True，否则 False
     """
-    if role in ("superadmin", "admin", "user"):
+    if role in BUILTIN_ROLES:
         return True
     if isinstance(role, str):
         parts = role.split(":")

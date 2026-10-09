@@ -53,6 +53,7 @@ from ..utils.common import (
     is_valid_user_role,
     is_valid_http_url,
     logger,
+    normalize_builtin_role,
     rdb,
 )
 
@@ -100,16 +101,24 @@ def is_admin(uid: str) -> bool:
     role = User.select(User.role).where(User.uid == uid).scalar()
     if not role:
         return False
-    return any(r in ADMIN_ROLES for r in (role or "").split())
+    return any(
+        normalize_builtin_role(r) in ADMIN_ROLES for r in (role or "").split()
+    )
 
 
 def count_superadmins() -> int:
-    """统计拥有内置 superadmin 角色的用户数。
+    """统计拥有内置 superadmin 角色的用户数（忽略大小写，兼容历史数据）。
 
     :returns: superadmin 用户数量
     """
-    query = User.select(User.role).where(User.role.contains("superadmin"))
-    return sum(1 for u in query if "superadmin" in (u.role or "").split())
+    return sum(
+        1
+        for u in User.select(User.role)
+        if any(
+            normalize_builtin_role(r) == "superadmin"
+            for r in (u.role or "").split()
+        )
+    )
 
 
 def admin_list_users(

@@ -253,16 +253,29 @@ def _normalize_roles(role_args):
     :raises click.ClickException: 含非法角色时抛出
     """
     # 延迟导入避免 CLI 帮助信息加载时引入重依赖
-    from .utils.common import is_valid_user_role
+    from .utils.common import is_valid_user_role, normalize_builtin_role
 
     roles = []
     for raw in role_args:
         # 内置角色统一小写，客户端角色（ClientName:Role）原样保留
-        norm = raw.lower() if ":" not in raw else raw
+        norm = normalize_builtin_role(raw)
         if not is_valid_user_role(norm):
             raise click.ClickException(f"invalid role: {raw}")
         roles.append(norm)
     return roles
+
+
+def _split_roles(role_text):
+    """拆分角色字符串并归一化内置角色大小写。
+
+    兼容历史数据中的 ``SuperAdmin`` 等形式；客户端角色（含 ``:``）原样保留。
+
+    :param role_text: 空格分隔的角色字符串
+    :returns: 归一化后的角色列表
+    """
+    from .utils.common import normalize_builtin_role
+
+    return [normalize_builtin_role(r) for r in (role_text or "").split()]
 
 
 @contextmanager
@@ -294,13 +307,12 @@ def role_list(role_filter):
     from .models.model import User
 
     with _db_conn():
-        admins = [
-            u
-            for u in User.select()
-            if any(r in ("admin", "superadmin") for r in (u.role or "").split())
-        ]
-        if role_filter:
-            admins = [u for u in admins if role_filter in (u.role or "").split()]
+        admins = []
+        for u in User.select():
+            roles = _split_roles(u.role)
+            if "admin" in roles or "superadmin" in roles:
+                if not role_filter or role_filter in roles:
+                    admins.append(u)
         if not admins:
             click.echo("No admin user found")
             return
@@ -345,7 +357,7 @@ def role_add(uid, roles):
     norm_roles = _normalize_roles(roles)
     with _db_conn():
         u = _get_user_or_exit(uid)
-        current = (u.role or "").split()
+        current = _split_roles(u.role)
         for r in norm_roles:
             if r not in current:
                 current.append(r)
@@ -370,7 +382,7 @@ def role_remove(uid, roles):
     norm_roles = _normalize_roles(roles)
     with _db_conn():
         u = _get_user_or_exit(uid)
-        current = (u.role or "").split()
+        current = _split_roles(u.role)
         for r in norm_roles:
             if r in current:
                 current.remove(r)

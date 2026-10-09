@@ -13,6 +13,7 @@ from passportd.utils.common import (
     multi_phone_check,
     appname_check,
     is_valid_user_role,
+    normalize_builtin_role,
     gen_uid,
     jwt_encode,
     jwt_decode,
@@ -194,6 +195,18 @@ class UtilsTest(unittest.TestCase):
         self.assertFalse(is_valid_user_role("invalid"))
         self.assertFalse(is_valid_user_role(""))
         self.assertFalse(is_valid_user_role("too:many:parts"))
+
+    def test_normalize_builtin_role(self):
+        # 内置角色忽略大小写，统一小写
+        self.assertEqual(normalize_builtin_role("SuperAdmin"), "superadmin")
+        self.assertEqual(normalize_builtin_role("Admin"), "admin")
+        self.assertEqual(normalize_builtin_role("USER"), "user")
+        self.assertEqual(normalize_builtin_role(" admin "), "admin")
+        # 客户端角色与其他非内置角色原样返回
+        self.assertEqual(normalize_builtin_role("myapp:Admin"), "myapp:Admin")
+        self.assertEqual(normalize_builtin_role("editor"), "editor")
+        self.assertEqual(normalize_builtin_role(""), "")
+        self.assertEqual(normalize_builtin_role(None), "")
 
     # ==================== JWT ====================
 
