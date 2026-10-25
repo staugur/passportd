@@ -488,6 +488,22 @@ class OIDCOpenIDCode(OpenIDCode):
         """
         return read_rsa_private_key()
 
+    def get_encode_header(self, client):
+        """构造 ID Token 的 JWS 头，显式写入 ``kid``（RFC 7638 指纹）。
+
+        默认 authlib 实现仅从 ``get_jwt_config()`` 读取 kid（本项目未实现），
+        导致签发的 id_token 不带 kid。客户端在密钥轮换后无法触发
+        ``InvalidKeyIdError`` 从而强制刷新 JWKS，旧公钥缓存会造成永久的
+        ``BadSignatureError``。这里写入与 JWKS 端点一致的 kid，使客户端可
+        据此检测密钥变更并重新拉取 JWKS。
+
+        :param client: OAuth2 客户端实例
+        :returns: 含 alg 与 kid 的 JWS 头字典
+        """
+        header = {"alg": self.get_client_algorithm(client)}
+        header["kid"] = compute_kid(read_rsa_private_key())
+        return header
+
     def encode_id_token(self, token, request):
         """重写以在签发 ID Token 前记录当前客户端信息。
 
