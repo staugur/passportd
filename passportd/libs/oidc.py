@@ -546,7 +546,7 @@ class OIDCOpenIDCode(OpenIDCode):
 
         - openid: 仅 sub
         - profile: + nickname, gender, picture, location, bio, status
-        - email: + email
+        - email: + email, email_verified
         - role: + role（仅内部客户端，见 ``OIDC_INTERNAL_CLIENTS`` 配置）
 
         :param user: 用户标识（uid）
@@ -572,6 +572,8 @@ class OIDCOpenIDCode(OpenIDCode):
             email = get_user_email(str(user))
             if email:
                 user_info["email"] = email
+                # 邮箱账号注册/绑定均需通过验证码校验，入库即已验证
+                user_info["email_verified"] = True
 
         if "role" in scopes:
             client_name = getattr(g, "_oidc_client_name", "")

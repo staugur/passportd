@@ -172,7 +172,7 @@ def userinfo():
 
     - ``openid``: 仅 sub(uid)
     - ``+ profile``: + nickname, bio, gender, picture, location, status
-    - ``+ email``: + email
+    - ``+ email``: + email, email_verified
     - ``+ role``: + role（仅内部客户端，见 ``OIDC_INTERNAL_CLIENTS`` 配置）
 
     :returns: 用户信息 JSON
@@ -203,6 +203,8 @@ def userinfo():
         email = get_user_email(uid)
         if email:
             result["email"] = email
+            # 邮箱账号注册/绑定均需通过验证码校验，入库即已验证
+            result["email_verified"] = True
 
     if "role" in scopes:
         client_id = current_token.token_data.get("client_id", "")
