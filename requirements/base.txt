@@ -3,7 +3,7 @@ Flask-PluginKit==3.12.1
 peewee[mysql,psycopg3]==4.2.6
 shortuuid==1.0.13
 authlib==1.9.3
-joserfc==1.7.4
+joserfc==1.7.6
 requests==2.34.2
 redis==5.3.1
 prometheus-client==0.26.0
