@@ -85,6 +85,8 @@ class User(Model):
     location = CharField(default="")
     #: 本地账号密码哈希（第三方用户为 NULL）
     password_hash = CharField(max_length=256, null=True)
+    #: 登录会话保持时长（秒，适用于 Passkey 与第三方登录），0 表示默认值
+    session_expire = IntegerField(default=0)
     #: 生成时间戳与修改资料时间戳
     ctime = IntegerField(default=now)
     mtime = IntegerField(default=0)
@@ -353,6 +355,11 @@ def init_db() -> None:
             User._meta.table_name,
             "background_image",
             "VARCHAR(255) NOT NULL DEFAULT ''",
+        )
+        _ensure_column(
+            User._meta.table_name,
+            "session_expire",
+            "INTEGER NOT NULL DEFAULT 0",
         )
         # 布尔列默认值按数据库方言区分：SQLite 用 0，MySQL/PostgreSQL 用 FALSE
         _bool_default = "0" if isinstance(db, SqliteDatabase) else "FALSE"

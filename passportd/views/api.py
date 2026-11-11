@@ -15,7 +15,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import csv
 from functools import wraps
+from io import StringIO
+from time import localtime, strftime, time
 
 from flask import Blueprint, abort, g, request, Response
 from werkzeug.security import check_password_hash
@@ -39,9 +42,15 @@ from ..libs.interface import (
     VCodeInterface,
 )
 from ..libs.geetest import GeetestLib, get_bypass_cache
-from ..models.audit import list_audit_logs, record_audit_log
+from ..models.audit import (
+    admin_list_audit_logs,
+    list_audit_logs,
+    record_audit_log,
+)
 from ..models.model import User
 from ..models.oidc import (
+    admin_delete_oauth_client,
+    admin_get_oauth_client,
     admin_set_client_internal,
     count_oauth_authorizations,
     create_oauth_client,
@@ -54,7 +63,9 @@ from ..models.oidc import (
 )
 from ..models.user import (
     add_account,
+    admin_list_login_records,
     admin_list_users,
+    admin_user_detail,
     change_password,
     count_superadmins,
     delete_account,
@@ -62,6 +73,7 @@ from ..models.user import (
 )
 from ..models.user import get_account as get_auth
 from ..models.user import (
+    get_login_session_expire,
     get_user_by_uid,
     has_account,
     has_uid,
@@ -69,6 +81,7 @@ from ..models.user import (
     list_active_sessions,
     list_login_records,
     register_vcode,
+    set_login_session_expire,
     set_platform_roles,
     set_username,
     update_profile,
@@ -85,6 +98,7 @@ from ..utils.common import (
 from ..utils.web import (
     apilogin_required,
     api_admin_required,
+    api_superadmin_required,
     auto_set_user_state,
     check_sms_rate_limit,
     get_ip,
@@ -132,18 +146,51 @@ def user_audit_log():
 def user_sessions():
     """获取当前用户的活跃会话列表。
 
-    返回未过期的活跃会话，包含设备、IP（含地理位置）、浏览器、登录时间。
+    返回未过期的活跃会话，包含设备、IP（含地理位置）、浏览器、登录时间，
+    以及服务端计算的剩余有效期（秒），避免依赖客户端时钟。
 
     :returns: data 中包含 sessions 列表
     """
     uid = g.user["uid"]
+    now_ts = int(time())
     sessions = list_active_sessions(uid=uid)
     for s in sessions:
-        # 移除前端不需要的字段
+        # 移除前端不需要的字段，并补充剩余有效期
         s.pop("id", None)
         s.pop("user_agent", None)
-        s.pop("expire_time", None)
+        expire_time = int(s.get("expire_time") or 0)
+        s["expire_in"] = max(0, expire_time - now_ts)
     return new_res(success=True, data=dict(sessions=sessions))
+
+
+@bp.put("/user/session/expire")
+@apilogin_required
+def user_session_expire_set():
+    """设置使用 Passkey 或第三方账号登录时的会话保持时长。
+
+    :form expire: 会话保持时长（秒），需为可选档位之一
+    :returns: 设置生效的时长
+    """
+    uid = g.user["uid"]
+    expire = request.form.get("expire", type=int)
+    if not expire:
+        raise ApiError("expire is required", code=ErrorCode.PARAM_ERROR)
+    try:
+        value = set_login_session_expire(uid, expire)
+    except ParamError:
+        raise ApiError(
+            "invalid session expire value", code=ErrorCode.PARAM_ERROR
+        )
+    except AuthError:
+        raise ApiError("user not found", code=ErrorCode.USER_NOT_FOUND)
+    record_audit_log(
+        uid=uid,
+        action="session_expire_set",
+        detail={"expire": value},
+        ip=get_ip(),
+        user_agent=request.headers.get("User-Agent", ""),
+    )
+    return new_res(success=True, data=dict(expire=value))
 
 
 @bp.post("/user/change_password")
@@ -896,7 +943,8 @@ def passkey_login_verify():
             code=ErrorCode.ACCOUNT_NOT_FOUND,
         )
 
-    expire = 7200
+    # 会话保持时长支持用户在安全页自定义，未设置时使用默认值
+    expire = get_login_session_expire(uid)
     ret = auto_set_user_state(
         account=account,
         expire=expire,
@@ -1090,20 +1138,50 @@ def _parse_page_args(default_per_page: int = 10) -> tuple:
     return max(1, page), max(1, min(per_page, 100))
 
 
+def _parse_ts_arg(name: str):
+    """解析 Unix 时间戳查询参数，缺失或非法时返回 None。"""
+    value = request.args.get(name, "")
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _admin_user_filters() -> dict:
+    """收集后台用户列表的筛选与排序参数。"""
+    status_raw = request.args.get("status", "")
+    return dict(
+        keyword=request.args.get("keyword", "").strip(),
+        status=int(status_raw) if status_raw in ("0", "1") else None,
+        role=request.args.get("role", "").strip(),
+        login_type=request.args.get("login_type", "").strip(),
+        start=_parse_ts_arg("start"),
+        end=_parse_ts_arg("end"),
+        order=request.args.get("order", "ctime").strip(),
+    )
+
+
 @bp.get("/admin/users")
 @api_admin_required
 def admin_users():
-    """后台：分页查询用户列表（支持按 uid/昵称/账号搜索）。
+    """后台：分页查询用户列表（支持搜索、筛选与排序）。
 
-    :query keyword: 搜索关键词（可选）
+    :query keyword: 搜索关键词（uid / 昵称 / 账号）
+    :query status: 状态筛选，0 禁用 / 1 启用
+    :query role: 平台角色筛选（superadmin / admin / user）
+    :query login_type: 登录方式筛选：password / third / passkey
+    :query start: 注册时间下界（Unix 时间戳）
+    :query end: 注册时间上界（Unix 时间戳）
+    :query order: 排序方式：ctime（默认）或 last_login
     :query page: 页码，默认 1
     :query per_page: 每页条数，默认 10
     :returns: data 中包含 users、total、page、per_page、pages
     """
-    keyword = request.args.get("keyword", "").strip()
     page, per_page = _parse_page_args()
     users, total = admin_list_users(
-        keyword=keyword, page=page, per_page=per_page
+        page=page, per_page=per_page, **_admin_user_filters()
     )
     pages = (total + per_page - 1) // per_page if per_page else 0
     return new_res(
@@ -1118,10 +1196,170 @@ def admin_users():
     )
 
 
-@bp.put("/admin/user/role")
+@bp.get("/admin/user/detail")
 @api_admin_required
+def admin_user_detail_api():
+    """后台：查看单个用户的聚合详情。
+
+    :query uid: 目标用户 uid（必填）
+    :returns: data 为包含资料、账号、会话、登录与审计的详情字典
+    """
+    uid = request.args.get("uid", "").strip()
+    if not uid:
+        raise ApiError("uid is required", code=ErrorCode.PARAM_ERROR)
+    detail = admin_user_detail(uid)
+    if not detail:
+        raise ApiError("user not found", code=ErrorCode.USER_NOT_FOUND)
+    return new_res(success=True, data=detail)
+
+
+@bp.get("/admin/users/export")
+@api_superadmin_required
+def admin_users_export():
+    """后台：按当前筛选条件导出用户 CSV（仅 superadmin）。
+
+    :returns: text/csv 附件
+    """
+    filters = _admin_user_filters()
+    filters.pop("order", None)
+    rows = []
+    page = 1
+    while len(rows) < 5000:
+        users, total = admin_list_users(
+            page=page, per_page=100, **filters
+        )
+        if not users:
+            break
+        rows.extend(users)
+        if len(rows) >= total:
+            break
+        page += 1
+
+    buf = StringIO()
+    # BOM 便于 Excel 正确识别 UTF-8
+    buf.write("\ufeff")
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "uid",
+            "昵称",
+            "绑定账号",
+            "性别",
+            "地区",
+            "平台角色",
+            "状态",
+            "注册时间",
+            "最后登录",
+        ]
+    )
+    gender_map = {0: "女", 1: "男"}
+    for u in rows:
+        accounts = "; ".join(a.get("account", "") for a in u["accounts"])
+        ctime = strftime("%Y-%m-%d %H:%M:%S", localtime(u["ctime"]))
+        last = (
+            strftime("%Y-%m-%d %H:%M:%S", localtime(u["last_login"]))
+            if u.get("last_login")
+            else ""
+        )
+        writer.writerow(
+            [
+                u["uid"],
+                u.get("nickname", ""),
+                accounts,
+                gender_map.get(u.get("gender"), "未知"),
+                u.get("location", ""),
+                u.get("role", ""),
+                "禁用" if u.get("status") == 0 else "正常",
+                ctime,
+                last,
+            ]
+        )
+    filename = "users-{}.csv".format(strftime("%Y%m%d-%H%M%S"))
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="{}"'.format(filename)
+        },
+    )
+
+
+@bp.get("/admin/audit_logs")
+@api_admin_required
+def admin_audit_logs():
+    """后台：分页查询全部审计日志。
+
+    :query keyword: 关键词（uid 或 detail 内容）
+    :query action: 操作类型前缀（如 admin）
+    :query start: 时间下界（Unix 时间戳）
+    :query end: 时间上界（Unix 时间戳）
+    :query page: 页码，默认 1
+    :query per_page: 每页条数，默认 10
+    :returns: data 中包含 logs、total、page、per_page、pages
+    """
+    page, per_page = _parse_page_args()
+    logs, total = admin_list_audit_logs(
+        keyword=request.args.get("keyword", "").strip(),
+        action=request.args.get("action", "").strip(),
+        start=_parse_ts_arg("start"),
+        end=_parse_ts_arg("end"),
+        page=page,
+        per_page=per_page,
+    )
+    pages = (total + per_page - 1) // per_page if per_page else 0
+    return new_res(
+        success=True,
+        data=dict(
+            logs=logs,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages,
+        ),
+    )
+
+
+@bp.get("/admin/login_records")
+@api_admin_required
+def admin_login_records():
+    """后台：分页查询用户登录记录。
+
+    :query keyword: 关键词（账号 / uid / 昵称）
+    :query method: 登录方式精确匹配
+    :query ip: IP 模糊匹配
+    :query start: 时间下界（Unix 时间戳）
+    :query end: 时间上界（Unix 时间戳）
+    :query page: 页码，默认 1
+    :query per_page: 每页条数，默认 10
+    :returns: data 中包含 records、total、page、per_page、pages
+    """
+    page, per_page = _parse_page_args()
+    records, total = admin_list_login_records(
+        keyword=request.args.get("keyword", "").strip(),
+        method=request.args.get("method", "").strip(),
+        ip=request.args.get("ip", "").strip(),
+        start=_parse_ts_arg("start"),
+        end=_parse_ts_arg("end"),
+        page=page,
+        per_page=per_page,
+    )
+    pages = (total + per_page - 1) // per_page if per_page else 0
+    return new_res(
+        success=True,
+        data=dict(
+            records=records,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=pages,
+        ),
+    )
+
+
+@bp.put("/admin/user/role")
+@api_superadmin_required
 def admin_set_user_role():
-    """后台：设置指定用户的内置平台角色（保留客户端角色）。
+    """后台：设置指定用户的内置平台角色（保留客户端角色，仅 superadmin）。
 
     :form uid: 目标用户 uid（必填）
     :form roles: 平台角色，空格分隔（superadmin / admin / user）
@@ -1196,14 +1434,24 @@ def admin_oidc_clients():
     """后台：分页查询所有 OIDC 客户端（含所有者与内部应用标记）。
 
     :query keyword: 搜索关键词，匹配应用名称或所有者（可选）
+    :query is_internal: 内部应用筛选，1 / 0（可选）
+    :query has_role: 为 1 时仅返回授权范围含 role 的客户端
     :query page: 页码，默认 1
     :query per_page: 每页条数，默认 10
     :returns: data 中包含 clients、total、page、per_page、pages
     """
     keyword = request.args.get("keyword", "").strip()
     page, per_page = _parse_page_args()
+    internal_raw = request.args.get("is_internal", "")
+    is_internal = None
+    if internal_raw in ("0", "1"):
+        is_internal = internal_raw == "1"
     clients, total = list_oauth_clients_page(
-        keyword=keyword, page=page, per_page=per_page
+        keyword=keyword,
+        page=page,
+        per_page=per_page,
+        is_internal=is_internal,
+        has_role=request.args.get("has_role") == "1",
     )
     pages = (total + per_page - 1) // per_page if per_page else 0
     return new_res(
@@ -1219,9 +1467,9 @@ def admin_oidc_clients():
 
 
 @bp.put("/admin/oidc/client/internal")
-@api_admin_required
+@api_superadmin_required
 def admin_set_oidc_client_internal():
-    """后台：标记 OIDC 应用是否为内部应用（唯一的后台 OIDC 操作）。
+    """后台：标记 OIDC 应用是否为内部应用（仅 superadmin）。
 
     内部应用在申请 ``role`` scope 时可获得用户平台角色，等效于配置项
     ``OIDC_INTERNAL_CLIENTS``。
@@ -1257,3 +1505,49 @@ def admin_set_oidc_client_internal():
         },
     )
     return new_res(success=True, data=ret)
+
+
+@bp.get("/admin/oidc/client/detail")
+@api_admin_required
+def admin_oidc_client_detail():
+    """后台：查看 OIDC 客户端只读详情（后台不提供编辑）。
+
+    :query client_id: 客户端 ID（必填）
+    :returns: data 为客户端详情（含所有者、回调地址、授权与令牌数）
+    """
+    client_id = request.args.get("client_id", "").strip()
+    if not client_id:
+        raise ApiError(
+            "client_id is required", code=ErrorCode.CLIENT_ID_REQUIRED
+        )
+    detail = admin_get_oauth_client(client_id)
+    if not detail:
+        raise ApiError("client not found", code=ErrorCode.CLIENT_NOT_FOUND)
+    return new_res(success=True, data=detail)
+
+
+@bp.delete("/admin/oidc/client/<client_id>")
+@api_superadmin_required
+def admin_delete_oidc_client(client_id: str):
+    """后台：删除任意 OIDC 客户端（仅 superadmin）。
+
+    同时清理该客户端的令牌与授权记录，并写入双方审计日志。
+
+    :param client_id: 客户端 ID
+    :returns: data 中包含 deleted
+    """
+    detail = admin_get_oauth_client(client_id)
+    if not detail:
+        raise ApiError("client not found", code=ErrorCode.CLIENT_NOT_FOUND)
+    try:
+        ret = admin_delete_oauth_client(client_id)
+    except PermissionError:
+        raise ApiError("client not found", code=ErrorCode.CLIENT_NOT_FOUND)
+    except PassportError as e:
+        raise ApiError(str(e), code=ErrorCode.PARAM_ERROR)
+    _record_admin_audit(
+        "admin_client_delete",
+        str(detail.get("uid") or ""),
+        {"client_id": client_id, "name": detail.get("name", "")},
+    )
+    return new_res(success=True, data=dict(deleted=ret))

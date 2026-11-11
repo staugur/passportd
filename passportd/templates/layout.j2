@@ -296,7 +296,7 @@
                         <span>安全</span>
                     </a>
                     {% if current_user_is_admin() %}
-                    <a class="navbar-item" href="{{ url_for('root.admin.users') }}">
+                    <a class="navbar-item" href="{{ url_for('root.admin.dashboard') }}">
                         <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
                         <span>后台</span>
                     </a>
@@ -385,6 +385,7 @@
             'TOKEN_GENERATE_FAILED': '生成令牌失败',
             'COOKIE_FAILED': '设置登录态失败',
             'ADMIN_REQUIRED': '需要管理员权限',
+            'SUPERADMIN_REQUIRED': '该操作需要 superadmin 权限',
             'USER_NOT_FOUND': '用户不存在',
             'CLIENT_NOT_FOUND': '客户端不存在',
             'ROLE_INVALID': '角色不合法',

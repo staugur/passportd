@@ -16,7 +16,7 @@ limitations under the License.
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from playhouse.shortcuts import model_to_dict
 
@@ -31,6 +31,7 @@ ACTION_LABELS: Dict[str, str] = {
     "unbind_account": "解绑账号",
     "passkey_add": "添加 Passkey",
     "passkey_delete": "删除 Passkey",
+    "session_expire_set": "设置登录会话时长",
     "oidc_client_create": "创建 OIDC 客户端",
     "oidc_client_update": "修改 OIDC 客户端",
     "oidc_client_delete": "删除 OIDC 客户端",
@@ -43,6 +44,7 @@ ACTION_LABELS: Dict[str, str] = {
     "admin_role_set": "后台设置角色",
     "admin_user_status": "后台启用/禁用用户",
     "admin_client_internal": "后台标记内部应用",
+    "admin_client_delete": "后台删除 OIDC 应用",
 }
 
 
@@ -109,6 +111,57 @@ def list_audit_logs(
         item["action_label"] = ACTION_LABELS.get(item["action"], item["action"])
         result.append(item)
     return result
+
+
+def admin_list_audit_logs(
+    keyword: str = "",
+    action: str = "",
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """管理员分页查询全部审计日志。
+
+    :param keyword: 关键词，匹配 uid 或 detail 内容
+    :param action: 操作类型前缀（如 ``admin`` 匹配所有后台操作）
+    :param start: 时间下界（含），Unix 时间戳
+    :param end: 时间上界（不含），Unix 时间戳
+    :param page: 页码，从 1 开始
+    :param per_page: 每页条数，最大 100
+    :returns: (审计记录列表, 总条数) 元组
+    """
+    query = AuditLog.select()
+    if keyword:
+        query = query.where(
+            (AuditLog.uid == keyword) | (AuditLog.detail.contains(keyword))
+        )
+    if action:
+        query = query.where(AuditLog.action.startswith(action))
+    if start:
+        query = query.where(AuditLog.ctime >= int(start))
+    if end:
+        query = query.where(AuditLog.ctime < int(end))
+    total = query.count()
+    page = max(1, page)
+    per_page = max(1, min(per_page, 100))
+    rows = (
+        query.order_by(AuditLog.ctime.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    result = []
+    for r in rows:
+        item = model_to_dict(r)
+        try:
+            item["detail"] = json.loads(item["detail"]) if item["detail"] else {}
+        except (json.JSONDecodeError, TypeError):
+            item["detail"] = {}
+        item["action_label"] = ACTION_LABELS.get(
+            item["action"], item["action"]
+        )
+        result.append(item)
+    return result, total
 
 
 def clear_user_audit_logs(uid: str) -> int:

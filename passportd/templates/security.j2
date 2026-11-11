@@ -5,6 +5,29 @@
 <section class="section">
     <div class="container" style="max-width: 800px;">
 
+        {# 登录密码 #}
+        <h1 class="title is-4 mb-2">
+            <span class="icon-text">
+                <span class="icon"><i class="fa-solid fa-key"></i></span>
+                <span>登录密码</span>
+            </span>
+        </h1>
+
+        <p class="mb-5 has-text-grey is-size-7">
+            定期更换密码可降低账号被盗风险，修改后需使用新密码重新登录。
+        </p>
+
+        <div class="box mb-6">
+            {% if can_change_password %}
+            <button class="button is-small is-primary is-light js-open-change-pwd">
+                <span class="icon is-small"><i class="fa-solid fa-key"></i></span>
+                <span>修改密码</span>
+            </button>
+            {% else %}
+            <p class="is-size-7 has-text-grey">当前账号为纯第三方账号，暂不支持设置密码。</p>
+            {% endif %}
+        </div>
+
         {# 活跃会话管理 #}
         <h1 class="title is-4 mb-2">
             <span class="icon-text">
@@ -23,6 +46,40 @@
             <div class="has-text-centered has-text-grey py-4">
                 <span class="icon is-medium"><i class="fa-solid fa-spinner fa-pulse"></i></span>
                 <p class="mt-2 is-size-7">加载会话...</p>
+            </div>
+        </div>
+
+        {# 登录会话保持时长 #}
+        <h1 class="title is-4 mb-2">
+            <span class="icon-text">
+                <span class="icon"><i class="fa-solid fa-hourglass-half"></i></span>
+                <span>登录会话保持时长</span>
+            </span>
+        </h1>
+
+        <p class="mb-5 has-text-grey is-size-7">
+            适用于 Passkey 与第三方账号登录；密码/验证码登录以登录页的「记住登录」为准。
+        </p>
+
+        <div id="session-expire-msg" class="mb-3" style="display:none;"></div>
+
+        <div class="box mb-6">
+            <div class="field is-grouped is-grouped-multiline">
+                <div class="control">
+                    <div class="select is-small">
+                        <select id="login-session-expire">
+                            {% for seconds, label in session_expire_options.items() %}
+                            <option value="{{ seconds }}"{% if seconds == session_expire %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="control">
+                    <button class="button is-small is-link is-light" id="btn-save-login-expire">保存</button>
+                </div>
+                <div class="control is-expanded is-flex is-align-items-center">
+                    <span class="is-size-7 has-text-grey">修改仅对之后的登录生效。</span>
+                </div>
             </div>
         </div>
 
@@ -105,12 +162,129 @@
 
     </div>
 </section>
+
+{# 修改密码模态框 #}
+<div class="modal" id="change-pwd-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-key"></i></span>
+                    <span>修改密码</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body">
+            <div id="change-pwd-msg" class="mb-3" style="display:none;"></div>
+            <div class="field">
+                <label class="label">新密码</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="password" id="new-password" placeholder="输入新密码（6-32位）">
+                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">确认新密码</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="password" id="repassword" placeholder="再次输入新密码">
+                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
+                </div>
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div class="buttons">
+                <button type="button" class="button is-primary" id="change-pwd-submit">
+                    <span class="icon"><i class="fa-solid fa-check"></i></span>
+                    <span>确认修改</span>
+                </button>
+                <button type="button" class="button js-close-change-pwd">取消</button>
+            </div>
+        </footer>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
     $(function () {
         let currentSessionKey = '{{ g.user.get("skey", "") }}';
+
+        // ========== 修改密码 ==========
+        let $pwdModal = $('#change-pwd-modal');
+        let $pwdMsg = $('#change-pwd-msg');
+        let $pwdSubmit = $('#change-pwd-submit');
+
+        function showPwdMsg(msg, type) {
+            let cls = type === 'success' ? 'is-success' : 'is-danger';
+            $pwdMsg.removeClass('is-success is-danger').addClass(cls).text(msg).show();
+        }
+
+        $('.js-open-change-pwd').on('click', function () {
+            $pwdModal.addClass('is-active');
+            $('#new-password').val('');
+            $('#repassword').val('');
+            $pwdMsg.hide();
+            $pwdSubmit.prop('disabled', false);
+        });
+
+        function closePwdModal() {
+            $pwdModal.removeClass('is-active');
+        }
+        $('.js-close-change-pwd, #change-pwd-modal .delete, #change-pwd-modal .modal-background').on('click', closePwdModal);
+
+        $pwdSubmit.on('click', function () {
+            let newPwd = $('#new-password').val().trim();
+            let rePwd = $('#repassword').val().trim();
+
+            if (!newPwd || !rePwd) {
+                showPwdMsg('请填写所有密码字段', 'error');
+                return;
+            }
+            if (newPwd.length < 6) {
+                showPwdMsg('新密码至少需要6个字符', 'error');
+                return;
+            }
+            if (newPwd !== rePwd) {
+                showPwdMsg('两次输入的新密码不一致', 'error');
+                return;
+            }
+
+            $pwdSubmit.prop('disabled', true).addClass('is-loading').text('修改中...');
+
+            $.ajax({
+                url: '{{ url_for("root.api.change_pwd") }}',
+                method: 'POST',
+                data: {
+                    new_password: newPwd,
+                    repassword: rePwd
+                },
+                success: function (res) {
+                    if (!res.success) {
+                        showPwdMsg(apiMessage(res, '修改失败'), 'error');
+                        $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
+                        return;
+                    }
+                    showPwdMsg('密码修改成功，即将跳转到登录页...', 'success');
+                    // 跳转到登出页面（服务端清除 sid cookie）然后重新登录
+                    setTimeout(function () {
+                        window.location.href = '{{ url_for("root.front.signout") }}';
+                    }, 1500);
+                },
+                error: function () {
+                    showPwdMsg('网络异常，请重试', 'error');
+                    $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
+                }
+            });
+        });
+
+        // ESC 关闭密码弹窗
+        $(document).on('keydown', function (e) {
+            if (e.key === 'Escape' && $pwdModal.hasClass('is-active')) {
+                closePwdModal();
+            }
+        });
 
         // ========== 活跃会话 ==========
         let $sessionsList = $('#sessions-list');
@@ -155,6 +329,37 @@
             let h = String(d.getHours()).padStart(2, '0');
             let m = String(d.getMinutes()).padStart(2, '0');
             return M + '-' + D + ' ' + h + ':' + m;
+        }
+
+        // 登录方式 → 中文文案（oauth2_xxx 取第三方名称）
+        let PROVIDER_LABELS = {
+            'github': 'GitHub',
+            'gitee': 'Gitee',
+            'qq': 'QQ',
+            'weibo': '微博',
+            'google': 'Google',
+            'wechat': '微信',
+            'apple': 'Apple',
+            'xiaomi': '小米',
+            'telegram': 'Telegram',
+        };
+
+        function methodLabel(method) {
+            if (!method) return '';
+            if (method === 'local') return '密码登录';
+            if (method === 'vcode') return '验证码登录';
+            if (method === 'passkey') return 'Passkey 登录';
+            let name = method.indexOf('oauth2_') === 0 ? method.slice(7) : method;
+            if (PROVIDER_LABELS[name]) return PROVIDER_LABELS[name] + ' 登录';
+            return method;
+        }
+
+        // 剩余有效期（秒）→ 友好文案
+        function formatExpireIn(sec) {
+            if (!sec || sec <= 0) return '已过期';
+            if (sec < 3600) return Math.max(1, Math.floor(sec / 60)) + ' 分钟后过期';
+            if (sec < 86400) return Math.floor(sec / 3600) + ' 小时后过期';
+            return Math.floor(sec / 86400) + ' 天后过期';
         }
 
         function loadSessions() {
@@ -210,9 +415,15 @@
                     if (s.location) ipLine += ' · ' + s.location;
                     subParts.push(ipLine);
                 }
-                if (s.method) subParts.push(s.method);
+                if (s.method) subParts.push(methodLabel(s.method));
                 if (s.source && s.source !== 'self') subParts.push('来自 ' + s.source);
                 let subtitle = subParts.join(' · ') || '—';
+
+                // 剩余有效期，不足 1 小时用警示色提示即将过期
+                let remain = Number(s.expire_in) || 0;
+                let remainText = formatExpireIn(remain);
+                let remainCls = remain > 0 && remain < 3600
+                    ? 'has-text-warning' : 'has-text-grey';
 
                 html += '<div class="box mb-2 py-3 px-4">' +
                     '<div class="is-flex is-align-items-center is-justify-content-space-between">' +
@@ -229,7 +440,8 @@
                             '</div>' +
                         '</div>' +
                         '<div class="has-text-right">' +
-                            '<p class="is-size-7 has-text-grey" title="' + formatSessionTime(s.ctime) + '">' + formatSessionTime(s.ctime) + '</p>' +
+                            '<p class="is-size-7 has-text-grey" title="登录时间：' + formatTimestamp(s.ctime) + '">' + formatSessionTime(s.ctime) + '</p>' +
+                            '<p class="is-size-7 ' + remainCls + '" title="过期时间：' + (s.expire_time ? formatTimestamp(s.expire_time) : '—') + '">' + remainText + '</p>' +
                         '</div>' +
                     '</div>' +
                     '</div>';
@@ -238,6 +450,42 @@
         }
 
         loadSessions();
+
+        // ========== 登录会话保持时长 ==========
+        let $expireMsg = $('#session-expire-msg');
+
+        function showExpireMsg(msg, type) {
+            let cls = 'notification is-light ';
+            if (type === 'success') cls += 'is-success';
+            else cls += 'is-danger';
+            $expireMsg.attr('class', cls).text(msg).show();
+            setTimeout(function () { $expireMsg.fadeOut(); }, 6000);
+        }
+
+        $('#btn-save-login-expire').on('click', function () {
+            let $btn = $(this);
+            $btn.prop('disabled', true).addClass('is-loading');
+            $.ajax({
+                url: '{{ url_for("root.api.user_session_expire_set") }}',
+                method: 'PUT',
+                data: { expire: $('#login-session-expire').val() },
+                dataType: 'json',
+                success: function (res) {
+                    $btn.prop('disabled', false).removeClass('is-loading');
+                    if (res.success) {
+                        showExpireMsg('登录会话保持时长已更新', 'success');
+                    } else {
+                        showExpireMsg(apiMessage(res, '保存失败'), 'error');
+                    }
+                },
+                error: function (xhr) {
+                    $btn.prop('disabled', false).removeClass('is-loading');
+                    let msg = '保存失败，请重试';
+                    try { let r = JSON.parse(xhr.responseText); msg = apiMessage(r, msg); } catch (e) {}
+                    showExpireMsg(msg, 'error');
+                }
+            });
+        });
 
         // ========== 登录历史 ==========
         let $lgTbody = $('#login-history-tbody');
@@ -375,6 +623,10 @@
             if (detail.name) parts.push('名称：' + $('<span>').text(detail.name).html());
             if (detail.device_name) parts.push('设备：' + $('<span>').text(detail.device_name).html());
             if (detail.credential_id) parts.push('凭证ID：<code class="is-size-7">' + $('<span>').text(detail.credential_id).html() + '</code>');
+            if (detail.expire !== undefined) {
+                let hours = Number(detail.expire) / 3600;
+                parts.push('会话保持：' + (hours >= 24 ? (hours / 24) + ' 天' : hours + ' 小时'));
+            }
             return parts.join('<br>') || '—';
         }
 
@@ -386,6 +638,7 @@
             else if (action === 'bind_account') cls = 'is-success is-light';
             else if (action === 'unbind_account') cls = 'is-danger is-light';
             else if (action.startsWith('passkey_')) cls = 'is-info is-light';
+            else if (action === 'session_expire_set') cls = 'is-info is-light';
             else if (action.startsWith('oidc_client_')) cls = 'is-primary is-light';
             else if (action === 'oidc_auth_revoke') cls = 'is-danger is-light';
             else if (action.startsWith('admin_')) cls = 'is-danger is-light';

@@ -20,7 +20,7 @@ from typing import Dict, List, Tuple, Union, Optional
 from playhouse.shortcuts import model_to_dict
 from werkzeug.security import gen_salt
 
-from .model import OAuthClient, OAuthToken, OAuthAuthorization, User
+from .model import OAuthClient, OAuthToken, OAuthAuthorization, User, db
 from ..basis.vars import COMMON_DICT_TYPE, MAX_REDIRECT_URIS
 from ..basis.errors import ParamError, DBError
 from ..basis.common import check_uid_rule
@@ -504,13 +504,19 @@ def save_oauth_authorization(
 
 
 def list_oauth_clients_page(
-    keyword: str = "", page: int = 1, per_page: int = 20
+    keyword: str = "",
+    page: int = 1,
+    per_page: int = 20,
+    is_internal: Optional[bool] = None,
+    has_role: bool = False,
 ) -> Tuple[List[COMMON_DICT_TYPE], int]:
     """管理员分页查询所有 OIDC 客户端（含所有者昵称与授权用户数）。
 
     :param keyword: 搜索关键词，匹配应用名称或所有者（uid / 昵称）
     :param page: 页码，从 1 开始
     :param per_page: 每页条数，最大 100
+    :param is_internal: 内部应用筛选，None 表示不筛选
+    :param has_role: 为 True 时仅返回授权范围包含 role 的客户端
     :returns: (客户端信息列表, 总条数) 元组
     """
     query = OAuthClient.select()
@@ -525,6 +531,10 @@ def list_oauth_clients_page(
         if matched_uids:
             cond = cond | (OAuthClient.uid.in_(matched_uids))
         query = query.where(cond)
+    if is_internal is not None:
+        query = query.where(OAuthClient.is_internal == bool(is_internal))
+    if has_role:
+        query = query.where(OAuthClient.scope.contains("role"))
     total = query.count()
     page = max(1, page)
     per_page = max(1, min(per_page, 100))
@@ -572,3 +582,57 @@ def admin_set_client_internal(
         raise DBError(e)
     else:
         return model_to_dict(oc)
+
+
+def admin_get_oauth_client(client_id: str) -> Optional[COMMON_DICT_TYPE]:
+    """管理员查看任意 OIDC 客户端的只读详情。
+
+    :param client_id: 客户端标识
+    :returns: 客户端详情字典，不存在时返回 None
+    """
+    if not client_id or len(client_id) < 24:
+        return None
+    oc = OAuthClient.get_or_none(OAuthClient.client_id == client_id)
+    if not oc:
+        return None
+    item = model_to_dict(oc)
+    item["redirect_uris"] = _collect_redirect_uris(item)
+    owner = User.get_or_none(User.uid == oc.uid)
+    item["owner_nickname"] = owner.nickname if owner else ""
+    item["auth_count"] = count_oauth_authorizations(client_id)
+    item["token_count"] = (
+        OAuthToken.select().where(OAuthToken.client_id == client_id).count()
+    )
+    return item
+
+
+def admin_delete_oauth_client(client_id: str) -> bool:
+    """管理员删除任意 OIDC 客户端（不校验归属）。
+
+    同时清理该客户端的令牌与授权记录，避免残留数据。
+
+    :param client_id: 客户端标识
+    :returns: 删除成功返回 True
+    :raises ParamError: 参数校验失败
+    :raises PermissionError: 客户端不存在
+    :raises DBError: 数据库操作失败
+    """
+    if not client_id or len(client_id) < 24:
+        raise ParamError("Invalid params")
+    try:
+        oc = OAuthClient.get(OAuthClient.client_id == client_id)
+    except OAuthClient.DoesNotExist:
+        raise PermissionError("Client not found")
+    try:
+        with db.atomic():
+            OAuthToken.delete().where(
+                OAuthToken.client_id == client_id
+            ).execute()
+            OAuthAuthorization.delete().where(
+                OAuthAuthorization.client_id == client_id
+            ).execute()
+            oc.delete_instance()
+    except Exception as e:
+        raise DBError(e)
+    else:
+        return True

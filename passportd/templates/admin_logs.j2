@@ -1,0 +1,367 @@
+{% extends "layout.j2" %}
+{% set admin_tab = 'logs' %}
+{% block title %}后台 · 审计与登录记录 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="container" style="max-width: 1100px;">
+
+        {% include "admin_tabs.j2" %}
+
+        <div class="tabs is-small mb-4">
+            <ul>
+                <li class="is-active" data-tab="audit">
+                    <a><span class="icon is-small"><i class="fa-solid fa-clipboard-list"></i></span>
+                        <span>审计日志</span></a>
+                </li>
+                <li data-tab="logins">
+                    <a><span class="icon is-small"><i class="fa-solid fa-right-to-bracket"></i></span>
+                        <span>登录记录</span></a>
+                </li>
+            </ul>
+        </div>
+
+        {# ---------------- 审计日志 ---------------- #}
+        <div id="panel-audit">
+            <div class="box py-4 px-4 mb-4">
+                <div class="field is-grouped is-grouped-multiline is-align-items-center mb-0">
+                    <div class="control is-expanded" style="min-width: 200px;">
+                        <input class="input is-small" type="text" id="audit-keyword"
+                               placeholder="按 uid 或详情内容搜索">
+                    </div>
+                    <div class="control">
+                        <div class="select is-small">
+                            <select id="audit-action">
+                                <option value="">全部操作</option>
+                                <option value="admin">后台操作</option>
+                                <option value="register">注册</option>
+                                <option value="bind_account">绑定账号</option>
+                                <option value="unbind_account">解绑账号</option>
+                                <option value="passkey">Passkey</option>
+                                <option value="oidc_client">OIDC 客户端</option>
+                                <option value="change_password">修改密码</option>
+                                <option value="account_delete">注销账号</option>
+                                <option value="session_expire_set">会话时长</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control">
+                        <input class="input is-small" type="date" id="audit-start"
+                               title="开始日期" aria-label="开始日期">
+                    </div>
+                    <div class="control is-size-7 has-text-grey">至</div>
+                    <div class="control">
+                        <input class="input is-small" type="date" id="audit-end"
+                               title="结束日期" aria-label="结束日期">
+                    </div>
+                    <div class="control">
+                        <button class="button is-primary is-small" id="audit-search-btn">查询</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="audit-error" class="notification is-danger is-light is-hidden">
+                <button class="delete"></button><span id="audit-error-msg"></span>
+            </div>
+            <div id="audit-loading" class="has-text-centered py-5 is-hidden">
+                <span class="icon is-large has-text-grey-light"><i class="fa-solid fa-spinner fa-pulse fa-2x"></i></span>
+            </div>
+            <div id="audit-list"></div>
+            <div id="audit-pager" class="mt-5" style="display:none;"></div>
+        </div>
+
+        {# ---------------- 登录记录 ---------------- #}
+        <div id="panel-logins" style="display:none;">
+            <div class="box py-4 px-4 mb-4">
+                <div class="field is-grouped is-grouped-multiline is-align-items-center mb-0">
+                    <div class="control is-expanded" style="min-width: 200px;">
+                        <input class="input is-small" type="text" id="login-keyword"
+                               placeholder="按账号、uid 或昵称搜索">
+                    </div>
+                    <div class="control">
+                        <div class="select is-small">
+                            <select id="login-method">
+                                <option value="">全部方式</option>
+                                <option value="local">密码登录</option>
+                                <option value="vcode">验证码登录</option>
+                                <option value="passkey">Passkey</option>
+                                <option value="oauth2">第三方登录</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control">
+                        <input class="input is-small" type="text" id="login-ip" placeholder="IP 地址">
+                    </div>
+                    <div class="control">
+                        <input class="input is-small" type="date" id="login-start"
+                               title="开始日期" aria-label="开始日期">
+                    </div>
+                    <div class="control is-size-7 has-text-grey">至</div>
+                    <div class="control">
+                        <input class="input is-small" type="date" id="login-end"
+                               title="结束日期" aria-label="结束日期">
+                    </div>
+                    <div class="control">
+                        <button class="button is-primary is-small" id="login-search-btn">查询</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="login-error" class="notification is-danger is-light is-hidden">
+                <button class="delete"></button><span id="login-error-msg"></span>
+            </div>
+            <div id="login-loading" class="has-text-centered py-5 is-hidden">
+                <span class="icon is-large has-text-grey-light"><i class="fa-solid fa-spinner fa-pulse fa-2x"></i></span>
+            </div>
+            <div id="login-list"></div>
+            <div id="login-pager" class="mt-5" style="display:none;"></div>
+        </div>
+
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/pager.js') }}"></script>
+<script>
+    $(function () {
+        function escHtml(str) {
+            return $('<div>').text(str === undefined || str === null ? '' : str).html();
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '—';
+            let d = new Date(ts * 1000);
+            return d.getFullYear() + '-'
+                + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                + String(d.getDate()).padStart(2, '0') + ' '
+                + String(d.getHours()).padStart(2, '0') + ':'
+                + String(d.getMinutes()).padStart(2, '0') + ':'
+                + String(d.getSeconds()).padStart(2, '0');
+        }
+
+        function dateToTs(value, endOfDay) {
+            if (!value) return '';
+            let parts = value.split('-');
+            if (parts.length !== 3) return '';
+            let d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            if (endOfDay) d.setDate(d.getDate() + 1);
+            return String(Math.floor(d.getTime() / 1000));
+        }
+
+        function emptyBox(text) {
+            return '<div class="box has-text-centered has-text-grey py-6">'
+                + '<span class="icon is-large"><i class="fa-solid fa-inbox fa-2x"></i></span>'
+                + '<p class="mt-3">' + escHtml(text) + '</p></div>';
+        }
+
+        // ---------------- Tab 切换 ----------------
+        $('.tabs li[data-tab]').on('click', function () {
+            let tab = $(this).data('tab');
+            $('.tabs li[data-tab]').removeClass('is-active');
+            $(this).addClass('is-active');
+            $('#panel-audit').toggle(tab === 'audit');
+            $('#panel-logins').toggle(tab === 'logins');
+        });
+
+        // ---------------- 审计日志 ----------------
+        let $auditList = $('#audit-list');
+        let $auditLoading = $('#audit-loading');
+        let $auditError = $('#audit-error');
+        let $auditPager = $('#audit-pager');
+        let auditPageSize = 20;
+        let auditPage = 1;
+
+        $auditError.find('.delete').on('click', function () {
+            $auditError.addClass('is-hidden');
+        });
+
+        function auditFilters() {
+            return {
+                keyword: $('#audit-keyword').val().trim(),
+                action: $('#audit-action').val(),
+                start: dateToTs($('#audit-start').val(), false),
+                end: dateToTs($('#audit-end').val(), true)
+            };
+        }
+
+        function loadAudit(page) {
+            auditPage = page || 1;
+            $auditLoading.removeClass('is-hidden');
+            $auditError.addClass('is-hidden');
+            $auditList.empty();
+            $.ajax({
+                url: '{{ url_for("root.api.admin_audit_logs") }}',
+                method: 'GET',
+                data: $.extend({ page: auditPage, per_page: auditPageSize }, auditFilters()),
+                success: function (res) {
+                    $auditLoading.addClass('is-hidden');
+                    if (!res.success) {
+                        $('#audit-error-msg').text(apiMessage(res, '加载失败'));
+                        $auditError.removeClass('is-hidden');
+                        return;
+                    }
+                    let data = res.data || {};
+                    renderAudit(data.logs || []);
+                    PassportPager.render($auditPager, {
+                        page: data.page || 1,
+                        pages: data.pages || 1,
+                        perPage: data.per_page || auditPageSize,
+                        total: data.total || 0,
+                        onChange: function (page, perPage) {
+                            auditPageSize = perPage;
+                            loadAudit(page);
+                        }
+                    });
+                    $('#audit-pager').toggle((data.total || 0) > 0);
+                },
+                error: function (xhr) {
+                    $auditLoading.addClass('is-hidden');
+                    $('#audit-error-msg').text('网络错误: ' + xhr.statusText);
+                    $auditError.removeClass('is-hidden');
+                }
+            });
+        }
+
+        function renderAudit(logs) {
+            if (!logs.length) {
+                $auditList.html(emptyBox('没有匹配的审计记录'));
+                return;
+            }
+            let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable is-narrow">'
+                + '<thead><tr><th style="width:150px;">时间</th><th>操作</th><th>用户</th>'
+                + '<th>详情</th><th style="width:120px;">IP</th></tr></thead><tbody>';
+            logs.forEach(function (log) {
+                let detail = '';
+                try {
+                    detail = JSON.stringify(log.detail || {});
+                } catch (e) {
+                    detail = '';
+                }
+                if (detail.length > 120) detail = detail.slice(0, 120) + '…';
+                let tagCls = log.action && log.action.indexOf('admin') === 0
+                    ? 'is-warning is-light' : 'is-light';
+                html += '<tr>'
+                    + '<td class="is-size-7">' + formatTime(log.ctime) + '</td>'
+                    + '<td><span class="tag ' + tagCls + ' is-size-7">'
+                    + escHtml(log.action_label || log.action) + '</span></td>'
+                    + '<td><code class="is-size-7 has-text-grey">' + escHtml(log.uid) + '</code></td>'
+                    + '<td class="is-size-7"><code class="is-size-7">' + escHtml(detail) + '</code></td>'
+                    + '<td class="is-size-7">' + escHtml(log.ip || '—') + '</td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table></div>';
+            $auditList.html(html);
+        }
+
+        $('#audit-search-btn').on('click', function () { loadAudit(1); });
+        $('#audit-keyword').on('keydown', function (e) {
+            if (e.key === 'Enter') loadAudit(1);
+        });
+        $('#audit-action, #audit-start, #audit-end').on('change', function () { loadAudit(1); });
+
+        // ---------------- 登录记录 ----------------
+        let $loginList = $('#login-list');
+        let $loginLoading = $('#login-loading');
+        let $loginError = $('#login-error');
+        let $loginPager = $('#login-pager');
+        let loginPageSize = 20;
+        let loginPage = 1;
+
+        $loginError.find('.delete').on('click', function () {
+            $loginError.addClass('is-hidden');
+        });
+
+        function loginFilters() {
+            return {
+                keyword: $('#login-keyword').val().trim(),
+                method: $('#login-method').val(),
+                ip: $('#login-ip').val().trim(),
+                start: dateToTs($('#login-start').val(), false),
+                end: dateToTs($('#login-end').val(), true)
+            };
+        }
+
+        function loadLogins(page) {
+            loginPage = page || 1;
+            $loginLoading.removeClass('is-hidden');
+            $loginError.addClass('is-hidden');
+            $loginList.empty();
+            $.ajax({
+                url: '{{ url_for("root.api.admin_login_records") }}',
+                method: 'GET',
+                data: $.extend({ page: loginPage, per_page: loginPageSize }, loginFilters()),
+                success: function (res) {
+                    $loginLoading.addClass('is-hidden');
+                    if (!res.success) {
+                        $('#login-error-msg').text(apiMessage(res, '加载失败'));
+                        $loginError.removeClass('is-hidden');
+                        return;
+                    }
+                    let data = res.data || {};
+                    renderLogins(data.records || []);
+                    PassportPager.render($loginPager, {
+                        page: data.page || 1,
+                        pages: data.pages || 1,
+                        perPage: data.per_page || loginPageSize,
+                        total: data.total || 0,
+                        onChange: function (page, perPage) {
+                            loginPageSize = perPage;
+                            loadLogins(page);
+                        }
+                    });
+                    $('#login-pager').toggle((data.total || 0) > 0);
+                },
+                error: function (xhr) {
+                    $loginLoading.addClass('is-hidden');
+                    $('#login-error-msg').text('网络错误: ' + xhr.statusText);
+                    $loginError.removeClass('is-hidden');
+                }
+            });
+        }
+
+        function renderLogins(records) {
+            if (!records.length) {
+                $loginList.html(emptyBox('没有匹配的登录记录'));
+                return;
+            }
+            let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable is-narrow">'
+                + '<thead><tr><th style="width:150px;">时间</th><th>用户</th><th>账号</th>'
+                + '<th>方式</th><th>IP</th><th>地点</th><th>设备</th></tr></thead><tbody>';
+            records.forEach(function (r) {
+                let user = '<div>' + escHtml(r.nickname || '—') + '</div>'
+                    + '<code class="is-size-7 has-text-grey">' + escHtml(r.uid) + '</code>';
+                let device = [r.browser, r.os].filter(Boolean).join(' / ') || '—';
+                html += '<tr>'
+                    + '<td class="is-size-7">' + formatTime(r.ctime) + '</td>'
+                    + '<td class="is-size-7">' + user + '</td>'
+                    + '<td class="is-size-7">' + escHtml(r.account || '—') + '</td>'
+                    + '<td class="is-size-7"><span class="tag is-light is-size-7">'
+                    + escHtml(r.method || '—') + '</span></td>'
+                    + '<td class="is-size-7">' + escHtml(r.ip || '—') + '</td>'
+                    + '<td class="is-size-7">' + escHtml(r.location || '—') + '</td>'
+                    + '<td class="is-size-7">' + escHtml(device) + '</td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table></div>';
+            $loginList.html(html);
+        }
+
+        $('#login-search-btn').on('click', function () { loadLogins(1); });
+        $('#login-keyword, #login-ip').on('keydown', function (e) {
+            if (e.key === 'Enter') loadLogins(1);
+        });
+        $('#login-method, #login-start, #login-end').on('change', function () { loadLogins(1); });
+
+        // 初始化：默认加载审计日志，登录记录在首次切换时加载
+        loadAudit(1);
+        let loginsLoaded = false;
+        $('.tabs li[data-tab="logins"]').on('click', function () {
+            if (!loginsLoaded) {
+                loginsLoaded = true;
+                loadLogins(1);
+            }
+        });
+    });
+</script>
+{% endblock %}

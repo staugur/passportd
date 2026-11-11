@@ -1,50 +1,49 @@
 {% extends "layout.j2" %}
+{% set admin_tab = 'clients' %}
 {% block title %}后台 · OIDC 应用 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
 
 {% block content %}
 <section class="section">
-    <div class="container" style="max-width: 1000px;">
+    <div class="container" style="max-width: 1100px;">
 
-        {# 页头 #}
-        <div class="mb-5">
-            <h1 class="title is-4 mb-1">
-                <span class="icon-text">
-                    <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
-                    <span>后台管理</span>
-                </span>
-            </h1>
-            <p class="subtitle is-6 has-text-grey mb-0">仅管理员（admin / superadmin）可访问</p>
-        </div>
+        {% include "admin_tabs.j2" %}
 
-        {# 后台导航 #}
-        <div class="tabs is-toggle is-small mb-5">
-            <ul>
-                <li>
-                    <a href="{{ url_for('root.admin.users') }}">
-                        <span class="icon is-small"><i class="fa-solid fa-users"></i></span>
-                        <span>用户管理</span>
-                    </a>
-                </li>
-                <li class="is-active">
-                    <a href="{{ url_for('root.admin.clients') }}">
-                        <span class="icon is-small"><i class="fa-solid fa-server"></i></span>
-                        <span>OIDC 应用</span>
-                    </a>
-                </li>
-            </ul>
-        </div>
-
-        {# 搜索 #}
-        <div class="field is-grouped mb-4">
-            <div class="control is-expanded">
-                <input class="input" type="text" id="search-input" placeholder="按应用名称或所有者搜索">
+        {# 搜索与筛选 #}
+        <div class="field is-grouped is-grouped-multiline mb-4">
+            <div class="control is-expanded" style="min-width: 220px;">
+                <input class="input is-small" type="text" id="search-input"
+                       placeholder="按应用名称或所有者搜索">
             </div>
             <div class="control">
-                <button class="button is-primary" id="search-btn">
-                    <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                <div class="select is-small">
+                    <select id="filter-internal">
+                        <option value="">全部应用</option>
+                        <option value="1">仅内部应用</option>
+                        <option value="0">仅外部应用</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control">
+                <div class="select is-small">
+                    <select id="filter-role">
+                        <option value="">全部授权范围</option>
+                        <option value="1">含 role 范围</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control">
+                <button class="button is-primary is-small" id="search-btn">
+                    <span class="icon is-small"><i class="fa-solid fa-magnifying-glass"></i></span>
                     <span>搜索</span>
                 </button>
             </div>
+            <div class="control">
+                <button class="button is-light is-small" id="reset-btn">重置</button>
+            </div>
+        </div>
+
+        <div class="notification is-info is-light is-size-7 py-2 px-3 mb-4">
+            后台仅提供应用查看、内部应用标记与删除；应用信息由所有者自行维护。
         </div>
 
         <div id="error-notice" class="notification is-danger is-light is-hidden">
@@ -64,6 +63,28 @@
 
     </div>
 </section>
+
+{# 应用详情模态框（只读） #}
+<div class="modal" id="detail-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card" style="width: 720px; max-width: 94vw;">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-server"></i></span>
+                    <span>应用详情</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body" id="detail-body">
+            <p class="has-text-grey is-size-7">加载中...</p>
+        </section>
+        <footer class="modal-card-foot">
+            <button type="button" class="button js-close-detail-modal">关闭</button>
+        </footer>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -74,9 +95,11 @@
         let $loadingEl = $('#loading-notice');
         let $errorEl = $('#error-notice');
         let $errorMsgEl = $('#error-msg');
+        let $detailModal = $('#detail-modal');
         let $pagerEl = $('#pager');
         let pageSize = 10;
         let currentPage = 1;
+        let isSuperadmin = {{ 'true' if g.is_superadmin else 'false' }};
 
         // --- 通用 ---
         $errorEl.find('.delete').on('click', function () {
@@ -102,16 +125,54 @@
             }).join('');
         }
 
+        function formatDate(ts) {
+            if (!ts || ts <= 0) return '—';
+            let d = new Date(ts * 1000);
+            return d.getFullYear() + '-'
+                + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                + String(d.getDate()).padStart(2, '0');
+        }
+
+        // --- 筛选与 URL 同步 ---
+        function collectFilters() {
+            return {
+                keyword: $('#search-input').val().trim(),
+                is_internal: $('#filter-internal').val(),
+                has_role: $('#filter-role').val()
+            };
+        }
+
+        function fillFiltersFromUrl() {
+            let params = new URLSearchParams(window.location.search);
+            if (params.get('keyword')) $('#search-input').val(params.get('keyword'));
+            if (params.get('is_internal') !== null) {
+                $('#filter-internal').val(params.get('is_internal'));
+            }
+            if (params.get('has_role')) $('#filter-role').val(params.get('has_role'));
+        }
+
+        function syncUrl(filters, page) {
+            let params = {};
+            Object.keys(filters).forEach(function (k) {
+                if (filters[k]) params[k] = filters[k];
+            });
+            if (page && page > 1) params.page = page;
+            let query = $.param(params);
+            window.history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
+        }
+
         // --- 加载列表 ---
         function loadClients(page) {
             currentPage = page || 1;
+            let filters = collectFilters();
+            syncUrl(filters, currentPage);
             $loadingEl.removeClass('is-hidden');
             $errorEl.addClass('is-hidden');
             $listEl.empty();
             $.ajax({
                 url: '{{ url_for("root.api.admin_oidc_clients") }}',
                 method: 'GET',
-                data: { page: currentPage, per_page: pageSize, keyword: $('#search-input').val().trim() },
+                data: $.extend({ page: currentPage, per_page: pageSize }, filters),
                 success: function (res) {
                     $loadingEl.addClass('is-hidden');
                     if (!res.success) {
@@ -119,8 +180,7 @@
                         return;
                     }
                     let data = res.data || {};
-                    clientsCache = data.clients || [];
-                    renderClients(clientsCache);
+                    renderClients(data.clients || []);
                     renderPager(data);
                 },
                 error: function (xhr) {
@@ -143,8 +203,10 @@
                 + '<th>Client ID</th>'
                 + '<th>所有者</th>'
                 + '<th>授权范围</th>'
-                + '<th>内部应用</th>'
-                + '<th style="width: 140px;">操作</th>'
+                + '<th>内部</th>'
+                + '<th>授权用户</th>'
+                + '<th>创建时间</th>'
+                + '<th style="white-space: nowrap;">操作</th>'
                 + '</tr></thead><tbody>';
             $.each(clients, function (_, c) {
                 let internalBadge = c.is_internal
@@ -153,28 +215,41 @@
                 let owner = c.owner_nickname
                     ? escHtml(c.owner_nickname) + '<br><code class="is-size-7 has-text-grey">' + escHtml(c.uid) + '</code>'
                     : '<code class="is-size-7 has-text-grey">' + escHtml(c.uid) + '</code>';
-                let nextInternal = c.is_internal ? 0 : 1;
-                let btnCls = c.is_internal ? 'is-warning' : 'is-primary';
-                let btnText = c.is_internal ? '取消内部' : '标记内部';
+                let actions = '<button class="button is-info is-light is-small js-detail"'
+                    + ' data-id="' + escHtml(c.client_id) + '">'
+                    + '<span class="icon is-small"><i class="fa-solid fa-circle-info"></i></span>'
+                    + '<span>详情</span></button>';
+                if (isSuperadmin) {
+                    let nextInternal = c.is_internal ? 0 : 1;
+                    let btnCls = c.is_internal ? 'is-warning' : 'is-primary';
+                    let btnText = c.is_internal ? '取消内部' : '标记内部';
+                    actions += ' <button class="button ' + btnCls + ' is-light is-small js-internal"'
+                        + ' data-id="' + escHtml(c.client_id) + '"'
+                        + ' data-name="' + escHtml(c.name) + '"'
+                        + ' data-next="' + nextInternal + '">'
+                        + '<span class="icon is-small"><i class="fa-solid fa-shield-halved"></i></span>'
+                        + '<span>' + btnText + '</span></button>'
+                        + ' <button class="button is-danger is-light is-small js-delete"'
+                        + ' data-id="' + escHtml(c.client_id) + '"'
+                        + ' data-name="' + escHtml(c.name) + '">'
+                        + '<span class="icon is-small"><i class="fa-solid fa-trash"></i></span>'
+                        + '<span>删除</span></button>';
+                }
                 html += '<tr>'
                     + '<td class="has-text-weight-semibold">' + escHtml(c.name) + '</td>'
                     + '<td><code class="is-size-7">' + escHtml(c.client_id) + '</code></td>'
                     + '<td class="is-size-7">' + owner + '</td>'
                     + '<td>' + scopeTags(c.scope, c.is_internal) + '</td>'
                     + '<td>' + internalBadge + '</td>'
-                    + '<td><button class="button ' + btnCls + ' is-light is-small js-internal"'
-                    + ' data-id="' + escHtml(c.client_id) + '"'
-                    + ' data-name="' + escHtml(c.name) + '"'
-                    + ' data-next="' + nextInternal + '">'
-                    + '<span class="icon is-small"><i class="fa-solid fa-shield-halved"></i></span>'
-                    + '<span>' + btnText + '</span></button></td>'
+                    + '<td class="is-size-7">' + (c.auth_count || 0) + '</td>'
+                    + '<td class="is-size-7">' + formatDate(c.ctime) + '</td>'
+                    + '<td style="white-space: nowrap;"><div class="buttons are-small is-flex-wrap-nowrap">' + actions + '</div></td>'
                     + '</tr>';
             });
             html += '</tbody></table></div>';
             $listEl.html(html);
         }
 
-        // 渲染分页：支持选择每页数量
         function renderPager(data) {
             let total = data.total || 0;
             if (total <= 0) {
@@ -198,6 +273,65 @@
         $('#search-btn').on('click', function () { loadClients(1); });
         $('#search-input').on('keydown', function (e) {
             if (e.key === 'Enter') loadClients(1);
+        });
+        $('#filter-internal, #filter-role').on('change', function () { loadClients(1); });
+        $('#reset-btn').on('click', function () {
+            $('#search-input').val('');
+            $('#filter-internal, #filter-role').val('');
+            loadClients(1);
+        });
+
+        // --- 只读详情 ---
+        $listEl.on('click', '.js-detail', function () {
+            let clientId = $(this).data('id');
+            $('#detail-body').html('<p class="has-text-grey is-size-7">加载中...</p>');
+            $detailModal.addClass('is-active');
+            $.ajax({
+                url: '{{ url_for("root.api.admin_oidc_client_detail") }}',
+                method: 'GET',
+                data: { client_id: clientId },
+                success: function (res) {
+                    if (!res.success) {
+                        $('#detail-body').html('<p class="has-text-danger is-size-7">'
+                            + escHtml(apiMessage(res, '加载失败')) + '</p>');
+                        return;
+                    }
+                    renderDetail(res.data || {});
+                },
+                error: function () {
+                    $('#detail-body').html('<p class="has-text-danger is-size-7">网络异常</p>');
+                }
+            });
+        });
+
+        function renderDetail(d) {
+            let uris = (d.redirect_uris || []).map(function (u) {
+                return '<li><code class="is-size-7">' + escHtml(u) + '</code></li>';
+            }).join('') || '<li class="has-text-grey-light is-size-7">未配置</li>';
+            let html = ''
+                + '<div class="columns is-multiline is-variable is-2 is-size-7">'
+                + '<div class="column is-6"><strong>应用名称：</strong>' + escHtml(d.name || '—') + '</div>'
+                + '<div class="column is-6"><strong>内部应用：</strong>' + (d.is_internal ? '是' : '否') + '</div>'
+                + '<div class="column is-12"><strong>Client ID：</strong><code class="is-size-7">' + escHtml(d.client_id) + '</code></div>'
+                + '<div class="column is-6"><strong>所有者：</strong>' + escHtml(d.owner_nickname || '—')
+                + ' <code class="is-size-7 has-text-grey">' + escHtml(d.uid || '') + '</code></div>'
+                + '<div class="column is-6"><strong>首页：</strong>' + escHtml(d.homepage || '—') + '</div>'
+                + '<div class="column is-12"><strong>授权范围：</strong>' + scopeTags(d.scope, d.is_internal) + '</div>'
+                + '<div class="column is-6"><strong>授权用户：</strong>' + (d.auth_count || 0) + '</div>'
+                + '<div class="column is-6"><strong>有效令牌：</strong>' + (d.token_count || 0) + '</div>'
+                + '<div class="column is-6"><strong>创建时间：</strong>' + formatDate(d.ctime) + '</div>'
+                + '<div class="column is-6"><strong>修改时间：</strong>' + formatDate(d.mtime) + '</div>'
+                + '</div>'
+                + '<h3 class="title is-6 mt-4 mb-2">回调地址</h3>'
+                + '<ul style="list-style: disc; padding-left: 1.25rem;">' + uris + '</ul>';
+            $('#detail-body').html(html);
+        }
+
+        $detailModal.find('.modal-background, .delete').on('click', function () {
+            $detailModal.removeClass('is-active');
+        });
+        $('.js-close-detail-modal').on('click', function () {
+            $detailModal.removeClass('is-active');
         });
 
         // --- 标记 / 取消内部应用 ---
@@ -231,7 +365,32 @@
             });
         });
 
+        // --- 删除应用 ---
+        $listEl.on('click', '.js-delete', function () {
+            let clientId = $(this).data('id');
+            let name = $(this).data('name');
+            if (!confirm('确定删除应用「' + name + '」吗？该应用的令牌与授权记录将一并删除，且不可恢复。')) return;
+            $.ajax({
+                url: '{{ url_for("root.api.admin_delete_oidc_client", client_id="CID") }}'
+                    .replace('CID', encodeURIComponent(clientId)),
+                method: 'DELETE',
+                success: function (res) {
+                    if (res.success) {
+                        loadClients(currentPage);
+                    } else {
+                        alert('删除失败: ' + apiMessage(res, '未知错误'));
+                    }
+                },
+                error: function (xhr) {
+                    let msg = '网络错误: ' + xhr.statusText;
+                    try { msg = apiMessage(JSON.parse(xhr.responseText), msg); } catch (e) {}
+                    alert('删除失败: ' + msg);
+                }
+            });
+        });
+
         // 初始化
+        fillFiltersFromUrl();
         loadClients(1);
     });
 </script>

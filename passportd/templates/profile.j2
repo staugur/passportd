@@ -26,7 +26,7 @@
                         {% endif %}
                     </p>
                 </figure>
-                <div class="media-content">
+                <div class="media-content is-align-self-center">
                     <div class="content">
                         <div class="is-flex is-align-items-center mb-1" style="gap: 0.75rem;">
                             <p class="title is-4 mb-0">
@@ -36,26 +36,16 @@
                                 <span class="icon is-small"><i class="fa-solid fa-pen-to-square"></i></span>
                                 <span>编辑资料</span>
                             </button>
-                            <button class="button is-small is-primary is-light js-open-change-pwd">
-                                <span class="icon is-small"><i class="fa-solid fa-key"></i></span>
-                                <span>修改密码</span>
-                            </button>
                         </div>
-                        <p class="subtitle is-6 has-text-grey mb-2">
-                            @{{ profile.uid }}
-                        </p>
-                        {% if profile.bio %}
-                        <p class="mb-2">{{ profile.bio }}</p>
-                        {% endif %}
-                        <div class="tags">
+                        <p class="subtitle is-6 has-text-grey mb-2">@{{ profile.uid }}</p>
+                        <div class="tags mb-0">
                             {% if profile.gender == 1 %}
                             <span class="tag is-link is-light"><i class="fa-solid fa-mars mr-1"></i>男</span>
                             {% elif profile.gender == 0 %}
                             <span class="tag is-danger is-light"><i class="fa-solid fa-venus mr-1"></i>女</span>
                             {% endif %}
                             {% if profile.location %}
-                            <span class="tag is-info is-light"><i class="fa-solid fa-location-dot mr-1"></i>{{
-                                profile.location }}</span>
+                            <span class="tag is-info is-light"><i class="fa-solid fa-location-dot mr-1"></i>{{ profile.location }}</span>
                             {% endif %}
                             {% if profile.role %}
                             {% for r in profile.role.split(' ') %}
@@ -108,6 +98,11 @@
                     {% endif %}
                 </div>
             </div>
+            {% if profile.bio %}
+            <hr class="my-4">
+            <p class="heading has-text-grey">简介</p>
+            <p class="is-size-7 mb-0">{{ profile.bio }}</p>
+            {% endif %}
         </div>
 
         {# 绑定账号列表 #}
@@ -513,8 +508,24 @@
                             placeholder="https://example.com/bg.jpg" maxlength="512">
                     </div>
                     <p class="help">仅支持 http/https 图片 URL，留空使用站点默认背景</p>
+                    <div class="is-flex is-flex-wrap-wrap is-align-items-center mt-2" style="gap: .5rem;">
+                        <button type="button" class="button is-small is-light js-wallpaper" data-source="bing">
+                            <span class="icon is-small"><i class="fa-solid fa-image"></i></span>
+                            <span>必应壁纸</span>
+                        </button>
+                        <button type="button" class="button is-small is-light js-wallpaper" data-source="konachan">
+                            <span class="icon is-small"><i class="fa-solid fa-star"></i></span>
+                            <span>K站动漫</span>
+                        </button>
+                        <button type="button" class="button is-small is-light js-wallpaper" data-source="wallhaven">
+                            <span class="icon is-small"><i class="fa-solid fa-mountain-sun"></i></span>
+                            <span>Wallhaven</span>
+                        </button>
+                        <span class="is-size-7 has-text-grey js-wallpaper-msg"></span>
+                    </div>
                     <figure class="image mt-2" style="height:96px;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;background-color:#f9fafb;">
-                        <img id="edit-bg-preview" src="{{ profile.background_image or '' }}" alt="" style="object-fit:cover;width:100%;height:100%;" onerror="this.style.display='none';">
+                        <img id="edit-bg-preview" src="{{ profile.background_image or '' }}" alt=""
+                             style="object-fit:cover;width:100%;height:100%;{{ '' if profile.background_image else 'display:none;' }}">
                     </figure>
                 </div>
             </section>
@@ -561,48 +572,6 @@
     </div>
 </div>
 
-{# 修改密码模态框 #}
-<div class="modal" id="change-pwd-modal">
-    <div class="modal-background"></div>
-    <div class="modal-card">
-        <header class="modal-card-head">
-            <p class="modal-card-title">
-                <span class="icon-text">
-                    <span class="icon"><i class="fa-solid fa-key"></i></span>
-                    <span>修改密码</span>
-                </span>
-            </p>
-            <button class="delete" aria-label="close"></button>
-        </header>
-        <section class="modal-card-body">
-            <div id="change-pwd-msg" class="mb-3" style="display:none;"></div>
-            <div class="field">
-                <label class="label">新密码</label>
-                <div class="control has-icons-left">
-                    <input class="input" type="password" id="new-password" placeholder="输入新密码（6-32位）">
-                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
-                </div>
-            </div>
-            <div class="field">
-                <label class="label">确认新密码</label>
-                <div class="control has-icons-left">
-                    <input class="input" type="password" id="repassword" placeholder="再次输入新密码">
-                    <span class="icon is-small is-left"><i class="fa-solid fa-lock"></i></span>
-                </div>
-            </div>
-        </section>
-        <footer class="modal-card-foot">
-            <div class="buttons">
-                <button type="button" class="button is-primary" id="change-pwd-submit">
-                    <span class="icon"><i class="fa-solid fa-check"></i></span>
-                    <span>确认修改</span>
-                </button>
-                <button type="button" class="button js-close-change-pwd">取消</button>
-            </div>
-        </footer>
-    </div>
-</div>
-
 {% endblock %}
 
 {% block extra_head %}
@@ -621,14 +590,45 @@
         });
 
         // 背景图 URL 输入实时更新预览
+        let $bgPreview = $('#edit-bg-preview');
+        $bgPreview.on('error', function () {
+            $(this).hide();
+        });
+        if ($bgPreview.length && $bgPreview[0].complete
+            && $bgPreview[0].naturalWidth === 0) {
+            $bgPreview.hide();
+        }
+
         $('#edit-bg-url').on('input', function () {
             let url = $.trim($(this).val());
-            let $img = $('#edit-bg-preview');
             if (url) {
-                $img.attr('src', url).show();
+                $bgPreview.attr('src', url).show();
             } else {
-                $img.removeAttr('src').hide();
+                $bgPreview.removeAttr('src').hide();
             }
+        });
+
+        // 背景图快捷选择（必应 / K站 / Wallhaven）
+        // 接口本身会 302 跳转到图片地址，直接作为图片 URL 使用
+        let WALLPAPER_APIS = {
+            bing: 'https://hub.saintic.com/openservice/bingpic',
+            konachan: 'https://hub.saintic.com/openservice/konachanpic',
+            wallhaven: 'https://hub.saintic.com/openservice/wallhavenpic'
+        };
+
+        let $bgMsg = $('.js-wallpaper-msg');
+
+        function setBgMsg(text) {
+            $bgMsg.text(text || '');
+        }
+
+        $('.js-wallpaper').on('click', function () {
+            let source = $(this).data('source');
+            let sourceName = $(this).find('span').last().text();
+            let apiUrl = WALLPAPER_APIS[source];
+            if (!apiUrl) return;
+            $('#edit-bg-url').val(apiUrl).trigger('input');
+            setBgMsg('已填入' + sourceName + '，保存后生效');
         });
 
         // 关闭模态框
@@ -761,86 +761,6 @@
     $(document).on('keydown', function (e) {
         if (e.key === 'Escape' && $cropModal.hasClass('is-active')) {
             closeCropModal();
-        }
-    });
-
-    // =========================================================
-    // 修改密码
-    // =========================================================
-    let $pwdModal = $('#change-pwd-modal');
-    let $pwdMsg = $('#change-pwd-msg');
-    let $pwdSubmit = $('#change-pwd-submit');
-
-    function showPwdMsg(msg, type) {
-        let cls = type === 'success' ? 'is-success' : 'is-danger';
-        $pwdMsg.removeClass('is-success is-danger').addClass(cls).text(msg).show();
-    }
-
-    // 打开修改密码
-    $('.js-open-change-pwd').on('click', function () {
-        $pwdModal.addClass('is-active');
-        $('#new-password').val('');
-        $('#repassword').val('');
-        $pwdMsg.hide();
-        $pwdSubmit.prop('disabled', false);
-    });
-
-    // 关闭修改密码
-    function closePwdModal() {
-        $pwdModal.removeClass('is-active');
-    }
-    $('.js-close-change-pwd, #change-pwd-modal .delete, #change-pwd-modal .modal-background').on('click', closePwdModal);
-
-    // 提交修改密码
-    $pwdSubmit.on('click', function () {
-        let newPwd = $('#new-password').val().trim();
-        let rePwd = $('#repassword').val().trim();
-
-        if (!newPwd || !rePwd) {
-            showPwdMsg('请填写所有密码字段', 'error');
-            return;
-        }
-        if (newPwd.length < 6) {
-            showPwdMsg('新密码至少需要6个字符', 'error');
-            return;
-        }
-        if (newPwd !== rePwd) {
-            showPwdMsg('两次输入的新密码不一致', 'error');
-            return;
-        }
-
-        $pwdSubmit.prop('disabled', true).addClass('is-loading').text('修改中...');
-
-        $.ajax({
-            url: '{{ url_for("root.api.change_pwd") }}',
-            method: 'POST',
-            data: {
-                new_password: newPwd,
-                repassword: rePwd
-            },
-            success: function (res) {
-                if (!res.success) {
-                    showPwdMsg(apiMessage(res, '修改失败'), 'error');
-                    $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
-                    return;
-                }
-                showPwdMsg('密码修改成功，即将跳转到登录页...', 'success');
-                // 跳转到登出页面（服务端清除 sid cookie）然后重新登录
-                setTimeout(function () {
-                    window.location.href = '{{ url_for("root.front.signout") }}';
-                }, 1500);
-            },
-            error: function () {
-                showPwdMsg('网络异常，请重试', 'error');
-                $pwdSubmit.prop('disabled', false).removeClass('is-loading').text('确认修改');
-            }
-        });
-    });
-
-    // ESC 关闭密码弹窗
-    $(document).on('keydown', function (e) {
-        if (e.key === 'Escape' && $pwdModal.hasClass('is-active')) {
-            closePwdModal();
         }
     });
 

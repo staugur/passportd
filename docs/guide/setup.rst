@@ -456,8 +456,8 @@ passportd 作为统一认证中心时，平台角色（小写 ``admin`` / ``supe
      - ``""``
      - 内部（自家）客户端 name 列表，英文逗号分隔（容忍逗号两侧空格）。
        列表内的应用在 ``role`` scope 时返回用户平台角色，第三方客户端一律不返回。
-       也可由管理员在后台「OIDC 应用」页面直接标记为内部应用（ ``is_internal``），
-       两者等效，配置项可留空。环境变量示例
+       也可由超级管理员（superadmin）在后台「OIDC 应用」页面直接标记为内部应用
+       （ ``is_internal``），两者等效，配置项可留空。环境变量示例
        ``PASSPORT_OIDC_INTERNAL_CLIENTS="my-app, your-app"``。
 
 .. note::

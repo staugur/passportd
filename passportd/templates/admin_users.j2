@@ -1,49 +1,84 @@
 {% extends "layout.j2" %}
+{% set admin_tab = 'users' %}
 {% block title %}后台 · 用户管理 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
 
 {% block content %}
 <section class="section">
-    <div class="container" style="max-width: 1000px;">
+    <div class="container" style="max-width: 1100px;">
 
-        {# 页头 #}
-        <div class="mb-5">
-            <h1 class="title is-4 mb-1">
-                <span class="icon-text">
-                    <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
-                    <span>后台管理</span>
-                </span>
-            </h1>
-            <p class="subtitle is-6 has-text-grey mb-0">仅管理员（admin / superadmin）可访问</p>
-        </div>
+        {% include "admin_tabs.j2" %}
 
-        {# 后台导航 #}
-        <div class="tabs is-toggle is-small mb-5">
-            <ul>
-                <li class="is-active">
-                    <a href="{{ url_for('root.admin.users') }}">
-                        <span class="icon is-small"><i class="fa-solid fa-users"></i></span>
-                        <span>用户管理</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('root.admin.clients') }}">
-                        <span class="icon is-small"><i class="fa-solid fa-server"></i></span>
-                        <span>OIDC 应用</span>
-                    </a>
-                </li>
-            </ul>
-        </div>
-
-        {# 搜索 #}
-        <div class="field is-grouped mb-4">
-            <div class="control is-expanded">
-                <input class="input" type="text" id="search-input" placeholder="按 uid、昵称或账号搜索">
+        {# 搜索与筛选 #}
+        <div class="box py-4 px-4 mb-4">
+            <div class="field is-grouped is-grouped-multiline mb-0">
+                <div class="control is-expanded" style="min-width: 220px;">
+                    <input class="input is-small" type="text" id="search-input"
+                           placeholder="按 uid、昵称或账号搜索">
+                </div>
+                <div class="control">
+                    <div class="select is-small">
+                        <select id="filter-status">
+                            <option value="">全部状态</option>
+                            <option value="1">正常</option>
+                            <option value="0">已禁用</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="control">
+                    <div class="select is-small">
+                        <select id="filter-role">
+                            <option value="">全部角色</option>
+                            <option value="superadmin">superadmin</option>
+                            <option value="admin">admin</option>
+                            <option value="user">user</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="control">
+                    <div class="select is-small">
+                        <select id="filter-login-type">
+                            <option value="">全部登录方式</option>
+                            <option value="password">有密码</option>
+                            <option value="third">仅第三方</option>
+                            <option value="passkey">已绑定 Passkey</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="control">
+                    <div class="select is-small">
+                        <select id="filter-order">
+                            <option value="ctime">注册时间排序</option>
+                            <option value="last_login">最后登录排序</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="control">
+                    <button class="button is-primary is-small" id="search-btn">
+                        <span class="icon is-small"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <span>搜索</span>
+                    </button>
+                </div>
+                <div class="control">
+                    <button class="button is-light is-small" id="reset-btn">重置</button>
+                </div>
+                {% if g.is_superadmin %}
+                <div class="control">
+                    <button class="button is-link is-light is-small" id="export-btn">
+                        <span class="icon is-small"><i class="fa-solid fa-file-csv"></i></span>
+                        <span>导出 CSV</span>
+                    </button>
+                </div>
+                {% endif %}
             </div>
-            <div class="control">
-                <button class="button is-primary" id="search-btn">
-                    <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
-                    <span>搜索</span>
-                </button>
+            <div class="field is-grouped is-grouped-multiline mt-3 mb-0">
+                <div class="control">
+                    <label class="label is-small mb-1">注册时间起</label>
+                    <input class="input is-small" type="date" id="filter-start">
+                </div>
+                <div class="control">
+                    <label class="label is-small mb-1">注册时间止</label>
+                    <input class="input is-small" type="date" id="filter-end">
+                </div>
             </div>
         </div>
 
@@ -102,7 +137,7 @@
                         <input type="checkbox" name="platform-role" value="user"> user
                     </label>
                 </div>
-                <p class="help">superadmin 可访问后台；admin 为平台管理员角色；user 为普通用户。</p>
+                <p class="help">superadmin 可访问后台并执行高危操作；admin 为平台管理员角色；user 为普通用户。</p>
             </div>
 
             <div class="field" id="client-roles-field" style="display:none;">
@@ -124,6 +159,28 @@
         </footer>
     </div>
 </div>
+
+{# 用户详情模态框 #}
+<div class="modal" id="detail-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card" style="width: 820px; max-width: 94vw;">
+        <header class="modal-card-head">
+            <p class="modal-card-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fa-solid fa-address-card"></i></span>
+                    <span>用户详情</span>
+                </span>
+            </p>
+            <button class="delete" aria-label="close"></button>
+        </header>
+        <section class="modal-card-body" id="detail-body">
+            <p class="has-text-grey is-size-7">加载中...</p>
+        </section>
+        <footer class="modal-card-foot">
+            <button type="button" class="button js-close-detail-modal">关闭</button>
+        </footer>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -135,6 +192,7 @@
         let $errorEl = $('#error-notice');
         let $errorMsgEl = $('#error-msg');
         let $roleModal = $('#role-modal');
+        let $detailModal = $('#detail-modal');
         let $pagerEl = $('#pager');
         let pageSize = 10;
         let currentPage = 1;
@@ -153,19 +211,16 @@
             return $('<div>').text(str === undefined || str === null ? '' : str).html();
         }
 
-        // 属性值转义：escHtml 不转义引号，写入 HTML 属性前补转义，防注入
         function escAttr(str) {
             return escHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
-        // 性别标签（User.gender：0 女 / 1 男 / 2 未知）
         function genderLabel(gender) {
             if (gender === 0) return '<span class="tag is-danger is-light is-size-7">女</span>';
             if (gender === 1) return '<span class="tag is-link is-light is-size-7">男</span>';
             return '<span class="has-text-grey-light">未知</span>';
         }
 
-        // 注册时间：仅显示到天（YYYY-MM-DD）
         function formatDate(ts) {
             if (!ts || ts <= 0) return '—';
             let d = new Date(ts * 1000);
@@ -175,7 +230,6 @@
             return yyyy + '-' + mm + '-' + dd;
         }
 
-        // 头像：有 avatar 用图片，否则占位图标
         function avatarHtml(avatar, nickname) {
             if (avatar) {
                 return '<img src="' + escAttr(avatar) + '" alt="' + escAttr(nickname || '') + '"'
@@ -187,7 +241,6 @@
         }
 
         function platformRoles(role) {
-            // 内置角色统一小写展示，兼容历史数据中的 SuperAdmin 等形式
             return (role || '').split(' ').filter(function (r) {
                 return r && r.indexOf(':') === -1;
             }).map(function (r) {
@@ -209,25 +262,81 @@
             return '<span class="tag ' + cls + ' is-size-7">' + escHtml(role) + '</span>';
         }
 
+        // --- 筛选参数与 URL 同步 ---
+        function dateToTs(value, endOfDay) {
+            if (!value) return '';
+            let parts = value.split('-');
+            if (parts.length !== 3) return '';
+            let d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            if (endOfDay) d.setDate(d.getDate() + 1);
+            return String(Math.floor(d.getTime() / 1000));
+        }
+
+        function collectFilters() {
+            return {
+                keyword: $('#search-input').val().trim(),
+                status: $('#filter-status').val(),
+                role: $('#filter-role').val(),
+                login_type: $('#filter-login-type').val(),
+                order: $('#filter-order').val(),
+                start: dateToTs($('#filter-start').val(), false),
+                end: dateToTs($('#filter-end').val(), true)
+            };
+        }
+
+        function fillFiltersFromUrl() {
+            let params = new URLSearchParams(window.location.search);
+            if (params.get('keyword')) $('#search-input').val(params.get('keyword'));
+            if (params.get('status')) $('#filter-status').val(params.get('status'));
+            if (params.get('role')) $('#filter-role').val(params.get('role'));
+            if (params.get('login_type')) $('#filter-login-type').val(params.get('login_type'));
+            if (params.get('order')) $('#filter-order').val(params.get('order'));
+            ['start', 'end'].forEach(function (key) {
+                let ts = params.get(key);
+                if (!ts) return;
+                let d = new Date(Number(ts) * 1000);
+                let value = d.getFullYear() + '-'
+                    + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                    + String(d.getDate()).padStart(2, '0');
+                $('#filter-' + key).val(value);
+            });
+        }
+
+        function syncUrl(filters, page) {
+            let params = {};
+            Object.keys(filters).forEach(function (k) {
+                if (filters[k]) params[k] = filters[k];
+            });
+            if (page && page > 1) params.page = page;
+            let query = $.param(params);
+            let url = window.location.pathname + (query ? '?' + query : '');
+            window.history.replaceState(null, '', url);
+
+        }
+
         // --- 加载用户列表 ---
         function loadUsers(page) {
             currentPage = page || 1;
+            let filters = collectFilters();
+            // 起始/结束是本地日期换算的时间戳，回填到 URL 时保持时间戳
+            syncUrl(filters, currentPage);
             $loadingEl.removeClass('is-hidden');
             $errorEl.addClass('is-hidden');
             $listEl.empty();
+            let data = $.extend({ page: currentPage, per_page: pageSize }, filters);
             $.ajax({
                 url: '{{ url_for("root.api.admin_users") }}',
                 method: 'GET',
-                data: { page: currentPage, per_page: pageSize, keyword: $('#search-input').val().trim() },
+                data: data,
                 success: function (res) {
                     $loadingEl.addClass('is-hidden');
                     if (!res.success) {
                         showError(apiMessage(res, '加载失败'));
                         return;
                     }
-                    let data = res.data || {};
-                    renderUsers(data.users || []);
-                    renderPager(data);
+                    let payload = res.data || {};
+                    renderUsers(payload.users || []);
+                    renderPager(payload);
                 },
                 error: function (xhr) {
                     $loadingEl.addClass('is-hidden');
@@ -246,20 +355,18 @@
             let html = '<div class="table-container"><table class="table is-fullwidth is-hoverable">'
                 + '<thead><tr>'
                 + '<th>用户</th>'
-                + '<th>性别</th>'
-                + '<th>地区</th>'
                 + '<th>账号</th>'
                 + '<th>平台角色</th>'
                 + '<th>注册时间</th>'
+                + '<th>最后登录</th>'
                 + '<th>状态</th>'
-                + '<th style="width: 180px;">操作</th>'
+                + '<th style="white-space: nowrap;">操作</th>'
                 + '</tr></thead><tbody>';
             $.each(users, function (_, u) {
                 let accounts = (u.accounts || []).map(function (a) {
                     return '<span class="tag is-light is-size-7 mr-1">' + escHtml(a.account) + '</span>';
                 }).join('') || '<span class="has-text-grey-light">—</span>';
                 let roles = platformRoles(u.role).map(roleTag).join(' ') || '<span class="has-text-grey-light">—</span>';
-                let ctime = formatDate(u.ctime);
                 let statusTag = (u.status === 0)
                     ? '<span class="tag is-danger is-light">已禁用</span>'
                     : '<span class="tag is-success is-light">正常</span>';
@@ -269,18 +376,23 @@
                     + avatarHtml(u.avatar, u.nickname)
                     + '<div><div class="has-text-weight-semibold">' + escHtml(u.nickname || '—') + '</div>'
                     + '<code class="is-size-7 has-text-grey">' + escHtml(u.uid) + '</code></div></div>';
+                let roleBtn = '';
+                if ({{ 'true' if g.is_superadmin else 'false' }}) {
+                    roleBtn = '<button class="button is-primary is-light js-role" data-uid="' + escAttr(u.uid) + '">'
+                        + '<span class="icon is-small"><i class="fa-solid fa-user-gear"></i></span><span>角色</span></button>';
+                }
                 html += '<tr>'
                     + '<td>' + userCell + '</td>'
-                    + '<td>' + genderLabel(u.gender) + '</td>'
-                    + '<td class="is-size-7">' + escHtml(u.location || '—') + '</td>'
                     + '<td>' + accounts + '</td>'
                     + '<td>' + roles + '</td>'
-                    + '<td class="is-size-7">' + ctime + '</td>'
+                    + '<td class="is-size-7">' + formatDate(u.ctime) + '</td>'
+                    + '<td class="is-size-7">' + formatDate(u.last_login) + '</td>'
                     + '<td>' + statusTag + '</td>'
-                    + '<td><div class="buttons are-small">'
-                    + '<button class="button is-primary is-light js-role" data-uid="' + escHtml(u.uid) + '">'
-                    + '<span class="icon is-small"><i class="fa-solid fa-user-gear"></i></span><span>角色</span></button>'
-                    + '<button class="button ' + toggleCls + ' is-light js-toggle" data-uid="' + escHtml(u.uid) + '" data-status="' + u.status + '">'
+                    + '<td style="white-space: nowrap;"><div class="buttons are-small is-flex-wrap-nowrap">'
+                    + '<button class="button is-info is-light js-detail" data-uid="' + escAttr(u.uid) + '">'
+                    + '<span class="icon is-small"><i class="fa-solid fa-address-card"></i></span><span>详情</span></button>'
+                    + roleBtn
+                    + '<button class="button ' + toggleCls + ' is-light js-toggle" data-uid="' + escAttr(u.uid) + '" data-status="' + u.status + '">'
                     + '<span class="icon is-small"><i class="fa-solid fa-power-off"></i></span><span>' + toggleLabel + '</span></button>'
                     + '</div></td></tr>';
             });
@@ -288,7 +400,6 @@
             $listEl.html(html);
         }
 
-        // 渲染分页：支持选择每页数量
         function renderPager(data) {
             let total = data.total || 0;
             if (total <= 0) {
@@ -312,6 +423,129 @@
         $('#search-btn').on('click', function () { loadUsers(1); });
         $('#search-input').on('keydown', function (e) {
             if (e.key === 'Enter') loadUsers(1);
+        });
+        $('#filter-status, #filter-role, #filter-login-type, #filter-order, #filter-start, #filter-end')
+            .on('change', function () { loadUsers(1); });
+        $('#reset-btn').on('click', function () {
+            $('#search-input').val('');
+            $('#filter-status, #filter-role, #filter-login-type').val('');
+            $('#filter-order').val('ctime');
+            $('#filter-start, #filter-end').val('');
+            loadUsers(1);
+        });
+        $('#export-btn').on('click', function () {
+            let filters = collectFilters();
+            window.location.href = '{{ url_for("root.api.admin_users_export") }}'
+                + '?' + $.param(filters);
+        });
+
+        // --- 用户详情 ---
+        $listEl.on('click', '.js-detail', function () {
+            let uid = $(this).data('uid');
+            $('#detail-body').html('<p class="has-text-grey is-size-7">加载中...</p>');
+            $detailModal.addClass('is-active');
+            $.ajax({
+                url: '{{ url_for("root.api.admin_user_detail_api") }}',
+                method: 'GET',
+                data: { uid: uid },
+                success: function (res) {
+                    if (!res.success) {
+                        $('#detail-body').html('<p class="has-text-danger is-size-7">'
+                            + escHtml(apiMessage(res, '加载失败')) + '</p>');
+                        return;
+                    }
+                    renderDetail(res.data || {});
+                },
+                error: function () {
+                    $('#detail-body').html('<p class="has-text-danger is-size-7">网络异常</p>');
+                }
+            });
+        });
+
+        function renderDetail(d) {
+            let accounts = (d.accounts || []).map(function (a) {
+                return '<span class="tag is-light is-size-7 mr-1">' + escHtml(a.account)
+                    + ' <span class="has-text-grey">' + escHtml(a.classify) + '</span></span>';
+            }).join('') || '<span class="has-text-grey-light">—</span>';
+            let roles = platformRoles(d.role).map(roleTag).join(' ') || '—';
+            let html = ''
+                + '<div class="is-flex is-align-items-center mb-4" style="gap:12px;">'
+                + avatarHtml(d.avatar, d.nickname)
+                + '<div><p class="title is-6 mb-0">' + escHtml(d.nickname || '—') + '</p>'
+                + '<code class="is-size-7 has-text-grey">' + escHtml(d.uid) + '</code></div>'
+                + '<span style="margin-left:auto;">' + ((d.status === 0)
+                    ? '<span class="tag is-danger is-light">已禁用</span>'
+                    : '<span class="tag is-success is-light">正常</span>') + '</span>'
+                + '</div>'
+                + '<div class="columns is-multiline is-variable is-2 is-size-7">'
+                + '<div class="column is-4"><strong>性别：</strong>' + genderLabel(d.gender) + '</div>'
+                + '<div class="column is-4"><strong>地区：</strong>' + escHtml(d.location || '—') + '</div>'
+                + '<div class="column is-4"><strong>密码：</strong>' + (d.has_password ? '已设置' : '未设置') + '</div>'
+                + '<div class="column is-4"><strong>注册：</strong>' + formatDate(d.ctime) + '</div>'
+                + '<div class="column is-4"><strong>平台角色：</strong>' + roles + '</div>'
+                + '<div class="column is-4"><strong>Passkey：</strong>' + (d.passkey_count || 0) + ' 个</div>'
+                + '<div class="column is-4"><strong>活跃会话：</strong>' + (d.active_session_count || 0) + '</div>'
+                + '<div class="column is-4"><strong>OIDC 授权：</strong>' + (d.authorization_count || 0) + '</div>'
+                + '<div class="column is-4"><strong>自建应用：</strong>' + (d.client_count || 0) + '</div>'
+                + '<div class="column is-12"><strong>绑定账号：</strong>' + accounts + '</div>'
+                + '</div>';
+
+            // 最近登录
+            html += '<h3 class="title is-6 mt-4 mb-2">最近登录</h3>';
+            if ((d.recent_logins || []).length) {
+                html += '<table class="table is-fullwidth is-narrow is-size-7"><thead><tr>'
+                    + '<th>时间</th><th>方式</th><th>账号</th><th>IP</th><th>设备</th>'
+                    + '</tr></thead><tbody>';
+                d.recent_logins.forEach(function (r) {
+                    let device = [r.browser, r.os].filter(Boolean).join(' / ') || '—';
+                    html += '<tr><td>' + formatDate(r.ctime) + ' ' + clockOf(r.ctime) + '</td>'
+                        + '<td>' + escHtml(r.method || '—') + '</td>'
+                        + '<td>' + escHtml(r.account || '—') + '</td>'
+                        + '<td>' + escHtml(r.ip || '—') + '</td>'
+                        + '<td>' + escHtml(device) + '</td></tr>';
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<p class="has-text-grey is-size-7">暂无登录记录</p>';
+            }
+
+            // 最近审计
+            html += '<h3 class="title is-6 mt-4 mb-2">最近审计</h3>';
+            if ((d.recent_audits || []).length) {
+                html += '<table class="table is-fullwidth is-narrow is-size-7"><thead><tr>'
+                    + '<th>时间</th><th>操作</th><th>详情</th>'
+                    + '</tr></thead><tbody>';
+                d.recent_audits.forEach(function (r) {
+                    let detailText = '';
+                    try {
+                        detailText = JSON.stringify(r.detail || {});
+                    } catch (e) {
+                        detailText = '';
+                    }
+                    if (detailText.length > 90) detailText = detailText.slice(0, 90) + '…';
+                    html += '<tr><td>' + formatDate(r.ctime) + ' ' + clockOf(r.ctime) + '</td>'
+                        + '<td>' + escHtml(r.action_label || r.action) + '</td>'
+                        + '<td><code class="is-size-7">' + escHtml(detailText) + '</code></td></tr>';
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<p class="has-text-grey is-size-7">暂无审计记录</p>';
+            }
+            $('#detail-body').html(html);
+        }
+
+        function clockOf(ts) {
+            if (!ts) return '';
+            let d = new Date(ts * 1000);
+            return String(d.getHours()).padStart(2, '0') + ':'
+                + String(d.getMinutes()).padStart(2, '0');
+        }
+
+        $detailModal.find('.modal-background, .delete').on('click', function () {
+            $detailModal.removeClass('is-active');
+        });
+        $('.js-close-detail-modal').on('click', function () {
+            $detailModal.removeClass('is-active');
         });
 
         // --- 角色编辑 ---
@@ -424,7 +658,8 @@
             });
         });
 
-        // 初始化
+        // 初始化：从 URL 恢复筛选条件
+        fillFiltersFromUrl();
         loadUsers(1);
     });
 </script>

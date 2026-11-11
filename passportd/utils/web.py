@@ -41,6 +41,7 @@ from ..models.user import (
     delete_session,
     generate_jwt,
     is_admin,
+    is_superadmin,
     verify_jwt,
 )
 from .common import parse_account_classify, rdb
@@ -336,6 +337,31 @@ def api_admin_required(f):
     return decorated_function
 
 
+def api_superadmin_required(f):
+    """装饰器：要求当前登录用户拥有 superadmin 角色，否则抛出 ApiError（403）。
+
+    用于后台高危操作（改角色、标记内部应用、删除客户端、导出数据）。
+    """
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not g.signin:
+            raise ApiError(
+                "no permission to access",
+                code=ErrorCode.NO_PERMISSION,
+                status_code=403,
+            )
+        if not is_superadmin(g.user.get("uid", "")):
+            raise ApiError(
+                "superadmin permission required",
+                code=ErrorCode.SUPERADMIN_REQUIRED,
+                status_code=403,
+            )
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 def current_user_is_admin() -> bool:
     """模板辅助函数：当前登录用户是否拥有后台管理权限。
 
@@ -346,6 +372,13 @@ def current_user_is_admin() -> bool:
     if not g.get("signin"):
         return False
     return is_admin(g.user.get("uid", ""))
+
+
+def current_user_is_superadmin() -> bool:
+    """模板辅助函数：当前登录用户是否拥有 superadmin 角色。"""
+    if not g.get("signin"):
+        return False
+    return is_superadmin(g.user.get("uid", ""))
 
 
 # 内网地址段：RFC 1918 + CGNAT + 环回 + 链路本地

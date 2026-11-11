@@ -49,6 +49,7 @@ from ..models.user import (
     add_account,
     add_profile,
     get_account,
+    get_login_session_expire,
     list_accounts,
     list_users,
     login,
@@ -454,7 +455,8 @@ class OAuthClintInterface(OAuth):
 
             if auth_data:
                 # 账号已绑定，直接登录并跳转到 next_url
-                expire = 7200
+                # 会话保持时长支持用户自定义，未设置时使用默认值
+                expire = get_login_session_expire(auth_data["uid"])
                 RecordLoginInterface(
                     uid=auth_data["uid"],
                     account=account,

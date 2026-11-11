@@ -27,6 +27,7 @@ passportd 是一个 **OpenID Connect (OIDC) / OAuth2 统一认证服务**，同�
 │  │ gender      │ 0=女 1=男 2=未知                                    │ │
 │  │ avatar      │ 头像 URL                                           │ │
 │  │ background_image │ 用户自定义背景图 URL (http/https，空=站点默认) │ │
+│  │ session_expire │ 登录会话保持时长(秒，Passkey/第三方，0=默认2小时)   │ │
 │  │ location    │ 地区                                               │ │
 │  │ password_hash│ 密码哈希 ★ (NULL=第三方用户无密码，所有本地方式共享)   │ │
 │  │ role        │ 角色 (空格分隔): User Admin SuperAdmin ...          │ │
@@ -270,11 +271,11 @@ passportd 的账号创建分为**用户名注册**（设置密码）与**验证�
 
 ### 3.4 修改密码
 
-修改密码仅在已登录状态下允许（`@apilogin_required`），因此不需要验证旧密码。
-仅需确认新旧密码不相同即可。
+入口位于「安全」页面（个人主页不再提供），修改密码仅在已登录状态下允许
+（`@apilogin_required`），因此不需要验证旧密码。仅需确认新旧密码不相同即可。
 
 ```
-POST /api/change_pwd
+POST /api/user/change_password
   { new_password, repassword }
   │
   change_password(uid, account, new_pwd)
@@ -691,16 +692,28 @@ DELETE /api/user/oauth/authorizations → 撤销对某个 Client 的授权
 ### 5.6 后台管理（admin / superadmin）
 
 内置 `admin` / `superadmin` 角色可进入后台（导航栏「后台」入口，由模板函数
-`current_user_is_admin()` 控制显隐）：
+`current_user_is_admin()` 控制显隐），入口默认落在数据概览页：
 
 - **页面鉴权**：`views/admin.py` 蓝图 `before_request` 统一校验——未登录跳登录页、
-  非管理员返回 403，并在该请求上下文写入 `g.is_admin`；判定**不**放入
-  `app.before_request`，避免每个请求（含 API、静态资源）都查询角色。
-- **API 鉴权**：`api_admin_required` 装饰器按需查询，未通过返回 `ADMIN_REQUIRED`。
-- **用户管理**：分页/搜索，设置内置平台角色（保留 `ClientName:Role` 客户端角色）、
-  启用/禁用；禁止移除最后一个 `superadmin`，禁止禁用自己。
-- **OIDC 应用管理**：仅提供「标记为内部应用」（`OAuthClient.is_internal`），
-  不含编辑、删除。
+  非管理员返回 403，并在该请求上下文写入 `g.is_admin` / `g.is_superadmin`；判定
+  **不**放入 `app.before_request`，避免每个请求（含 API、静态资源）都查询角色。
+- **权限分级**：`api_admin_required` 用于常规后台接口（未通过返回 `ADMIN_REQUIRED`）；
+  高危操作（改角色、标记内部应用、删除应用、导出数据）使用
+  `api_superadmin_required`（返回 `SUPERADMIN_REQUIRED`），前端按钮按
+  `g.is_superadmin` 显隐。
+- **数据概览**：关键指标（用户、活跃、会话、OIDC 客户端、Passkey 绑定等）、
+  近 30 天注册/登录趋势、登录方式/账号类型/地区分布、可疑登录（24 小时内多 IP）
+  与最近后台操作；统计结果缓存 60 秒，`?refresh=1` 强制刷新。
+- **用户管理**：分页/搜索，支持状态、平台角色、登录方式筛选与注册时间范围，
+  可按注册时间或最后登录排序；列表展示最后登录时间，可查看用户聚合详情
+  （账号、会话、最近登录与审计、Passkey/OIDC 数量），并导出 CSV（superadmin）。
+  设置内置平台角色时保留 `ClientName:Role` 客户端角色；禁止移除最后一个
+  `superadmin`，禁止禁用自己。
+- **OIDC 应用管理**：可按内部应用、含 `role` 授权范围筛选，查看只读详情
+  （所有者、scope、回调地址、授权与令牌数）；**不提供编辑**，仅支持标记/取消
+  内部应用与删除（删除会级联清理令牌与授权）。
+- **审计与登录记录**：后台可按关键词、操作类型前缀、IP 与时间范围检索全站
+  审计日志和登录记录。
 - **审计**：所有后台写操作经 `_record_admin_audit()` 写两条日志——操作者名下
   （detail 含 `target_uid`）与被操作用户名下（detail 含 `operator_uid`）；
   操作者即被操作者时只记一条。
@@ -717,9 +730,9 @@ DELETE /api/user/oauth/authorizations → 撤销对某个 Client 的授权
 | `/user/signup` | GET/POST | 注册页（用户名/邮箱/手机号） | anonymous_required |
 | `/user/signin` | GET/POST | 登录页（密码 & 验证码双 Tab） | anonymous_required |
 | `/user/signout` | GET | 登出 (清除 sid cookie) | public |
-| `/user/profile` | GET/POST | 个人资料编辑 & 修改密码 | login_required |
+| `/user/profile` | GET/POST | 个人资料编辑（含背景图快捷选择） | login_required |
 | `/user/account` | GET | 账号管理 & OAuth 绑定 | login_required |
-| `/user/security` | GET | 账号安全（登录历史 & 安全审计日志） | login_required |
+| `/user/security` | GET | 账号安全（修改密码、会话时长、登录历史、审计） | login_required |
 | `/user/oidc/client` | GET | OIDC Client 管理 | login_required |
 | `/ping` | GET | Kubernetes 健康检查探针 | public |
 
@@ -731,11 +744,13 @@ DELETE /api/user/oauth/authorizations → 撤销对某个 Client 的授权
 | `/api/user/me` | GET | 获取当前用户信息 | apilogin_required |
 | `/api/user/<uid>` | GET | 获取指定用户资料 | apilogin_required |
 | `/api/signup` | POST | 注册新用户 | anonymous_required |
-| `/api/change_pwd` | POST | 修改密码 | apilogin_required |
+| `/api/user/change_password` | POST | 修改密码 | apilogin_required |
 | `/api/update_profile` | POST | 更新资料 | apilogin_required |
 | `/api/send_login_vcode` | POST | 发送登录验证码（未注册账号也可发送，即注册） | public (60s 防重复) |
 | `/api/vcode_login` | POST | 验证码登录（账号不存在自动注册） | public |
-| `/api/login_history` | GET | 登录历史记录 | apilogin_required |
+| `/api/user/login_history` | GET | 登录历史记录 | apilogin_required |
+| `/api/user/sessions` | GET | 活跃会话列表（含剩余有效期） | apilogin_required |
+| `/api/user/session/expire` | PUT | 设置登录会话保持时长 | apilogin_required |
 | `/api/upload` | POST | 上传头像/文件 | apilogin_required |
 | `/api/client/create` | POST | 创建 OIDC Client | apilogin_required |
 | `/api/client/update` | POST | 更新 OIDC Client | apilogin_required |
@@ -781,13 +796,22 @@ DELETE /api/user/oauth/authorizations → 撤销对某个 Client 的授权
 
 | 路由 | 方法 | 功能 | 权限 |
 |---|---|---|---|
+| `/admin` | GET | 重定向到数据概览 | admin/superadmin |
+| `/admin/dashboard` | GET | 数据概览（KPI / 趋势 / 分布 / 安全信号） | admin/superadmin |
 | `/admin/users` | GET | 后台用户管理页 | admin/superadmin |
 | `/admin/clients` | GET | 后台 OIDC 应用管理页 | admin/superadmin |
-| `/api/admin/users` | GET | 分页查询用户（关键词搜索 uid/昵称/账号） | admin/superadmin |
-| `/api/admin/user/role` | PUT | 设置用户内置平台角色（保留客户端角色） | admin/superadmin |
+| `/admin/logs` | GET | 审计日志 & 登录记录页 | admin/superadmin |
+| `/api/admin/users` | GET | 分页查询用户（筛选 / 排序） | admin/superadmin |
+| `/api/admin/user/detail` | GET | 用户聚合详情 | admin/superadmin |
+| `/api/admin/users/export` | GET | 导出用户 CSV | superadmin |
+| `/api/admin/user/role` | PUT | 设置内置平台角色（保留客户端角色） | superadmin |
 | `/api/admin/user/status` | PUT | 启用 / 禁用用户 | admin/superadmin |
-| `/api/admin/oidc/clients` | GET | 分页查询全部 OIDC 客户端 | admin/superadmin |
-| `/api/admin/oidc/client/internal` | PUT | 标记 / 取消标记内部应用 | admin/superadmin |
+| `/api/admin/audit_logs` | GET | 全站审计日志查询 | admin/superadmin |
+| `/api/admin/login_records` | GET | 全站登录记录查询 | admin/superadmin |
+| `/api/admin/oidc/clients` | GET | 查询客户端（内部 / role 筛选） | admin/superadmin |
+| `/api/admin/oidc/client/detail` | GET | 客户端只读详情 | admin/superadmin |
+| `/api/admin/oidc/client/internal` | PUT | 标记 / 取消标记内部应用 | superadmin |
+| `/api/admin/oidc/client/<client_id>` | DELETE | 删除客户端（级联清理令牌与授权） | superadmin |
 
 ---
 
@@ -863,12 +887,13 @@ passportd/
 │   ├── model.py        ← Peewee ORM 表定义 (User, Auth, OAuthClient, LoginRecord, PasskeyCredential, AuditLog...)
 │   ├── user.py         ← 用户 CRUD (add_profile, login, change_password, record_login, is_admin, set_platform_roles...)
 │   ├── oidc.py         ← OIDC Client 管理 + Token/Authorization 操作 + 内部应用标记
-│   └── audit.py        ← 安全审计日志读写 (record_audit_log, list_audit_logs)
+│   ├── audit.py        ← 安全审计日志读写 (record_audit_log, list_audit_logs)
+│   └── stats.py        ← 后台概览统计 (KPI / 趋势 / 分布，Redis 缓存 60s)
 ├── views/              ← 路由层 (Flask Blueprint)
 │   ├── root.py         ← 蓝图注册
 │   ├── front.py        ← 页面路由 (登录/注册/Profile/OAuth绑定)
 │   ├── api.py          ← REST API (用户、验证码、OIDC Client、后台管理、上传、登录历史、Passkey)
-│   ├── admin.py        ← 后台管理页面 (用户管理 / OIDC 应用管理，仅 admin/superadmin)
+│   ├── admin.py        ← 后台页面 (概览 / 用户管理 / OIDC 应用 / 审计与登录记录)
 │   └── oidc.py         ← OIDC Server 端点 (authorize/token/userinfo/jwks)
 ├── libs/               ← 核心库 ★
 │   ├── oidc.py         ← OIDC Server 实现 (authlib AuthorizationServer)
@@ -884,11 +909,14 @@ passportd/
 ├── templates/          ← Jinja2 模板
 │   ├── signin.j2       ← 登录页（密码 & 验证码 & Passkey 三 Tab）
 │   ├── signup.j2       ← 注册页（用户名 & 邮箱/手机号双 Tab）
-│   ├── profile.j2      ← 个人资料 & 修改密码 & Passkey 管理
-│   ├── security.j2     ← 账号安全 & 安全审计日志
+│   ├── profile.j2      ← 个人资料 & 背景图快捷选择 & Passkey 管理
+│   ├── security.j2     ← 账号安全 (修改密码 / 会话时长 / 登录历史 / 审计)
 │   ├── authorize.j2    ← OIDC 授权确认页
+│   ├── admin_dashboard.j2 ← 后台数据概览
 │   ├── admin_users.j2  ← 后台用户管理
 │   ├── admin_clients.j2← 后台 OIDC 应用管理
+│   ├── admin_logs.j2   ← 后台审计日志 & 登录记录
+│   ├── admin_tabs.j2   ← 后台公共页头与 Tab 导航
 │   ├── layout.j2       ← 基础布局 (含 Passkey 开关全局变量)
 │   └── error.j2        ← 错误页
 ├── static/             ← 前端静态资源 (Bulma, FontAwesome, jQuery, favicon)
@@ -934,6 +962,7 @@ passportd/
 | URL 安全 | `is_safe_url()` 防 open redirect |
 | 验证码防刷 | 同一账号 60s 内不可重复发送，有效期 5 分钟 |
 | 旧密码恢复 | 忘记密码 → 验证码登录 → 直接修改密码（无需旧密码验证） |
-| 后台权限 | 后台页面在蓝图 `before_request` 校验 admin/superadmin，API 用 `api_admin_required`，普通用户 403 |
+| 登录会话时长 | Passkey 与第三方登录按用户设置（2 小时～30 天，默认 2 小时）；密码/验证码登录沿用登录页「记住登录」 |
+| 后台权限 | 页面在蓝图 `before_request` 校验 admin/superadmin；常规接口用 `api_admin_required`，改角色/标记内部应用/删除应用/导出用 `api_superadmin_required` |
 | 后台审计 | 后台写操作双记审计日志：操作者（`target_uid`）与被操作用户（`operator_uid`）各一条 |
 | 内部应用 | 客户端须被标记 `is_internal` 或在 `OIDC_INTERNAL_CLIENTS` 中，申请 `role` 才会输出平台角色 |

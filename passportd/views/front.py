@@ -30,6 +30,10 @@ from flask import (
 )
 
 from ..basis.errors import ApiError, ErrorCode, PassportError
+from ..basis.vars import (
+    LOGIN_SESSION_EXPIRE_DEFAULT,
+    LOGIN_SESSION_EXPIRE_OPTIONS,
+)
 from ..libs.interface import (
     LoginInterface,
     RecordLoginInterface,
@@ -43,7 +47,9 @@ from ..models.user import (
     add_account,
     add_profile,
     get_account,
+    get_login_session_expire,
     get_user_by_uid,
+    has_local_auth,
     list_accounts,
     login,
     update_profile,
@@ -337,7 +343,7 @@ def oauth2go():
                 )
                 return auto_set_user_state(
                     userinfo["account"],
-                    7200,
+                    get_login_session_expire(uid),
                     dict(
                         success=True,
                         msg="绑定成功",
@@ -385,7 +391,9 @@ def oauth2go():
             rdb.delete(key)
             try:
                 auth = get_account(userinfo["account"])
+                expire = LOGIN_SESSION_EXPIRE_DEFAULT
                 if auth:
+                    expire = get_login_session_expire(auth["uid"])
                     RecordLoginInterface(
                         uid=auth["uid"],
                         account=userinfo["account"],
@@ -396,7 +404,7 @@ def oauth2go():
                     )
                 return auto_set_user_state(
                     userinfo["account"],
-                    7200,
+                    expire,
                     dict(
                         success=True,
                         msg="创建成功",
@@ -505,8 +513,14 @@ def oidc_client():
 @bp.get("/user/security")
 @login_required
 def security():
-    """安全页面：展示用户的安全审计日志。"""
-    return render_template("security.j2")
+    """安全页面：修改密码、活跃会话、登录历史、审计日志与会话时长设置。"""
+    uid = g.user["uid"]
+    return render_template(
+        "security.j2",
+        can_change_password=has_local_auth(uid),
+        session_expire_options=LOGIN_SESSION_EXPIRE_OPTIONS,
+        session_expire=get_login_session_expire(uid),
+    )
 
 
 @bp.get("/privacy")

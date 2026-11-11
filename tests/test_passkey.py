@@ -33,7 +33,13 @@ sys.modules["redis"] = _mock_redis_module
 sys.modules["redis.client"] = MagicMock()
 
 from passportd.app import create_app
-from passportd.models.user import add_profile, generate_jwt, list_accounts
+from passportd.models.user import (
+    add_profile,
+    generate_jwt,
+    get_login_session_expire,
+    list_accounts,
+    set_login_session_expire,
+)
 from passportd.models.model import db, User, Auth, LoginRecord, PasskeyCredential
 from passportd.utils.common import (
     base64url_encode,
@@ -463,6 +469,61 @@ class PasskeyModelTest(unittest.TestCase):
                 PasskeyCredential.credential_id == "test-signcount-001"
             )
             self.assertEqual(updated.sign_count, 5)
+
+
+# ---- 登录会话保持时长测试 ----
+
+
+class LoginSessionExpireTest(unittest.TestCase):
+    """用户级登录会话保持时长测试（Passkey 与第三方登录共用）"""
+
+    @classmethod
+    def setUpClass(cls):
+        app = create_app()
+        app.config["TESTING"] = True
+        cls.app = app
+
+        with app.app_context():
+            if db.is_closed():
+                db.connect()
+            db.create_tables([User, Auth], safe=True)
+            add_profile(_AUTH["username"], "testpass789")
+            auth = Auth.get(Auth.account == _AUTH["username"])
+            _AUTH["uid"] = auth.uid
+
+    @classmethod
+    def tearDownClass(cls):
+        with cls.app.app_context():
+            Auth.delete().where(Auth.account == _AUTH["username"]).execute()
+            User.delete().where(User.uid == _AUTH["uid"]).execute()
+            db.close()
+
+    def test_default_expire(self):
+        """未设置时返回默认时长"""
+        from passportd.basis.vars import LOGIN_SESSION_EXPIRE_DEFAULT
+
+        with self.app.app_context():
+            User.update(session_expire=0).where(
+                User.uid == _AUTH["uid"]
+            ).execute()
+            self.assertEqual(
+                get_login_session_expire(_AUTH["uid"]),
+                LOGIN_SESSION_EXPIRE_DEFAULT,
+            )
+
+    def test_set_and_get_expire(self):
+        """设置合法档位后读取生效"""
+        with self.app.app_context():
+            set_login_session_expire(_AUTH["uid"], 604800)
+            self.assertEqual(get_login_session_expire(_AUTH["uid"]), 604800)
+
+    def test_invalid_expire_rejected(self):
+        """非法档位被拒绝"""
+        from passportd.basis.errors import ParamError
+
+        with self.app.app_context():
+            with self.assertRaises(ParamError):
+                set_login_session_expire(_AUTH["uid"], 12345)
 
 
 if __name__ == "__main__":

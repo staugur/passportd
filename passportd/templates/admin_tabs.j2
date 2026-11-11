@@ -1,0 +1,41 @@
+{# 后台公共页头与 Tab 导航，页面通过 {% set admin_tab = 'xxx' %} 指定当前项 #}
+<div class="mb-5">
+    <h1 class="title is-4 mb-1">
+        <span class="icon-text">
+            <span class="icon"><i class="fa-solid fa-user-shield"></i></span>
+            <span>后台管理</span>
+        </span>
+    </h1>
+    <p class="subtitle is-6 has-text-grey mb-0">
+        仅管理员可访问{% if not g.is_superadmin %}，高危操作需 superadmin 角色{% endif %}
+    </p>
+</div>
+
+<div class="tabs is-toggle is-small mb-5">
+    <ul>
+        <li{% if admin_tab == 'dashboard' %} class="is-active"{% endif %}>
+            <a href="{{ url_for('root.admin.dashboard') }}">
+                <span class="icon is-small"><i class="fa-solid fa-chart-line"></i></span>
+                <span>概览</span>
+            </a>
+        </li>
+        <li{% if admin_tab == 'users' %} class="is-active"{% endif %}>
+            <a href="{{ url_for('root.admin.users') }}">
+                <span class="icon is-small"><i class="fa-solid fa-users"></i></span>
+                <span>用户管理</span>
+            </a>
+        </li>
+        <li{% if admin_tab == 'clients' %} class="is-active"{% endif %}>
+            <a href="{{ url_for('root.admin.clients') }}">
+                <span class="icon is-small"><i class="fa-solid fa-server"></i></span>
+                <span>OIDC 应用</span>
+            </a>
+        </li>
+        <li{% if admin_tab == 'logs' %} class="is-active"{% endif %}>
+            <a href="{{ url_for('root.admin.logs') }}">
+                <span class="icon is-small"><i class="fa-solid fa-clipboard-list"></i></span>
+                <span>审计与登录记录</span>
+            </a>
+        </li>
+    </ul>
+</div>

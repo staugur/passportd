@@ -15,10 +15,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from binascii import Error as BinasciiError
 
 from werkzeug.security import generate_password_hash, check_password_hash
+from peewee import fn
 from playhouse.shortcuts import model_to_dict
 
 from .model import (
@@ -26,6 +27,7 @@ from .model import (
     Auth,
     LoginRecord,
     OAuthAuthorization,
+    OAuthClient,
     OAuthToken,
     PasskeyCredential,
     UserSession,
@@ -35,6 +37,8 @@ from ..basis.mixin import GetItemMixIn
 from ..basis.errors import AuthError, JWTError, ParamError
 from ..basis.vars import (
     COMMON_DICT_TYPE,
+    LOGIN_SESSION_EXPIRE_DEFAULT,
+    LOGIN_SESSION_EXPIRE_OPTIONS,
     PROC_NAME,
     USERNAME_CHANGE_INTERVAL,
     USER_BG_CACHE_TTL,
@@ -106,6 +110,23 @@ def is_admin(uid: str) -> bool:
     )
 
 
+def is_superadmin(uid: str) -> bool:
+    """判断用户是否拥有 superadmin 角色（后台最高权限）。
+
+    :param uid: 用户唯一标识符（22 位字符串）
+    :returns: 拥有 superadmin 角色返回 True，否则 False
+    """
+    if not uid or len(uid) != 22:
+        return False
+    role = User.select(User.role).where(User.uid == uid).scalar()
+    if not role:
+        return False
+    return any(
+        normalize_builtin_role(r) == "superadmin"
+        for r in (role or "").split()
+    )
+
+
 def count_superadmins() -> int:
     """统计拥有内置 superadmin 角色的用户数（忽略大小写，兼容历史数据）。
 
@@ -122,13 +143,27 @@ def count_superadmins() -> int:
 
 
 def admin_list_users(
-    keyword: str = "", page: int = 1, per_page: int = 20
+    keyword: str = "",
+    page: int = 1,
+    per_page: int = 20,
+    status: Optional[int] = None,
+    role: str = "",
+    login_type: str = "",
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    order: str = "ctime",
 ) -> Tuple[List[COMMON_DICT_TYPE], int]:
-    """管理员分页查询用户列表（含绑定的账号方式）。
+    """管理员分页查询用户列表（含绑定的账号方式与最后登录时间）。
 
     :param keyword: 搜索关键词，匹配 uid、昵称或账号
     :param page: 页码，从 1 开始
     :param per_page: 每页条数，最大 100
+    :param status: 状态筛选（0 禁用 / 1 启用），None 表示不筛选
+    :param role: 平台角色筛选（superadmin / admin / user）
+    :param login_type: 登录方式筛选：password / third / passkey
+    :param start: 注册时间下界（含），Unix 时间戳
+    :param end: 注册时间上界（不含），Unix 时间戳
+    :param order: 排序方式：ctime（注册时间）或 last_login（最后登录）
     :returns: (用户信息列表, 总条数) 元组，用户信息不含密码哈希
     """
     query = User.select()
@@ -143,10 +178,48 @@ def admin_list_users(
         if matched_uids:
             cond = cond | (User.uid.in_(matched_uids))
         query = query.where(cond)
+    if status is not None:
+        query = query.where(User.status == int(status))
+    if role:
+        role = role.strip().lower()
+        low_role = fn.LOWER(User.role)
+        query = query.where(
+            (low_role == role)
+            | (low_role.startswith(role + " "))
+            | (low_role.endswith(" " + role))
+            | (low_role.contains(" " + role + " "))
+        )
+    if login_type == "password":
+        query = query.where(
+            User.password_hash.is_null(False) & (User.password_hash != "")
+        )
+    elif login_type == "third":
+        query = query.where(
+            User.password_hash.is_null(True) | (User.password_hash == "")
+        )
+    elif login_type == "passkey":
+        query = query.where(
+            User.uid.in_(PasskeyCredential.select(PasskeyCredential.uid))
+        )
+    if start:
+        query = query.where(User.ctime >= int(start))
+    if end:
+        query = query.where(User.ctime < int(end))
     total = query.count()
     page = max(1, page)
     per_page = max(1, min(per_page, 100))
-    rows = query.order_by(User.ctime.desc()).paginate(page, per_page)
+    if order == "last_login":
+        # 关联子查询取每个用户的最后登录时间，再按此排序
+        last_login = fn.COALESCE(
+            LoginRecord.select(fn.MAX(LoginRecord.ctime)).where(
+                LoginRecord.uid == User.uid
+            ),
+            0,
+        )
+        query = query.order_by(last_login.desc(), User.ctime.desc())
+    else:
+        query = query.order_by(User.ctime.desc())
+    rows = query.paginate(page, per_page)
     users = []
     for u in rows:
         item = model_to_dict(u, exclude=[User.password_hash])
@@ -159,9 +232,121 @@ def admin_list_users(
             accounts_map.setdefault(a.uid, []).append(
                 {"account": a.account, "classify": a.classify}
             )
+    last_logins: Dict[str, int] = {}
+    if uids:
+        last_rows = (
+            LoginRecord.select(
+                LoginRecord.uid, fn.MAX(LoginRecord.ctime).alias("last")
+            )
+            .where(LoginRecord.uid.in_(uids))
+            .group_by(LoginRecord.uid)
+        )
+        for row in last_rows:
+            last_logins[row.uid] = int(row.last or 0)
     for u in users:
         u["accounts"] = accounts_map.get(u["uid"], [])
+        u["last_login"] = last_logins.get(u["uid"], 0)
     return users, total
+
+
+def admin_user_detail(uid: str) -> Optional[Dict[str, Any]]:
+    """管理员查看单个用户的聚合详情。
+
+    包含基础资料、绑定账号、活跃会话、最近登录、最近审计、
+    Passkey 数量、OIDC 授权与自建客户端数量。
+
+    :param uid: 用户唯一标识符
+    :returns: 用户详情字典，用户不存在时返回 None
+    """
+    from .audit import list_audit_logs
+
+    u = User.get_or_none(User.uid == uid)
+    if not u:
+        return None
+    item = model_to_dict(u, exclude=[User.password_hash])
+    item["has_password"] = bool(u.password_hash)
+    item["accounts"] = [
+        {"account": a.account, "classify": a.classify, "ctime": a.ctime}
+        for a in Auth.select().where(Auth.uid == uid)
+    ]
+    sessions = list_active_sessions(uid)
+    for s in sessions:
+        s.pop("user_agent", None)
+    item["sessions"] = sessions
+    item["active_session_count"] = len(sessions)
+    item["recent_logins"] = list_login_records(uid, limit=5)
+    item["recent_audits"] = list_audit_logs(uid=uid, limit=5)
+    item["passkey_count"] = (
+        PasskeyCredential.select().where(PasskeyCredential.uid == uid).count()
+    )
+    item["authorization_count"] = (
+        OAuthAuthorization.select()
+        .where(OAuthAuthorization.uid == uid)
+        .count()
+    )
+    item["client_count"] = (
+        OAuthClient.select().where(OAuthClient.uid == uid).count()
+    )
+    return item
+
+
+def admin_list_login_records(
+    keyword: str = "",
+    method: str = "",
+    ip: str = "",
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> Tuple[List[COMMON_DICT_TYPE], int]:
+    """管理员分页查询登录记录（含用户昵称）。
+
+    :param keyword: 关键词，匹配账号、uid 或昵称
+    :param method: 登录方式精确匹配
+    :param ip: IP 模糊匹配
+    :param start: 时间下界（含），Unix 时间戳
+    :param end: 时间上界（不含），Unix 时间戳
+    :param page: 页码，从 1 开始
+    :param per_page: 每页条数，最大 100
+    :returns: (登录记录列表, 总条数) 元组
+    """
+    query = LoginRecord.select()
+    if keyword:
+        matched_uids = [
+            u.uid
+            for u in User.select(User.uid).where(
+                (User.uid == keyword) | (User.nickname.contains(keyword))
+            )
+        ]
+        cond = LoginRecord.account.contains(keyword)
+        if matched_uids:
+            cond = cond | (LoginRecord.uid.in_(matched_uids))
+        query = query.where(cond)
+    if method:
+        # 前缀匹配便于用 oauth2 覆盖所有第三方登录
+        query = query.where(LoginRecord.method.startswith(method))
+    if ip:
+        query = query.where(LoginRecord.ip.contains(ip))
+    if start:
+        query = query.where(LoginRecord.ctime >= int(start))
+    if end:
+        query = query.where(LoginRecord.ctime < int(end))
+    total = query.count()
+    page = max(1, page)
+    per_page = max(1, min(per_page, 100))
+    rows = query.order_by(LoginRecord.ctime.desc()).paginate(page, per_page)
+    records = [model_to_dict(r) for r in rows]
+    uids = {r["uid"] for r in records}
+    nicknames: Dict[str, str] = {}
+    if uids:
+        for u in User.select(User.uid, User.nickname).where(
+            User.uid.in_(uids)
+        ):
+            nicknames[u.uid] = u.nickname
+    for r in records:
+        r["nickname"] = nicknames.get(r["uid"], "")
+        r.pop("fingerprint", None)
+    return records, total
 
 
 def get_user_email(uid: str) -> Union[None, str]:
@@ -234,6 +419,50 @@ def get_user_background_image(uid: str) -> str:
     except Exception:  # noqa: BLE001
         pass
     return value
+
+
+def get_login_session_expire(uid: str) -> int:
+    """获取用户使用 Passkey 或第三方账号登录时的会话保持时长。
+
+    未设置或数据非法时返回默认值，保证登录流程始终有可用时长。
+
+    :param uid: 用户唯一标识符
+    :returns: 会话保持时长（秒）
+    """
+    value = (
+        User.select(User.session_expire).where(User.uid == uid).scalar()
+    )
+    try:
+        expire = int(value or 0)
+    except (TypeError, ValueError):
+        return LOGIN_SESSION_EXPIRE_DEFAULT
+    if expire in LOGIN_SESSION_EXPIRE_OPTIONS:
+        return expire
+    return LOGIN_SESSION_EXPIRE_DEFAULT
+
+
+def set_login_session_expire(uid: str, expire: int) -> int:
+    """设置用户使用 Passkey 或第三方账号登录时的会话保持时长。
+
+    :param uid: 用户唯一标识符
+    :param expire: 会话保持时长（秒），必须是可选档位之一
+    :returns: 设置生效的时长（秒）
+    :raises ParamError: 时长不在可选档位内
+    :raises AuthError: 用户不存在或数据库操作失败
+    """
+    if expire not in LOGIN_SESSION_EXPIRE_OPTIONS:
+        raise ParamError("Invalid login session expire")
+    try:
+        u = User.get(User.uid == uid)
+    except User.DoesNotExist:
+        raise AuthError("Not found user id")
+    u.session_expire = int(expire)
+    u.mtime = now()
+    try:
+        u.save()
+    except Exception as e:
+        raise AuthError(e)
+    return int(expire)
 
 
 def has_account(account: str) -> bool:
@@ -613,12 +842,12 @@ def delete_user_data(
 def update_profile(
     uid: str,
     *,
-    nickname: str = "",
-    bio: str = "",
+    nickname: Optional[str] = None,
+    bio: Optional[str] = None,
     gender: int = -1,
-    avatar: str = "",
+    avatar: Optional[str] = None,
     background_image: Optional[str] = None,
-    location: str = "",
+    location: Optional[str] = None,
     status: int = -1,
     role: str = "",
 ) -> bool:
@@ -630,12 +859,12 @@ def update_profile(
     - 移除：以 ``-`` 开头，如 ``"-admin"``
 
     :param uid: 用户唯一标识符
-    :param nickname: 新昵称（空字符串表示不修改）
-    :param bio: 新简介
+    :param nickname: 新昵称（None 表示不修改，空串表示清空）
+    :param bio: 新简介（None 表示不修改，空串表示清空）
     :param gender: 性别（-1 表示不修改）
-    :param avatar: 新头像 URL
+    :param avatar: 新头像 URL（None 表示不修改，空串表示清除）
     :param background_image: 新背景图 URL（仅支持 http/https，None 表示不修改，空串表示清除）
-    :param location: 新地区
+    :param location: 新地区（None 表示不修改，空串表示清空）
     :param status: 状态（-1 表示不修改，0=禁用, 1=启用）
     :param role: 角色操作
     :returns: 更新成功返回 True
@@ -656,17 +885,17 @@ def update_profile(
         raise ParamError("Invalid background image url")
     try:
         u = User.get(User.uid == uid)
-        if nickname:
+        if nickname is not None:
             u.nickname = nickname
-        if bio:
+        if bio is not None:
             u.bio = bio
         if gender != -1:
             u.gender = gender
-        if avatar:
+        if avatar is not None:
             u.avatar = avatar
         if background_image is not None:
             u.background_image = background_image
-        if location:
+        if location is not None:
             u.location = location
         if status != -1:
             u.status = status

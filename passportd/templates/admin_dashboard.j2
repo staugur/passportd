@@ -1,0 +1,284 @@
+{% extends "layout.j2" %}
+{% set admin_tab = 'dashboard' %}
+{% block title %}后台 · 概览 - {{ config.get("SITE_TITLE") or "Passport" }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .kpi-card .heading { letter-spacing: .02em; }
+    .mini-chart {
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 120px;
+    }
+    .mini-chart .bar {
+        flex: 1;
+        min-height: 1px;
+        border-radius: 2px 2px 0 0;
+        background: #3e8ed0;
+        transition: background .15s;
+    }
+    .mini-chart .bar:hover { background: #2f6fa8; }
+    .dist-row {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .4rem;
+    }
+    .dist-label {
+        width: 96px;
+        flex: none;
+        font-size: .75rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .dist-bar {
+        height: 8px;
+        border-radius: 4px;
+        background: #3e8ed0;
+        min-width: 2px;
+    }
+    .dist-count {
+        font-size: .75rem;
+        color: #7a7a7a;
+        flex: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+    <div class="container" style="max-width: 1100px;">
+
+        {% include "admin_tabs.j2" %}
+
+        <div class="level mb-4">
+            <div class="level-left">
+                <p class="has-text-grey is-size-7">
+                    数据缓存 60 秒，生成于
+                    <span class="js-timestamp" data-ts="{{ stats.generated_at }}"></span>
+                </p>
+            </div>
+            <div class="level-right">
+                <a class="button is-small is-light" href="{{ url_for('root.admin.dashboard') }}?refresh=1">
+                    <span class="icon is-small"><i class="fa-solid fa-rotate"></i></span>
+                    <span>刷新数据</span>
+                </a>
+            </div>
+        </div>
+
+        {# 关键指标 #}
+        <div class="columns is-multiline is-variable is-3 mb-2">
+            {% set kpis = [
+                ("总用户", stats.kpi.total_users, "fa-users", "has-text-link"),
+                ("近 7 天活跃", stats.kpi.active_users_7d, "fa-user-check", "has-text-success"),
+                ("24 小时登录", stats.kpi.logins_24h, "fa-right-to-bracket", "has-text-info"),
+                ("活跃会话", stats.kpi.active_sessions, "fa-display", "has-text-info"),
+                ("禁用用户", stats.kpi.disabled_users, "fa-user-slash", "has-text-danger"),
+                ("OIDC 客户端", stats.kpi.oauth_clients, "fa-server", "has-text-link"),
+                ("内部应用", stats.kpi.internal_clients, "fa-shield-halved", "has-text-warning"),
+                ("授权用户数", stats.kpi.oauth_authorizations, "fa-id-card", "has-text-link"),
+                ("Passkey 用户", stats.kpi.passkey_users, "fa-fingerprint", "has-text-success")
+            ] %}
+            {% for label, value, icon, color in kpis %}
+            <div class="column is-3">
+                <div class="box kpi-card py-4 px-4">
+                    <p class="heading mb-1 has-text-grey is-size-7">
+                        <span class="icon is-small {{ color }}"><i class="fa-solid {{ icon }}"></i></span>
+                        {{ label }}
+                    </p>
+                    <p class="title is-4 mb-0">{{ value }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {# 趋势 #}
+        <div class="columns is-variable is-4">
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-1">近 30 天注册趋势</h2>
+                    <p class="has-text-grey is-size-7 mb-3">按本地日期统计</p>
+                    <div id="register-chart" class="mini-chart"></div>
+                </div>
+            </div>
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-1">近 30 天登录趋势</h2>
+                    <p class="has-text-grey is-size-7 mb-3">按本地日期统计</p>
+                    <div id="login-chart" class="mini-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        {# 分布 #}
+        <div class="columns is-variable is-4">
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-3">登录方式分布（近 30 天）</h2>
+                    <div id="method-dist"></div>
+                </div>
+            </div>
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-3">账号类型分布</h2>
+                    <div id="classify-dist"></div>
+                </div>
+            </div>
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-3">登录地区 Top 8（近 30 天）</h2>
+                    <div id="location-dist"></div>
+                </div>
+            </div>
+        </div>
+
+        {# 安全信号 #}
+        <div class="columns is-variable is-4">
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-1">
+                        <span class="icon is-small has-text-warning"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                        可疑登录（24 小时内多 IP）
+                    </h2>
+                    <p class="has-text-grey is-size-7 mb-3">同一账号 3 个及以上 IP 登录视为可疑</p>
+                    {% if stats.suspicious %}
+                    <table class="table is-fullwidth is-narrow is-size-7">
+                        <thead><tr><th>用户</th><th>IP 数</th><th>操作</th></tr></thead>
+                        <tbody>
+                        {% for s in stats.suspicious %}
+                        <tr>
+                            <td>
+                                {{ s.nickname or "—" }}
+                                <code class="is-size-7 has-text-grey">{{ s.uid }}</code>
+                            </td>
+                            <td><span class="tag is-warning is-light">{{ s.ip_count }}</span></td>
+                            <td>
+                                <a class="button is-small is-light" href="{{ url_for('root.admin.users') }}?keyword={{ s.uid }}">查看用户</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="has-text-grey is-size-7">暂无可疑账号</p>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="column">
+                <div class="box">
+                    <h2 class="title is-6 mb-3">
+                        <span class="icon is-small has-text-link"><i class="fa-solid fa-clipboard-check"></i></span>
+                        最近后台操作
+                    </h2>
+                    {% if stats.admin_actions %}
+                    <table class="table is-fullwidth is-narrow is-size-7">
+                        <thead><tr><th>时间</th><th>操作</th><th>操作者</th></tr></thead>
+                        <tbody>
+                        {% for a in stats.admin_actions %}
+                        <tr>
+                            <td class="js-timestamp" data-ts="{{ a.ctime }}"></td>
+                            <td>{{ a.action_label }}</td>
+                            <td><code class="is-size-7 has-text-grey">{{ a.uid }}</code></td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="has-text-grey is-size-7">暂无后台操作记录</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    $(function () {
+        const STATS = {{ stats | tojson }};
+
+        let METHOD_LABELS = {
+            'local': '密码登录',
+            'vcode': '验证码登录',
+            'passkey': 'Passkey 登录'
+        };
+        let PROVIDER_LABELS = {
+            'github': 'GitHub', 'gitee': 'Gitee', 'qq': 'QQ',
+            'weibo': '微博', 'google': 'Google', 'wechat': '微信',
+            'apple': 'Apple', 'xiaomi': '小米', 'telegram': 'Telegram'
+        };
+        let CLASSIFY_LABELS = {
+            'username': '用户名',
+            'email': '邮箱',
+            'mobile': '手机号'
+        };
+
+        function escHtml(str) {
+            return $('<div>').text(str === undefined || str === null ? '' : str).html();
+        }
+
+        function methodLabel(method) {
+            if (!method) return '未知';
+            if (METHOD_LABELS[method]) return METHOD_LABELS[method];
+            let name = method.indexOf('oauth2_') === 0 ? method.slice(7) : method;
+            if (PROVIDER_LABELS[name]) return PROVIDER_LABELS[name] + ' 登录';
+            return method;
+        }
+
+        // 柱状趋势图：以最大值为满高
+        function renderBars(selector, data) {
+            let $el = $(selector);
+            if (!data || !data.length) {
+                $el.html('<p class="has-text-grey is-size-7">暂无数据</p>');
+                return;
+            }
+            let max = 1;
+            data.forEach(function (d) {
+                if (d.count > max) max = d.count;
+            });
+            let html = '';
+            data.forEach(function (d) {
+                let h = Math.max(Math.round(d.count / max * 100), 1);
+                html += '<div class="bar" style="height:' + h + '%" '
+                    + 'title="' + escHtml(d.date) + '：' + d.count + '"></div>';
+            });
+            $el.html(html);
+        }
+
+        // 横向分布条
+        function renderDist(selector, data, labelFn) {
+            let $el = $(selector);
+            if (!data || !data.length) {
+                $el.html('<p class="has-text-grey is-size-7">暂无数据</p>');
+                return;
+            }
+            let max = data[0].count || 1;
+            let html = '';
+            data.forEach(function (d) {
+                let pct = Math.max(Math.round(d.count / max * 100), 2);
+                html += '<div class="dist-row">'
+                    + '<span class="dist-label" title="' + escHtml(labelFn(d.name)) + '">'
+                    + escHtml(labelFn(d.name)) + '</span>'
+                    + '<div class="dist-bar" style="width:' + pct + '%"></div>'
+                    + '<span class="dist-count">' + d.count + '</span>'
+                    + '</div>';
+            });
+            $el.html(html);
+        }
+
+        renderBars('#register-chart', STATS.register_trend);
+        renderBars('#login-chart', STATS.login_trend);
+        renderDist('#method-dist', STATS.method_dist, methodLabel);
+        renderDist('#classify-dist', STATS.classify_dist, function (name) {
+            return CLASSIFY_LABELS[name] || name || '未知';
+        });
+        renderDist('#location-dist', STATS.location_top, function (name) {
+            return name || '未知';
+        });
+    });
+</script>
+{% endblock %}

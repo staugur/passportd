@@ -110,6 +110,16 @@ TELEGRAM_BOT_INFO_TTL: int = 3600
 PASSKEY_CHALLENGE_TTL: int = 300
 #: Relying Party 名称，展示给用户的应用名称
 PASSKEY_RP_NAME: str = PROC_NAME
+#: 登录会话保持时长默认值（秒），适用于 Passkey 与第三方账号登录
+LOGIN_SESSION_EXPIRE_DEFAULT: int = 7200
+#: 登录会话保持时长可选档位（秒 -> 展示文案），
+#: 安全页设置项与后端校验共用，避免两处不一致
+LOGIN_SESSION_EXPIRE_OPTIONS: Dict[int, str] = {
+    7200: "2 小时（默认）",
+    86400: "1 天",
+    604800: "7 天",
+    2592000: "30 天",
+}
 
 #: Geetest Bypass URL
 GEETEST_BYPASS_URL: str = "http://bypass.geetest.com/v1/bypass_status.php"
