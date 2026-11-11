@@ -180,29 +180,29 @@ def build_admin_stats() -> Dict[str, Any]:
 
     method_dist = _group_counts(
         LoginRecord.select(
-            LoginRecord.method, fn.COUNT().alias("count")
+            LoginRecord.method, fn.COUNT(LoginRecord.id).alias("count")
         )
         .where(LoginRecord.ctime >= trend_start)
         .group_by(LoginRecord.method)
-        .order_by(fn.COUNT().desc())
+        .order_by(fn.COUNT(LoginRecord.id).desc())
         .tuples()
     )
     classify_dist = _group_counts(
-        Auth.select(Auth.classify, fn.COUNT().alias("count"))
+        Auth.select(Auth.classify, fn.COUNT(Auth.id).alias("count"))
         .group_by(Auth.classify)
-        .order_by(fn.COUNT().desc())
+        .order_by(fn.COUNT(Auth.id).desc())
         .tuples()
     )
     location_top = _group_counts(
         LoginRecord.select(
-            LoginRecord.location, fn.COUNT().alias("count")
+            LoginRecord.location, fn.COUNT(LoginRecord.id).alias("count")
         )
         .where(
             (LoginRecord.ctime >= trend_start)
             & (LoginRecord.location != "")
         )
         .group_by(LoginRecord.location)
-        .order_by(fn.COUNT().desc())
+        .order_by(fn.COUNT(LoginRecord.id).desc())
         .limit(8)
         .tuples()
     )
