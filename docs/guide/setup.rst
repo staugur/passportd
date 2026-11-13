@@ -205,11 +205,32 @@ OIDC 相关的以下值由 ``PinConfig`` 固定管理，不可通过配置或环
    * - ``SAPIC_APIURL``
      - str
      - ``https://sapicd.com``
-     - Sapic API 地址
+     - Sapic 站点地址，上传接口路径由程序自动补全
    * - ``SAPIC_LINKTOKEN``
      - str
      - ``""``
-     - Sapic LinkToken
+     - Sapic 1.x 的 LinkToken，与 ``SAPIC_PAT`` 二选一
+   * - ``SAPIC_PAT``
+     - str
+     - ``""``
+     - Sapic 2.x 的个人访问令牌（PAT），与 ``SAPIC_LINKTOKEN`` 二选一
+
+Sapic 图床
+^^^^^^^^^^
+
+将 ``UPLOAD_METHOD`` 设为 ``sapic`` 后，头像等图片在用户上传时转存到
+Sapic 图床，需填写 ``SAPIC_APIURL``，并按 Sapic 版本配置对应令牌：
+
+- Sapic 1.x： 配置 ``SAPIC_LINKTOKEN``，上传接口为 ``/api/upload``。
+- Sapic 2.x： 配置 ``SAPIC_PAT``（个人访问令牌，需具备 ``upload`` 权限），
+  上传接口为 ``/api/v2/upload``。
+
+两个令牌只需配置其中一个，配置了哪个就走哪个版本的接口；同时配置时
+优先使用 ``SAPIC_PAT``。``UPLOAD_METHOD`` 为 ``sapic`` 但两个令牌都为空时
+上传会返回错误提示。
+
+``SAPIC_APIURL`` 只需填写站点地址，不需要带 ``/api/upload`` 或
+``/api/v2/upload`` 路径（已带也可识别）。
 
 邮件配置
 ---------

@@ -95,9 +95,12 @@ class BaseConfig:
     # 上传
     #: 上传方式，支持 sapic、local，本地上传固定保存到 BASE_DIR/uploads
     UPLOAD_METHOD = "local"
-    #: Sapic 上传接口和LinkToken，文档是 https://sapic.rtfd.vip
+    #: Sapic 上传接口地址，文档是 https://sapic.rtfd.vip
     SAPIC_APIURL = "https://sapicd.com"
+    ## sapic 1.x 的 LinkToken，与 SAPIC_PAT 二选一
     SAPIC_LINKTOKEN = ""
+    ## sapic 2.x 的个人访问令牌（PAT），配置后走 2.x 接口
+    SAPIC_PAT = ""
 
     # 邮件
     #: 邮件发送方式，支持 支持空字符串（不发送）、smtp、spug
